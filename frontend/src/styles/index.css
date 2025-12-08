@@ -1,0 +1,40 @@
+/* index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ROOT THEME VARIABLES */
+:root {
+  --bg: #f5f7fa;
+  --ui-surface: #ffffff;
+  --ui-border: rgba(15,23,42,0.08);
+  --ui-text: #0f172a;
+  --ui-accent: #6366f1;
+  --ui-button: #eef2ff;
+  --ui-button-hover: #e0e7ff;
+}
+
+html.dark {
+  --bg: #06101f;
+  --ui-surface: rgba(15,23,42,0.65);
+  --ui-border: rgba(255,255,255,0.1);
+  --ui-text: #e5e9f5;
+  --ui-accent: #818cf8;
+  --ui-button: rgba(255,255,255,0.08);
+  --ui-button-hover: rgba(255,255,255,0.12);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ui-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* CANVAS FIX */
+.r3f-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+

@@ -1,0 +1,32 @@
+stages:
+  - validate
+  - test
+  - build
+  - release
+
+validate:
+  stage: validate
+  script:
+    - scripts/14-git-automation/hooks/pre-commit-lint.bat
+    - scripts/14-git-automation/workflows/validate-clean-working-tree.bat
+
+test:
+  stage: test
+  script:
+    - scripts/14-git-automation/hooks/pre-push-tests.bat
+
+build:
+  stage: build
+  script:
+    - scripts/7-package-distribution/build-release-package.bat
+  artifacts:
+    paths:
+      - dist/
+
+release:
+  stage: release
+  script:
+    - scripts/14-git-automation/workflows/auto-tag.bat
+    - scripts/14-git-automation/workflows/release.bat
+  only:
+    - main

@@ -1,0 +1,33 @@
+@echo off
+setlocal enabledelayedexpansion
+
+:: collect-diagnostics.bat
+:: Purpose: copy latest diagnostics artifacts into a central folder (or network share)
+:: Usage: collect-diagnostics.bat [DESTINATION_PATH]
+:: Place: graffi-tech-scripts/diagnostics/
+
+set SCRIPT_DIR=%~dp0
+set DIAG_ROOT=%SCRIPT_DIR%..\artifacts
+if "%~1"=="" (
+  set DEST=%SCRIPT_DIR%..\collected
+) else (
+  set DEST=%~1
+)
+
+set TIMESTAMP=%DATE:~10,4%-%DATE:~4,2%-%DATE:~7,2%_%TIME:~0,2%-%TIME:~3,2%-%TIME:~6,2%
+set TIMESTAMP=%TIMESTAMP: =0%
+set DEST_DIR=%DEST%\collected-%TIMESTAMP%
+
+if not exist "%DEST_DIR%" mkdir "%DEST_DIR%"
+
+echo [%DATE% %TIME%] Copying diagnostics from %DIAG_ROOT% to %DEST_DIR%
+
+xcopy "%DIAG_ROOT%\*" "%DEST_DIR%\" /E /I /Y >nul 2>&1
+if errorlevel 1 (
+  echo ERROR during copy. Exiting.
+  exit /b 2
+)
+
+echo Completed. Artifacts copied to %DEST_DIR%
+endlocal
+exit /b 0

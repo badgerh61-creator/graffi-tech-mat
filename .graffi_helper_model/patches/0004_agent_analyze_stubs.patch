@@ -1,0 +1,35 @@
+diff --git a/graffi/agents/architecture.py b/graffi/agents/architecture.py
+@@
++def analyze(root="."):
++    return {"role": "architecture", "status": "ok"}
+
+diff --git a/graffi/agents/backend.py b/graffi/agents/backend.py
+@@
++def analyze(root="."):
++    return {"role": "backend", "backend_exists": True}
+
+diff --git a/graffi/agents/frontend.py b/graffi/agents/frontend.py
+@@
++def analyze(root="."):
++    return {"role": "frontend", "admin_build": True}
+
+diff --git a/graffi/agents/infra.py b/graffi/agents/infra.py
+@@
++def analyze(root="."):
++    return {"role": "infra", "compose_files": ["docker-compose.yml", "docker-compose.prod.yml"]}
+
+diff --git a/graffi/agents/safety.py b/graffi/agents/safety.py
+@@
++def analyze(root="."):
++    return {"role": "safety", "env_issues": []}
+
+diff --git a/graffi/agents/evolution.py b/graffi/agents/evolution.py
+@@
++def analyze(root="."):
++    return {"role": "evolution", "drift": []}
+
+diff --git a/graffi/agents/refactor.py b/graffi/agents/refactor.py
+@@
++def analyze(root="."):
++    return {"role": "refactor", "refactor_candidates": []}
+

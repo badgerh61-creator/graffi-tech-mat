@@ -1,0 +1,39 @@
+name: CI - Build & Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24.0.0
+        options: --privileged
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (if multiarch)
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build backend image
+        run: |
+          docker build -f Dockerfile.backend -t ${{ github.repository_owner }}/graffi-tech-mat-backend:ci .
+
+      - name: Build frontend image
+        run: |
+          docker build -f Dockerfile.frontend -t ${{ github.repository_owner }}/graffi-tech-mat-frontend:ci .
+
+      - name: Run container smoke tests (optional)
+        run: |
+          docker run --rm -d --name backend_test -p 8000:8000 ${{ github.repository_owner }}/graffi-tech-mat-backend:ci
+          docker ps
+          docker logs backend_test --tail 100 || true
+          docker stop backend_test || true

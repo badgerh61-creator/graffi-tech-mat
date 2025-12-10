@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  api:
+    build: ./backend
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - minio
+
+  worker:
+    build: ./backend
+    command: ["celery", "-A", "app.worker.tasks.celery_app", "worker", "--loglevel=info"]
+    env_file: .env
+    depends_on:
+      - redis
+      - minio
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: quay.io/minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+      - ./init_minio.sh:/init_minio.sh
+
+volumes:
+  minio_data:
+

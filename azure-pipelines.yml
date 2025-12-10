@@ -1,0 +1,28 @@
+trigger:
+  branches:
+    include:
+      - "*"
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+  - checkout: self
+
+  - script: scripts/1-environment-setup/install-dependencies.bat
+    displayName: Install Dependencies
+
+  - script: scripts/14-git-automation/hooks/pre-commit-lint.bat
+    displayName: Lint Code
+
+  - script: scripts/14-git-automation/hooks/pre-push-tests.bat
+    displayName: Run Tests
+
+  - script: scripts/7-package-distribution/build-release-package.bat
+    displayName: Build Release Package
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: dist
+      ArtifactName: build
+      publishLocation: Container

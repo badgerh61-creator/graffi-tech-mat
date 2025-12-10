@@ -1,0 +1,46 @@
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 5555555..6666666 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -12,6 +12,17 @@ services:
+     build: ./backend
+     container_name: graffi-tech-mat-api-1
+
++    restart: unless-stopped
++    healthcheck:
++      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
++      interval: 30s
++      timeout: 5s
++      retries: 3
+
+@@ -40,6 +51,15 @@ services:
+   worker:
+     build: ./backend
+     container_name: graffi-tech-mat-worker-1
++    restart: unless-stopped
++    healthcheck:
++      test: ["CMD", "celery", "--version"]
++      interval: 30s
++      timeout: 5s
++      retries: 3
+
+@@ -70,6 +90,15 @@ services:
+   redis:
+     image: redis:7-alpine
++    restart: unless-stopped
++    healthcheck:
++      test: ["CMD", "redis-cli", "ping"]
++      interval: 30s
++      timeout: 5s
++      retries: 3
+
+@@ -90,6 +119,15 @@ services:
+   minio:
+     image: minio/minio
++    restart: unless-stopped
++    healthcheck:
++      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
++      interval: 30s
++      timeout: 5s
++      retries: 3
+

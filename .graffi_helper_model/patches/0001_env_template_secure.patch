@@ -1,0 +1,37 @@
+diff --git a/.env b/.env
+index 1111111..2222222 100644
+--- a/.env
++++ b/.env
+@@ -5,9 +5,9 @@ DATABASE_URL=sqlite:///./graffi.db
+
+ SECRET_KEY=dev-secret
+
+-AWS_ACCESS_KEY_ID=minioadmin
+-AWS_SECRET_ACCESS_KEY=minioadmin
++AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?SET_SECURE_VALUE}
++AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?SET_SECURE_VALUE}
+ AWS_REGION=us-east-1
+ S3_ENDPOINT_URL=http://minio:9000
+ S3_BUCKET=graffi-assets
+@@ -16,7 +16,7 @@ CELERY_BROKER_URL=redis://redis:6379/0
+
+ CORS_ORIGINS=["*"]
+
+-THUMBNAIL_SIZE=256
++SECRET_KEY=${SECRET_KEY:?SET_A_SECURE_VALUE}
+
+diff --git a/.env.template b/.env.template
+index 3333333..4444444 100644
+--- a/.env.template
++++ b/.env.template
+@@ -15,9 +15,9 @@ CORS_ORIGINS=["*"]
+
+ THUMBNAIL_SIZE=256
+
+-SECRET_KEY=change-me
+-AWS_ACCESS_KEY_ID=minioadmin
+-AWS_SECRET_ACCESS_KEY=minioadmin
++SECRET_KEY=CHANGE_THIS_VALUE
++AWS_ACCESS_KEY_ID=YOUR_KEY_HERE
++AWS_SECRET_ACCESS_KEY=YOUR_SECRET_HERE
+

@@ -1,0 +1,6 @@
+diff --git a/README.md b/README.md
+@@
++## Omega Patch Notice
++This project has been enhanced using the Graffi Omega Helper.
++Security fixes, infra healthchecks, and agent analysis stubs were added.
+

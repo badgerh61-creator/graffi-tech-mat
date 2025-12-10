@@ -1,0 +1,30 @@
+diff --git a/auto_rebuilder.sh b/auto_rebuilder.sh
+index 1111111..4444444 100755
+--- a/auto_rebuilder.sh
++++ b/auto_rebuilder.sh
+@@ -1,5 +1,65 @@
+ #!/bin/bash
+ echo "=== Auto-Rebuilder Engine (Omega-INFINITY) ==="
++
++PATCH_DIR=".graffi_helper_model/patches"
++
++checksum() {
++    sha256sum "$1" | awk '{print $1}'
++}
++
++apply_all() {
++    for P in $PATCH_DIR/*.patch; do
++        echo "Applying $P..."
++        git apply --check "$P" || {
++            echo "❌ Failed integrity check"
++            exit 1
++        }
++        git apply "$P"
++    done
++}
++
++echo "Running safety validation..."
++apply_all
++
++echo "✔ Auto rebuild complete."
+

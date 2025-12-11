@@ -1,0 +1,52 @@
+diff --git a/tools/doc_generator.py b/tools/doc_generator.py
+new file mode 100644
+index 0000000..56565656
+--- /dev/null
++++ b/tools/doc_generator.py
+@@ -0,0 +1,160 @@
++"""
++Documentation generator:
++Scans modules in analytics/, agents/, ml/ and writes a small markdown summary.
++"""
++import os
++import inspect
++import importlib
++from typing import List
++
++MODULE_PATHS = ["analytics", "agents", "ml", "tools"]
++
++def gather_docs() -> List[dict]:
++    out = []
++    for pkg in MODULE_PATHS:
++        if not os.path.isdir(pkg):
++            continue
++        for fn in os.listdir(pkg):
++            if not fn.endswith(".py"):
++                continue
++            modname = f"{pkg}.{fn[:-3]}"
++            try:
++                m = importlib.import_module(modname)
++            except Exception:
++                continue
++            doc = inspect.getdoc(m) or ""
++            funcs = [n for n,v in inspect.getmembers(m, inspect.isfunction) if v.__module__==modname]
++            out.append({"module": modname, "doc": doc.split("\n")[0] if doc else "", "functions": funcs})
++    return out
++
++def write_md(path="DOCUMENTATION.md"):
++    docs = gather_docs()
++    with open(path, "w") as f:
++        f.write("# Graffi Analytics & Agents Documentation\n\n")
++        for d in docs:
++            f.write(f"## {d['module']}\n\n")
++            f.write(f"{d['doc']}\n\n")
++            if d["functions"]:
++                f.write("Functions:\n\n")
++                for fn in d["functions"]:
++                    f.write(f"- {fn}\n")
++            f.write("\n")
++    return path
++
++if __name__ == "__main__":
++    print("wrote", write_md())
+

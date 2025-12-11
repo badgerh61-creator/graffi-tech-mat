@@ -1,0 +1,70 @@
+diff --git a/analytics/feature_store.py b/analytics/feature_store.py
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/analytics/feature_store.py
+@@ -0,0 +1,120 @@
++"""
++Simple feature store wrapper around analytics/features.db
++Provides read/query and export utilities.
++"""
++import sqlite3
++import json
++import os
++from typing import List, Dict
++
++DB_PATH = os.environ.get("GRAFFI_FEATURE_DB", "analytics/features.db")
++
++def list_feature_tables() -> bool:
++    return os.path.exists(DB_PATH)
++
++def query_by_source(source: str, limit: int = 100) -> List[Dict]:
++    if not os.path.exists(DB_PATH):
++        return []
++    con = sqlite3.connect(DB_PATH)
++    cur = con.cursor()
++    cur.execute("SELECT id, event_id, feature_blob, created_at FROM features WHERE source = ? ORDER BY id DESC LIMIT ?",
++                (source, limit))
++    rows = cur.fetchall()
++    con.close()
++    out = []
++    for r in rows:
++        out.append({
++            "id": r[0],
++            "event_id": r[1],
++            "features": json.loads(r[2]),
++            "created_at": r[3]
++        })
++    return out
++
++def export_features_json(path: str, limit: int = 1000):
++    data = query_all(limit)
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    with open(path, "w") as f:
++        json.dump(data, f, indent=2)
++    return path
++
++def query_all(limit: int = 1000) -> List[Dict]:
++    if not os.path.exists(DB_PATH):
++        return []
++    con = sqlite3.connect(DB_PATH)
++    cur = con.cursor()
++    cur.execute("SELECT id, event_id, source, feature_blob, created_at FROM features ORDER BY id DESC LIMIT ?",
++                (limit,))
++    rows = cur.fetchall()
++    con.close()
++    out = []
++    for r in rows:
++        out.append({
++            "id": r[0],
++            "event_id": r[1],
++            "source": r[2],
++            "features": json.loads(r[3]),
++            "created_at": r[4]
++        })
++    return out
++
++if __name__ == "__main__":
++    print("store exists:", list_feature_tables())
++    print("recent:", query_all(5))
+

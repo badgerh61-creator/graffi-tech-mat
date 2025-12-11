@@ -1,0 +1,45 @@
+diff --git a/tools/packager.py b/tools/packager.py
+new file mode 100644
+index 0000000..78787878
+--- /dev/null
++++ b/tools/packager.py
+@@ -0,0 +1,200 @@
++"""
++Packager: collect synthesized patches and build a zip-ready bundle with manifest and checksums.
++"""
++import os
++import zipfile
++import hashlib
++import json
++from datetime import datetime
++
++def sha256_file(path):
++    h = hashlib.sha256()
++    with open(path, "rb") as f:
++        while True:
++            c = f.read(8192)
++            if not c:
++                break
++            h.update(c)
++    return h.hexdigest()
++
++def package_patches(patch_paths, out_zip="patch_bundle.zip"):
++    manifest = {"created": datetime.utcnow().isoformat()+"Z", "patches": []}
++    with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
++        for p in patch_paths:
++            arcname = os.path.basename(p)
++            z.write(p, arcname)
++            manifest["patches"].append({"name": arcname, "sha256": sha256_file(p)})
++        # add manifest file
++        z.writestr("manifest.json", json.dumps(manifest, indent=2))
++    return out_zip
++
++if __name__ == "__main__":
++    # pack all synth/*.patch if present
++    import glob
++    paths = glob.glob("synth/*.patch")
++    if paths:
++        print("created", package_patches(paths, out_zip="patch_bundle.zip"))
++    else:
++        print("no synth patches")
+

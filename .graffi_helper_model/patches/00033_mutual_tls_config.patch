@@ -1,0 +1,22 @@
+diff --git a/config/mutual_tls.yaml b/config/mutual_tls.yaml
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/config/mutual_tls.yaml
+@@ -0,0 +1,24 @@
++# Mutual TLS configuration for patch-server <-> client authentication
++server:
++  cert_file: /etc/graffi/tls/server.crt
++  key_file: /etc/graffi/tls/server.key
++  ca_file: /etc/graffi/tls/ca.crt
++client:
++  cert_required: true
++  verify_depth: 3
++
++# TLS profile
++profile:
++  min_version: TLSv1_2
++  ciphers: "ECDHE+AESGCM:!ECDSA:!DSS"
++
++# Note: file paths above are templates for your production deployment.
+

@@ -1,0 +1,23 @@
+diff --git a/ml/explain.py b/ml/explain.py
+new file mode 100644
+index 0000000..dddddddd
+--- /dev/null
++++ b/ml/explain.py
+@@ -0,0 +1,140 @@
++"""
++Tiny explainability helper that returns feature importances for SimpleLogistic
++via absolute weight magnitudes.
++"""
++from ml.trainer import SimpleLogistic
++from ml.registry import get_latest_by_name
++
++def explain_model_weights(model_name: str):
++    mm = get_latest_by_name(model_name)
++    if not mm:
++        return {"error": "no model"}
++    model = SimpleLogistic.load(model_name)
++    return {"weights": model.w, "bias": model.b, "importance": [abs(v) for v in model.w]}
++
++if __name__ == "__main__":
++    print(explain_model_weights("demo_model"))
+

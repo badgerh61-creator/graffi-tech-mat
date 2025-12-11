@@ -1,0 +1,25 @@
+diff --git a/scripts/verify_patch_signatures.sh b/scripts/verify_patch_signatures.sh
+new file mode 100755
+--- /dev/null
++++ b/scripts/verify_patch_signatures.sh
+@@ -0,0 +1,80 @@
++#!/bin/bash
++PATCH_DIR=".graffi_helper_model/patches"
++SIGNER="python3 graffi/patch_signer.py"
++
++echo "Verifying all patch signatures..."
++fail=0
++for p in "$PATCH_DIR"/*.patch; do
++    [ -e "$p" ] || continue
++    echo -n "  $p ... "
++    $SIGNER verify "$p" >/dev/null 2>&1
++    if [ $? -eq 0 ]; then
++        echo "OK"
++    else
++        echo "MISSING/INVALID"
++        fail=1
++    fi
++done
++
++exit $fail
+

@@ -1,0 +1,51 @@
+diff --git a/agents/autoupdate.py b/agents/autoupdate.py
+new file mode 100644
+index 0000000..aaaaaaaa
+--- /dev/null
++++ b/agents/autoupdate.py
+@@ -0,0 +1,68 @@
++"""
++Auto-update agent (safe mode).
++Fetches manifest, verifies via remote_verifier & signature_verifier,
++downloads patches, checks revocation ledger, and applies patches via
++the patch-apply engine.
++"""
++import os
++import json
++from tools.remote_verifier import fetch_manifest
++from tools.patchdown import download_patch
++from services.revocation_service import is_revoked
++from tools.signature_verifier import verify_signature_object
++
++MANIFEST_URL = os.environ.get("GRAFFI_MANIFEST_URL", "https://signer.example.com/manifest.json")
++PUBKEY_PATH = os.environ.get("GRAFFI_PUBKEY", "/etc/graffi/signing_pub.pem")
++
++def run_auto_update():
++    m = fetch_manifest(MANIFEST_URL)
++    root = m.get("root_hash")
++    print(f"manifest root: {root}")
++    for p in m.get("patches", []):
++        name = p["name"]
++        h = p["sha256"]
++        if is_revoked(h):
++            print(f"skipping revoked patch {name}")
++            continue
++        print(f"downloading {name} ...")
++        data = download_patch(name)
++        # signature object lookup (simple)
++        sig_obj = {"sha256": h, "signature_path": f"signatures/{name}.sig"}
++        if not verify_signature_object(sig_obj, data, pubkey_path=PUBKEY_PATH):
++            print(f"signature verification failed for {name}; aborting")
++            return False
++        # apply via CLI hook (assumes patch_apply.py exists)
++        print(f"applying {name}")
++        rc = os.system(f"python tools/patch_apply.py {name}")
++        if rc != 0:
++            print(f"apply failed for {name}; aborting")
++            return False
++    print("auto-update complete")
++    return True
++
++if __name__ == "__main__":
++    run_auto_update()
+

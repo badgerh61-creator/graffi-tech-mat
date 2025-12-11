@@ -1,0 +1,66 @@
+diff --git a/agents/scheduler.py b/agents/scheduler.py
+new file mode 100644
+index 0000000..5555555
+--- /dev/null
++++ b/agents/scheduler.py
+@@ -0,0 +1,160 @@
++"""
++Very small dynamic scheduler for agents.
++- schedule immediate tasks
++- schedule delayed tasks (sleep-based)
++"""
++import time
++import threading
++from typing import Callable, Any, Dict, List
++from agents.manager import run_agent
++
++_tasks: List[Dict] = []
++_lock = threading.Lock()
++_worker_thread = None
++_stop = False
++
++def _worker():
++    while True:
++        with _lock:
++            if _stop:
++                return
++            now = time.time()
++            runnable = [t for t in _tasks if t["run_at"] <= now]
++            _tasks[:] = [t for t in _tasks if t["run_at"] > now]
++        for t in runnable:
++            try:
++                run_agent(t["name"], *t.get("args", []), **t.get("kwargs", {}))
++            except Exception:
++                pass
++        time.sleep(0.2)
++
++def start():
++    global _worker_thread, _stop
++    with _lock:
++        if _worker_thread and _worker_thread.is_alive():
++            return
++        _stop = False
++        _worker_thread = threading.Thread(target=_worker, daemon=True)
++        _worker_thread.start()
++
++def stop():
++    global _stop
++    with _lock:
++        _stop = True
++
++def schedule(name: str, delay_seconds: float = 0.0, args=None, kwargs=None):
++    if args is None:
++        args = []
++    if kwargs is None:
++        kwargs = {}
++    with _lock:
++        _tasks.append({"name": name, "run_at": time.time() + delay_seconds, "args": args, "kwargs": kwargs})
++
++if __name__ == "__main__":
++    start()
++    schedule("echo", 0, args=["scheduled hello"])
++    schedule("sum", 1, args=[4,5])
++    time.sleep(2)
++    stop()
++    print("done")
+

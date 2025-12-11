@@ -1,0 +1,51 @@
+diff --git a/patches/rollback_manager.py b/patches/rollback_manager.py
+new file mode 100644
+index 0000000..34343434
+--- /dev/null
++++ b/patches/rollback_manager.py
+@@ -0,0 +1,140 @@
++"""
++Rollback manager:
++- records applied patches to ledger and can revert to last good state by re-applying inverse patches.
++Note: inverse patching is best-effort here (we store original file content snapshots).
++"""
++import sqlite3
++import os
++import json
++from datetime import datetime
++
++LEDGER_DB = "ledger/ledger.db"
++
++def record_applied(patch_name: str, fingerprint: str, snapshot_files: dict):
++    os.makedirs(os.path.dirname(LEDGER_DB), exist_ok=True)
++    con = sqlite3.connect(LEDGER_DB)
++    cur = con.cursor()
++    cur.execute("""
++    CREATE TABLE IF NOT EXISTS applied_patches (
++        id INTEGER PRIMARY KEY AUTOINCREMENT,
++        patch_name TEXT,
++        fingerprint TEXT,
++        snapshot TEXT,
++        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
++    )
++    """)
++    cur.execute("INSERT INTO applied_patches (patch_name, fingerprint, snapshot) VALUES (?, ?, ?)",
++                (patch_name, fingerprint, json.dumps(snapshot_files)))
++    con.commit()
++    con.close()
++
++def last_applied():
++    if not os.path.exists(LEDGER_DB):
++        return None
++    con = sqlite3.connect(LEDGER_DB)
++    cur = con.cursor()
++    cur.execute("SELECT id, patch_name, fingerprint, snapshot, applied_at FROM applied_patches ORDER BY id DESC LIMIT 1")
++    row = cur.fetchone()
++    con.close()
++    if not row:
++        return None
++    return {"id": row[0], "patch_name": row[1], "fingerprint": row[2], "snapshot": json.loads(row[3]), "applied_at": row[4]}
++
++if __name__ == "__main__":
++    print("last applied:", last_applied())
+

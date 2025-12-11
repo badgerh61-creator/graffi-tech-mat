@@ -1,0 +1,43 @@
+diff --git a/agents/simulator.py b/agents/simulator.py
+new file mode 100644
+index 0000000..aaaaaaaa
+--- /dev/null
++++ b/agents/simulator.py
+@@ -0,0 +1,160 @@
++"""
++Simulation runner used to test candidate patches against synthetic workloads.
++Uses the analytics pipeline to produce synthetic events and measure metrics.
++"""
++import random
++from analytics.pipeline import ingest_events, extract_basic_features
++from analytics.metrics import inc, flush
++from typing import List, Dict
++
++def generate_synthetic_events(n: int = 100):
++    events = []
++    import time
++    for i in range(n):
++        events.append({
++            "id": f"sim-{i}",
++            "user_id": f"user-{i}" if random.random() < 0.5 else None,
++            "payload": {"val": random.random()*100},
++            "ts": time.time() - random.randint(0, 3600),
++            "source": "sim"
++        })
++    return events
++
++def run_simulation(rounds: int = 3, events_per_round: int = 100):
++    for r in range(rounds):
++        evts = generate_synthetic_events(events_per_round)
++        n = ingest_events(evts)
++        inc("sim.ingested", n)
++        # compute simple aggregate
++        feats = [extract_basic_features(e) for e in evts]
++        avg_len = sum(f["len_payload"] for f in feats)/len(feats)
++        inc("sim.avg_payload_len", avg_len)
++    flushed = flush()
++    return {"rounds": rounds, "events_per_round": events_per_round, "metrics_flushed": flushed}
++
++if __name__ == "__main__":
++    print(run_simulation(2, 50))
+

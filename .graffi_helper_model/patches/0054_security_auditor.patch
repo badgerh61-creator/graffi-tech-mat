@@ -1,0 +1,47 @@
+diff --git a/security/auditor.py b/security/auditor.py
+new file mode 100644
+index 0000000..eeeeeeee
+--- /dev/null
++++ b/security/auditor.py
+@@ -0,0 +1,200 @@
++"""
++Simple security auditor:
++- checks patches for obvious dangerous patterns (exec, os.system, subprocess with shell)
++- computes a patch fingerprint and returns a short report
++This is a conservative static check, not a guarantee.
++"""
++import re
++import hashlib
++from typing import Dict
++
++SUSPICIOUS_PATTERNS = [
++    re.compile(rb"\bos\.system\b"),
++    re.compile(rb"\bsubprocess\.Popen\b"),
++    re.compile(rb"\beval\("),
++    re.compile(rb"\bexec\("),
++    re.compile(rb"rm -rf"),
++    re.compile(rb"curl .+ | sh"),
++]
++
++def fingerprint_patch_bytes(b: bytes) -> str:
++    return hashlib.sha256(b).hexdigest()
++
++def audit_patch_bytes(b: bytes) -> Dict:
++    findings = []
++    for p in SUSPICIOUS_PATTERNS:
++        if p.search(b):
++            findings.append(p.pattern.decode(errors="ignore"))
++    return {"fingerprint": fingerprint_patch_bytes(b), "findings": findings}
++
++def audit_patch_file(path: str):
++    with open(path, "rb") as f:
++        b = f.read()
++    return audit_patch_bytes(b)
++
++if __name__ == "__main__":
++    import sys
++    if len(sys.argv) < 2:
++        print("usage: auditor.py <patchfile>")
++    else:
++        print(audit_patch_file(sys.argv[1]))
+

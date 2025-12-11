@@ -1,0 +1,53 @@
+diff --git a/signing_server/webhooks.py b/signing_server/webhooks.py
+new file mode 100644
+--- /dev/null
++++ b/signing_server/webhooks.py
+@@ -0,0 +1,160 @@
++"""
++Simple webhook notifier for signing server.
++When a patch is uploaded, optionally POST to configured webhook URLs.
++"""
++import sqlite3, json, os, requests
++
++CONFIG_FILE = "signing_server/webhooks.json"
++DB_FILE = "signing_server.db"
++
++def load_config():
++    if not os.path.exists(CONFIG_FILE):
++        return {"webhooks": []}
++    with open(CONFIG_FILE, "r") as f:
++        return json.load(f)
++
++def notify_patch(name):
++    cfg = load_config()
++    if not cfg.get("webhooks"):
++        return
++    conn = sqlite3.connect(DB_FILE)
++    c = conn.cursor()
++    c.execute("SELECT name, signature, fingerprint, uploaded_at, metadata, uploader FROM patches WHERE name=?", (name,))
++    row = c.fetchone()
++    conn.close()
++    if not row:
++        return
++    payload = {
++        "name": row[0],
++        "signature": row[1],
++        "fingerprint": row[2],
++        "uploaded_at": row[3],
++        "metadata": json.loads(row[4]),
++        "uploader": row[5]
++    }
++    for url in cfg.get("webhooks", []):
++        try:
++            requests.post(url, json=payload, timeout=5)
++        except Exception:
++            # ignoring webhook failures (non-critical)
++            pass
++
++if __name__ == "__main__":
++    import sys
++    if len(sys.argv) < 2:
++        print("usage: webhooks.py <patch-name>")
++        raise SystemExit(2)
++    notify_patch(sys.argv[1])
+

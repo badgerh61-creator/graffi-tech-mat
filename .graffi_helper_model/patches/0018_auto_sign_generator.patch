@@ -1,0 +1,28 @@
+diff --git a/scripts/generate_and_sign_patches.sh b/scripts/generate_and_sign_patches.sh
+new file mode 100755
+--- /dev/null
++++ b/scripts/generate_and_sign_patches.sh
+@@ -0,0 +1,140 @@
++#!/bin/bash
++PATCH_DIR=".graffi_helper_model/patches"
++SIGNER="python3 graffi/patch_signer.py"
++MANIFEST="python3 .graffi_helper_model/patch_manifest.py"
++
++mkdir -p "$PATCH_DIR"
++
++echo "Generating patch list and signing new patches..."
++for p in "$PATCH_DIR"/*.patch; do
++  [ -e "$p" ] || continue
++  sig="$p.sig"
++  if [ ! -f "$sig" ]; then
++    echo "Signing $p"
++    $SIGNER sign "$p"
++  else
++    echo "Already signed: $p"
++  fi
++done
++
++echo "Rebuilding manifest..."
++$MANIFEST
++echo "Done."
+

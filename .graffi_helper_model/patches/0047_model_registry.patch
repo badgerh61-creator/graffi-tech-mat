@@ -1,0 +1,71 @@
+diff --git a/ml/registry.py b/ml/registry.py
+new file mode 100644
+index 0000000..7777777
+--- /dev/null
++++ b/ml/registry.py
+@@ -0,0 +1,140 @@
++"""
++Simple model registry: records model metadata and allows selection.
++Uses a small sqlite DB under ml/registry.db
++"""
++import sqlite3
++import os
++import json
++from datetime import datetime
++
++DB = os.environ.get("GRAFFI_MODEL_REG_DB", "ml/registry.db")
++
++def ensure_db():
++    os.makedirs(os.path.dirname(DB), exist_ok=True)
++    con = sqlite3.connect(DB)
++    cur = con.cursor()
++    cur.execute("""
++    CREATE TABLE IF NOT EXISTS models (
++        id INTEGER PRIMARY KEY AUTOINCREMENT,
++        name TEXT,
++        path TEXT,
++        meta TEXT,
++        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
++    )
++    """)
++    con.commit()
++    con.close()
++
++def register_model(name: str, path: str, meta: dict):
++    ensure_db()
++    con = sqlite3.connect(DB)
++    cur = con.cursor()
++    cur.execute("INSERT INTO models (name, path, meta) VALUES (?, ?, ?)",
++                (name, path, json.dumps(meta)))
++    con.commit()
++    con.close()
++
++def list_models(limit: int = 100):
++    ensure_db()
++    con = sqlite3.connect(DB)
++    cur = con.cursor()
++    cur.execute("SELECT id, name, path, meta, created_at FROM models ORDER BY id DESC LIMIT ?", (limit,))
++    rows = cur.fetchall()
++    con.close()
++    out = []
++    for r in rows:
++        out.append({"id": r[0], "name": r[1], "path": r[2], "meta": json.loads(r[3]), "created_at": r[4]})
++    return out
++
++def get_latest_by_name(name: str):
++    ensure_db()
++    con = sqlite3.connect(DB)
++    cur = con.cursor()
++    cur.execute("SELECT id, name, path, meta, created_at FROM models WHERE name = ? ORDER BY id DESC LIMIT 1", (name,))
++    row = cur.fetchone()
++    con.close()
++    if not row:
++        return None
++    return {"id":row[0], "name":row[1], "path":row[2], "meta":json.loads(row[3]), "created_at":row[4]}
++
++if __name__ == "__main__":
++    # quick test
++    register_model("demo_model", "ml/models/demo_model.json", {"accuracy": 0.9})
++    print(list_models(5))
++    print(get_latest_by_name("demo_model"))
+

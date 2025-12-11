@@ -1,0 +1,36 @@
+diff --git a/graffi/meta_patch.py b/graffi/meta_patch.py
+new file mode 100644
+--- /dev/null
++++ b/graffi/meta_patch.py
+@@ -0,0 +1,85 @@
++"""
++Graffi Meta-Patch Engine (Omega-INFINITY)
++-----------------------------------------
++Allows patch files themselves to be updated by patches.
++YES — this updates the patch system using patches.
++"""
++
++import os, shutil
++
++PATCH_DIR = ".graffi_helper_model/patches"
++
++def apply_meta_patch(meta_patch_file):
++    """
++    A meta-patch can modify:
++      - patch generator
++      - patch apply engine
++      - auto rebuilder
++      - other patch files
++    """
++    if not os.path.exists(meta_patch_file):
++        raise FileNotFoundError(meta_patch_file)
++
++    os.system(f"git apply {meta_patch_file}")
++    return True
++
++def list_patches():
++    return sorted(f for f in os.listdir(PATCH_DIR) if f.endswith(".patch"))
++
++if __name__ == "__main__":
++    print("Meta patches:", list_patches())
+

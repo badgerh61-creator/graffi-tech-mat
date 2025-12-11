@@ -1,0 +1,22 @@
+diff --git a/config/patch_mirrors.yaml b/config/patch_mirrors.yaml
+new file mode 100644
+index 0000000..5555555
+--- /dev/null
++++ b/config/patch_mirrors.yaml
+@@ -0,0 +1,28 @@
++# Patch mirrors configuration - fallback mirrors for patch downloads
++mirrors:
++  - url: https://mirror1.example.com/patches
++    priority: 1
++  - url: https://mirror2.example.com/patches
++    priority: 2
++  - url: https://cdn.example.com/patches
++    priority: 3
++
++download:
++  retries: 3
++  timeout_seconds: 15
++  backoff_seconds: 2
++
++# Clients will iterate mirrors by increasing priority. This file can be updated remotely.
+

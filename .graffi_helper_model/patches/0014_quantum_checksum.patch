@@ -1,0 +1,57 @@
+diff --git a/graffi/quantum_checksum.py b/graffi/quantum_checksum.py
+new file mode 100644
+--- /dev/null
++++ b/graffi/quantum_checksum.py
+@@ -0,0 +1,160 @@
++"""
++Quantum-Style Checksum (ULTRA)
++ Combines multiple hash families with file metadata/salt to create a high-entropy checksum.
++ Not a real quantum algorithm — emulates 'multi-hash' resilience.
++"""
++import hashlib, os, json, time, base64
++
++def multi_hash(path):
++    """Return a dict of several digests and a combined fingerprint."""
++    h_md5 = hashlib.md5()
++    h_sha1 = hashlib.sha1()
++    h_sha256 = hashlib.sha256()
++    h_blake = hashlib.blake2b(digest_size=32)
++    with open(path, "rb") as f:
++        for b in iter(lambda: f.read(4096), b""):
++            h_md5.update(b)
++            h_sha1.update(b)
++            h_sha256.update(b)
++            h_blake.update(b)
++    meta = {
++        "size": os.path.getsize(path),
++        "mtime": int(os.path.getmtime(path)),
++        "path": path
++    }
++    salt = base64.b64encode(f"{meta['mtime']}:{meta['size']}".encode()).decode()
++    combined = h_sha256.hexdigest() + h_blake.hexdigest() + salt
++    final = hashlib.sha3_512(combined.encode()).hexdigest()
++    return {
++        "md5": h_md5.hexdigest(),
++        "sha1": h_sha1.hexdigest(),
++        "sha256": h_sha256.hexdigest(),
++        "blake2b": h_blake.hexdigest(),
++        "fingerprint": final,
++        "meta": meta,
++        "salt": salt
++    }
++
++def write_fingerprint(path, out_json=None):
++    data = multi_hash(path)
++    if not out_json:
++        out_json = path + ".qchk.json"
++    with open(out_json, "w") as f:
++        json.dump(data, f, indent=2)
++    return out_json
++
++if __name__ == "__main__":
++    import sys
++    if len(sys.argv) < 2:
++        print("usage: python3 graffi/quantum_checksum.py <file>")
++        raise SystemExit(2)
++    print(write_fingerprint(sys.argv[1]))
+

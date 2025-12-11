@@ -1,0 +1,22 @@
+diff --git a/ledger/ledger_schema.sql b/ledger/ledger_schema.sql
+new file mode 100644
+index 0000000..4444444
+--- /dev/null
++++ b/ledger/ledger_schema.sql
+@@ -0,0 +1,40 @@
++-- Patch ledger schema (sqlite compatible)
++CREATE TABLE IF NOT EXISTS patch_ledger (
++    id INTEGER PRIMARY KEY AUTOINCREMENT,
++    patch_name TEXT NOT NULL,
++    patch_hash TEXT NOT NULL,
++    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
++    signer TEXT,
++    signature TEXT,
++    status TEXT NOT NULL -- pending|applied|rejected|revoked
++);
++
++CREATE INDEX IF NOT EXISTS idx_patch_hash ON patch_ledger(patch_hash);
++
++-- Example usage:
++-- INSERT INTO patch_ledger (patch_name, patch_hash, signer, signature, status) VALUES (...);
+

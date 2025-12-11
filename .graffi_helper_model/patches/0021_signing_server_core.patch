@@ -1,0 +1,140 @@
+diff --git a/signing_server/app.py b/signing_server/app.py
+new file mode 100644
+--- /dev/null
++++ b/signing_server/app.py
+@@ -0,0 +1,160 @@
++"""
++Simple Signing & Verification Server (FastAPI)
++Endpoints:
++ - POST /api/v1/patches  -> upload patch metadata + signature
++ - GET  /api/v1/patches/{name} -> query patch record
++ - GET  /api/v1/pubkey -> return server public key
++ - POST /api/v1/verify -> verify payload server-side
++
++Note: lightweight, uses sqlite and API key auth.
++"""
++from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
++from fastapi.responses import JSONResponse
++from pydantic import BaseModel
++import os, sqlite3, hashlib, base64, time, json
++from typing import Optional
++
++DB_FILE = "signing_server.db"
++KEY_DIR = "signing_server_keys"
++PUB_KEY_FILE = os.path.join(KEY_DIR, "server.pub")
++PRIV_KEY_FILE = os.path.join(KEY_DIR, "server.priv")
++API_KEYS_TABLE = "api_keys"
++
++app = FastAPI(title="Graffi Signing Server")
++
++def ensure_db():
++    conn = sqlite3.connect(DB_FILE)
++    c = conn.cursor()
++    c.execute("""
++    CREATE TABLE IF NOT EXISTS patches (
++      id INTEGER PRIMARY KEY AUTOINCREMENT,
++      name TEXT UNIQUE,
++      signature TEXT,
++      fingerprint TEXT,
++      uploaded_at INTEGER,
++      metadata TEXT,
++      uploader TEXT
++    )""")
++    c.execute(f"""
++    CREATE TABLE IF NOT EXISTS {API_KEYS_TABLE} (
++      key TEXT PRIMARY KEY,
++      owner TEXT,
++      created_at INTEGER
++    )""")
++    conn.commit()
++    conn.close()
++
++def simple_auth(x_api_key: Optional[str] = None):
++    # Fast, simple API key check from header X-API-KEY
++    if not x_api_key:
++        raise HTTPException(status_code=401, detail="Missing API key")
++    conn = sqlite3.connect(DB_FILE)
++    c = conn.cursor()
++    c.execute(f"SELECT key FROM {API_KEYS_TABLE} WHERE key = ?", (x_api_key,))
++    row = c.fetchone()
++    conn.close()
++    if not row:
++        raise HTTPException(status_code=403, detail="Invalid API key")
++    return x_api_key
++
++class PatchRecord(BaseModel):
++    name: str
++    signature: str
++    fingerprint: str
++    metadata: Optional[dict] = {}
++    uploader: Optional[str] = "unknown"
++
++@app.on_event("startup")
++def startup_event():
++    os.makedirs(KEY_DIR, exist_ok=True)
++    ensure_db()
++
++@app.post("/api/v1/patches", response_class=JSONResponse)
++async def upload_patch(record: PatchRecord, api_key: str = Depends(simple_auth)):
++    # store or update patch record
++    conn = sqlite3.connect(DB_FILE)
++    c = conn.cursor()
++    now = int(time.time())
++    try:
++        c.execute("INSERT INTO patches (name, signature, fingerprint, uploaded_at, metadata, uploader) VALUES (?,?,?,?,?,?)",
++                  (record.name, record.signature, record.fingerprint, now, json.dumps(record.metadata), record.uploader))
++        conn.commit()
++    except sqlite3.IntegrityError:
++        # update
++        c.execute("UPDATE patches SET signature=?, fingerprint=?, uploaded_at=?, metadata=?, uploader=? WHERE name=?",
++                  (record.signature, record.fingerprint, now, json.dumps(record.metadata), record.uploader, record.name))
++        conn.commit()
++    conn.close()
++    return {"status": "ok", "name": record.name}
++
++@app.get("/api/v1/patches/{name}")
++def get_patch(name: str):
++    conn = sqlite3.connect(DB_FILE)
++    c = conn.cursor()
++    c.execute("SELECT name, signature, fingerprint, uploaded_at, metadata, uploader FROM patches WHERE name=?", (name,))
++    row = c.fetchone()
++    conn.close()
++    if not row:
++        raise HTTPException(status_code=404, detail="Not found")
++    name, sig, fp, uploaded_at, metadata, uploader = row
++    return {"name": name, "signature": sig, "fingerprint": fp, "uploaded_at": uploaded_at, "metadata": json.loads(metadata), "uploader": uploader}
++
++@app.get("/api/v1/pubkey")
++def pubkey():
++    if not os.path.exists(PUB_KEY_FILE):
++        return {"pubkey": None}
++    with open(PUB_KEY_FILE, "r") as f:
++        return {"pubkey": f.read()}
++
++@app.post("/api/v1/verify")
++def server_verify(name: str = Form(...), content_b64: str = Form(...)):
++    # compute fingerprint server-side and compare to stored record
++    content = base64.b64decode(content_b64.encode())
++    fp = hashlib.sha3_512(content).hexdigest()
++    conn = sqlite3.connect(DB_FILE)
++    c = conn.cursor()
++    c.execute("SELECT fingerprint, signature FROM patches WHERE name=?", (name,))
++    row = c.fetchone()
++    conn.close()
++    if not row:
++        raise HTTPException(status_code=404, detail="patch not found")
++    stored_fp, signature = row
++    ok = (stored_fp == fp)
++    return {"name": name, "fingerprint_match": ok, "stored_fingerprint": stored_fp, "computed": fp, "signature": signature}
++
++@app.post("/api/v1/apikey")
++def create_api_key(owner: str = Form(...)):
++    # create a random API key (admin-only in real world)
++    key = hashlib.sha256(f"{owner}:{time.time()}".encode()).hexdigest()
++    conn = sqlite3.connect(DB_FILE)
++    c = conn.cursor()
++    c.execute(f"INSERT OR IGNORE INTO {API_KEYS_TABLE} (key, owner, created_at) VALUES (?,?,?)", (key, owner, int(time.time())))
++    conn.commit()
++    conn.close()
++    return {"api_key": key, "owner": owner}
+

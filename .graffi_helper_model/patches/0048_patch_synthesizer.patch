@@ -1,0 +1,80 @@
+diff --git a/tools/patch_synthesizer.py b/tools/patch_synthesizer.py
+new file mode 100644
+index 0000000..8888888
+--- /dev/null
++++ b/tools/patch_synthesizer.py
+@@ -0,0 +1,220 @@
++"""
++ML-guided patch synthesizer (local).
++This module uses heuristics + the trained logistic model to suggest simple text patches.
++It is intentionally conservative: it synthesizes small diffs that modify config / small code templates.
++"""
++import os
++import json
++import hashlib
++from typing import List, Dict, Optional
++from ml.trainer import SimpleLogistic, SimpleLogistic as TrainerModel
++from ml.registry import register_model, get_latest_by_name
++from datetime import datetime
++
++SYNTH_DIR = os.environ.get("GRAFFI_SYNTH_DIR", "synth")
++os.makedirs(SYNTH_DIR, exist_ok=True)
++
++def _hash_bytes(b: bytes) -> str:
++    return hashlib.sha256(b).hexdigest()
++
++def suggest_change_from_features(features: Dict, model_name: str = "demo_model") -> str:
++    """
++    Simple policy: if model predicts class 1 (user exists) and len_payload high, recommend
++    increasing THUMBNAIL_SIZE in .env.template to reduce CPU. This is illustrative.
++    """
++    model_meta = get_latest_by_name(model_name)
++    if not model_meta:
++        # fallback deterministic suggestion
++        return "No model found; no suggestion."
++    # use feature vector mapping consistent with trainer
++    x = [features.get("hour",0), features.get("len_payload",0), features.get("has_user",0)]
++    # load model if exists
++    try:
++        model = TrainerModel.load(model_name)
++    except Exception:
++        # can't load model; conservative suggestion
++        return "Model load failed; skip synthesis."
++    score = model.predict_proba(x)
++    # threshold-based heuristic
++    if score > 0.7 and features.get("len_payload",0) > 100:
++        # propose an ENV change: reduce thumbnail size (e.g. from 256 -> 128)
++        patch_name = f"auto_patch_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.patch"
++        patch_path = os.path.join(SYNTH_DIR, patch_name)
++        contents = []
++        contents.append("diff --git a/.env.template b/.env.template")
++        contents.append("index 000000..000000 100644")
++        contents.append("--- a/.env.template")
++        contents.append("+++ b/.env.template")
++        contents.append("@@ -1,40 +1,40 @@")
++        contents.append("-THUMBNAIL_SIZE=256")
++        contents.append("+THUMBNAIL_SIZE=128")
++        patch_text = "\n".join(contents) + "\n"
++        with open(patch_path, "w") as f:
++            f.write(patch_text)
++        return patch_path
++    return "No confident suggestion."
++
++def synthesize_from_feature_file(feature_json: str, limit: int = 10) -> List[str]:
++    with open(feature_json, "r") as f:
++        records = json.load(f)
++    out = []
++    for i, rec in enumerate(records[:limit]):
++        p = suggest_change_from_features(rec.get("features", {}))
++        if p and p.endswith(".patch"):
++            out.append(p)
++    return out
++
++if __name__ == "__main__":
++    # demo: use ml/demo_features.json created earlier
++    demo_json = "ml/demo_features.json"
++    if os.path.exists(demo_json):
++        print("synthesized:", synthesize_from_feature_file(demo_json, limit=5))
++    else:
++        print("no demo features; skip")
+

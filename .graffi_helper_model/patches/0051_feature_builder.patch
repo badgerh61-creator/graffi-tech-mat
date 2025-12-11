@@ -1,0 +1,25 @@
+diff --git a/analytics/feature_builder.py b/analytics/feature_builder.py
+new file mode 100644
+index 0000000..bbbbbbbb
+--- /dev/null
++++ b/analytics/feature_builder.py
+@@ -0,0 +1,160 @@
++"""
++Feature builder that reads the feature store and constructs training datasets
++suitable for the local trainer.
++"""
++import json
++import os
++from analytics.feature_store import query_all
++
++def build_and_export(out_path: str, limit: int = 1000):
++    data = query_all(limit)
++    os.makedirs(os.path.dirname(out_path), exist_ok=True)
++    with open(out_path, "w") as f:
++        json.dump(data, f, indent=2)
++    return out_path
++
++if __name__ == "__main__":
++    path = build_and_export("ml/features_export.json", limit=200)
++    print("exported features to", path)
+

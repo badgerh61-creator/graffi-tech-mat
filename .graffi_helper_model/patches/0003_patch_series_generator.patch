@@ -1,0 +1,27 @@
+diff --git a/generate_patch_series.sh b/generate_patch_series.sh
+index 1111111..2222222 100755
+--- a/generate_patch_series.sh
++++ b/generate_patch_series.sh
+@@ -1,5 +1,44 @@
+ #!/bin/bash
+ echo "=== Patch Series Generator (Omega-INFINITY) ==="
++
++SERIES_DIR=".graffi_helper_model/patches"
++mkdir -p $SERIES_DIR
++
++LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "baseline")
++echo "Using last tag: $LAST_TAG"
++
++COMMITS=$(git log --reverse --pretty=format:"%H" $LAST_TAG..HEAD)
++COUNT=1
++
++for COMMIT in $COMMITS; do
++    SHORT=$(git rev-parse --short $COMMIT)
++    OUT="$SERIES_DIR/$(printf '%04d' $COUNT)_commit_${SHORT}.patch"
++    echo "Writing $OUT"
++    git format-patch -1 $COMMIT --stdout > $OUT
++    COUNT=$((COUNT+1))
++done
++
++echo "Patch series written."
+

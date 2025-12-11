@@ -1,0 +1,45 @@
+diff --git a/tools/patchdown.py b/tools/patchdown.py
+new file mode 100644
+index 0000000..7777777
+--- /dev/null
++++ b/tools/patchdown.py
+@@ -0,0 +1,56 @@
++#!/usr/bin/env python3
++"""
++Patch downloader with mirror fallback and retries. Returns bytes on success.
++"""
++import time
++import urllib.request
++from typing import List
++
++from yaml import safe_load
++
++def load_mirrors(path="config/patch_mirrors.yaml"):
++    with open(path, "r") as f:
++        cfg = safe_load(f)
++    return cfg.get("mirrors", [])
++
++def download_from(url: str, timeout: int = 15):
++    with urllib.request.urlopen(url, timeout=timeout) as r:
++        return r.read()
++
++def download_patch(name: str) -> bytes:
++    mirrors = load_mirrors()
++    errs = []
++    for m in mirrors:
++        url = f"{m['url']}/{name}"
++        try:
++            return download_from(url, timeout=15)
++        except Exception as e:
++            errs.append((url, str(e)))
++            time.sleep(1)
++    raise RuntimeError(f"all mirrors failed: {errs}")
++
++if __name__ == "__main__":
++    import sys
++    if len(sys.argv) < 2:
++        print("usage: patchdown.py <patchfilename>")
++        raise SystemExit(2)
++    data = download_patch(sys.argv[1])
++    print(f"downloaded {len(data)} bytes")
+

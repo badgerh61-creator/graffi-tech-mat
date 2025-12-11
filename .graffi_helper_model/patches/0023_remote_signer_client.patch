@@ -1,0 +1,107 @@
+diff --git a/graffi/remote_signer_client.py b/graffi/remote_signer_client.py
+new file mode 100644
+--- /dev/null
++++ b/graffi/remote_signer_client.py
+@@ -0,0 +1,240 @@
++"""
++Remote Signer Client
++ - upload patch metadata + signature to signing server
++ - query patch records
++ - verify server-side
++
++Usage:
++  python3 graffi/remote_signer_client.py publish --server http://localhost:8000 --api-key <key> --patch .graffi_helper_model/patches/0001.patch
++  python3 graffi/remote_signer_client.py query --server ... --name 0001_env_template_secure.patch
++"""
++import argparse, requests, os, json, base64, hashlib, sys
++
++def compute_fingerprint(path: str) -> str:
++    # use same algorithm as server (sha3_512 of raw bytes)
++    import hashlib
++    h = hashlib.sha3_512()
++    with open(path, "rb") as f:
++        for chunk in iter(lambda: f.read(4096), b""):
++            h.update(chunk)
++    return h.hexdigest()
++
++def publish_patch(server: str, api_key: str, patch_path: str, signature_path: str = None, uploader: str = "user"):
++    if not os.path.exists(patch_path):
++        raise FileNotFoundError(patch_path)
++    name = os.path.basename(patch_path)
++    fingerprint = compute_fingerprint(patch_path)
++    signature = None
++    if signature_path and os.path.exists(signature_path):
++        with open(signature_path, "r") as f:
++            signature = f.read().strip()
++    elif os.path.exists(patch_path + ".sig"):
++        with open(patch_path + ".sig", "r") as f:
++            signature = f.read().strip()
++    payload = {
++        "name": name,
++        "signature": signature or "",
++        "fingerprint": fingerprint,
++        "metadata": {"size": os.path.getsize(patch_path)},
++        "uploader": uploader
++    }
++    url = server.rstrip("/") + "/api/v1/patches"
++    headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
++    r = requests.post(url, json=payload, headers=headers, timeout=30)
++    r.raise_for_status()
++    return r.json()
++
++def query_patch(server: str, name: str):
++    url = server.rstrip("/") + f"/api/v1/patches/{name}"
++    r = requests.get(url, timeout=20)
++    if r.status_code == 404:
++        return None
++    r.raise_for_status()
++    return r.json()
++
++def server_verify(server: str, name: str, patch_path: str):
++    url = server.rstrip("/") + "/api/v1/verify"
++    with open(patch_path, "rb") as f:
++        content_b64 = base64.b64encode(f.read()).decode()
++    r = requests.post(url, data={"name": name, "content_b64": content_b64}, timeout=30)
++    r.raise_for_status()
++    return r.json()
++
++def main():
++    p = argparse.ArgumentParser()
++    sub = p.add_subparsers(dest="cmd")
++    pub = sub.add_parser("publish")
++    pub.add_argument("--server", required=True)
++    pub.add_argument("--api-key", required=True)
++    pub.add_argument("--patch", required=True)
++    pub.add_argument("--sig", required=False)
++    pub.add_argument("--uploader", default="local")
++
++    qry = sub.add_parser("query")
++    qry.add_argument("--server", required=True)
++    qry.add_argument("--name", required=True)
++
++    ver = sub.add_parser("verify")
++    ver.add_argument("--server", required=True)
++    ver.add_argument("--name", required=True)
++    ver.add_argument("--patch", required=True)
++
++    args = p.parse_args()
++    try:
++        if args.cmd == "publish":
++            print("Publishing", args.patch)
++            out = publish_patch(args.server, args.api_key, args.patch, args.sig, args.uploader)
++            print(json.dumps(out, indent=2))
++        elif args.cmd == "query":
++            out = query_patch(args.server, args.name)
++            print(json.dumps(out, indent=2))
++        elif args.cmd == "verify":
++            out = server_verify(args.server, args.name, args.patch)
++            print(json.dumps(out, indent=2))
++        else:
++            p.print_help()
++    except Exception as e:
++        print("ERROR:", e)
++        sys.exit(2)
++
++if __name__ == "__main__":
++    main()
+

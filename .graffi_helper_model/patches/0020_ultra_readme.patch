@@ -1,0 +1,74 @@
+diff --git a/.graffi_helper_model/ULTRA_README.md b/.graffi_helper_model/ULTRA_README.md
+new file mode 100644
+--- /dev/null
++++ b/.graffi_helper_model/ULTRA_README.md
+@@ -0,0 +1,220 @@
++# Graffi ULTRA Patch Suite (0011 — 0020)
++
++This ULTRA set adds autonomous rebuild + signing + quantum-checksum emulation + scheduler.
++
++Files added:
++
++- `graffi/ai_rebuilder.py` — AI-driven patch sequencer and applier.
++- `graffi/patch_signer.py` — local ed25519 signer and verifier (fallbacks supported).
++- `scripts/verify_patch_signatures.sh` — helper to check all patch signatures.
++- `graffi/quantum_checksum.py` — multi-hash fingerprinting (emulated quantum checksum).
++- `.graffi_helper_model/patch_manifest.py` — build manifest of patches (fingerprint + signature state).
++- `graffi/local_kms.py` — tiny local KMS for storing small secrets.
++- `scripts/patch_scheduler.sh` — lightweight scheduler to run nightly (or on-demand).
++- `scripts/generate_and_sign_patches.sh` — generate/sign patches automatically.
++- `scripts/hardened_apply.sh` — verify -> checksum -> apply -> register flow.
++- `.graffi_helper_model/ULTRA_README.md` — this document.
++
++Quick start:
++
++1. Generate signer keypair:
++
++```bash
++python3 graffi/patch_signer.py genkey
++```
++
++2. Sign existing patches:
++
++```bash
++./scripts/generate_and_sign_patches.sh
++```
++
++3. Build manifest:
++
++```bash
++python3 .graffi_helper_model/patch_manifest.py
++```
++
++4. Dry run rebuild:
++
++```bash
++python3 graffi/ai_rebuilder.py --dry
++```
++
++5. Apply patches (hardened):
++
++```bash
++./scripts/hardened_apply.sh
++```
++
++6. (Optional) Start scheduler in background:
++
++```bash
++./scripts/patch_scheduler.sh start
++```
++
++Security notes:
++- `patch_signer` tries to use PyNaCl if available. Without PyNaCl it falls back to insecure HMAC-like SHA256 matching — install `pynacl` for full security.
++- `local_kms` is intentionally minimal and NOT a replacement for a real KMS. Use only for non-critical, local secrets.
++- Always run sandbox validation prior to applying patches.
++
++Support:
++If you want me to:
++- Add remote signature verification with a public key server,
++- Add GPG-based signing instead of ed25519,
++- Wire-up an HSM or cloud KMS,
++say which and I’ll produce the next patch set (0021+).
++
++Enjoy your ULTRA stack.
+

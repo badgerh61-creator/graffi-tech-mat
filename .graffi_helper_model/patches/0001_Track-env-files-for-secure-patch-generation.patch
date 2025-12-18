@@ -1,0 +1,74 @@
+diff --git a/.env b/.env
+new file mode 100644
+index 0000000..65c0c5f
+--- /dev/null
++++ b/.env
+@@ -0,0 +1,15 @@
++ENV=development
++DATABASE_URL=sqlite:///./graffi.db
++
++SECRET_KEY=${SECRET_KEY:?SET_A_SECURE_VALUE}
++
++AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?SET_SECURE_VALUE}
++AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?SET_SECURE_VALUE}
++AWS_REGION=us-east-1
++S3_ENDPOINT_URL=http://minio:9000
++S3_BUCKET=graffi-assets
++
++CELERY_BROKER_URL=redis://redis:6379/0
++CORS_ORIGINS=["*"]
++
++THUMBNAIL_SIZE=256
+diff --git a/.env.prod.template b/.env.prod.template
+new file mode 100644
+index 0000000..c17f1a3
+--- /dev/null
++++ b/.env.prod.template
+@@ -0,0 +1,21 @@
++# Production .env template
++
++ENV=production
++
++DATABASE_URL=${DATABASE_URL:?SET_DATABASE_URL}
++
++SECRET_KEY=${SECRET_KEY:?SET_SECURE_VALUE}
++
++AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?SET_SECURE_VALUE}
++AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?SET_SECURE_VALUE}
++AWS_REGION=us-east-1
++S3_ENDPOINT_URL=${S3_ENDPOINT_URL:?SET_S3_ENDPOINT}
++S3_BUCKET=${S3_BUCKET:?SET_S3_BUCKET}
++
++CELERY_BROKER_URL=${CELERY_BROKER_URL:?SET_REDIS_URL}
++
++CORS_ORIGINS=[]
++
++THUMBNAIL_SIZE=256
++
++ACCESS_TOKEN_EXPIRE_MINUTES=60
+diff --git a/.env.template b/.env.template
+new file mode 100644
+index 0000000..4641f0a
+--- /dev/null
++++ b/.env.template
+@@ -0,0 +1,20 @@
++# Development .env (copy this into .env)
++
++ENV=development
++
++DATABASE_URL=sqlite:///./graffi.db
++
++AWS_ACCESS_KEY_ID=YOUR_KEY_HERE
++AWS_SECRET_ACCESS_KEY=YOUR_SECRET_HERE
++AWS_REGION=us-east-1
++S3_ENDPOINT_URL=http://minio:9000
++S3_BUCKET=graffi-assets
++
++CELERY_BROKER_URL=redis://redis:6379/0
++
++CORS_ORIGINS=["*"]
++
++THUMBNAIL_SIZE=256
++
++SECRET_KEY=CHANGE_THIS_VALUE
++ACCESS_TOKEN_EXPIRE_MINUTES=60

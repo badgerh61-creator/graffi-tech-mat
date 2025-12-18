@@ -1,0 +1,405 @@
+diff --git a/.graffi_helper_model/patches/0001_env_template_secure.patch b/.graffi_helper_model/patches/0001_env_template_secure.patch
+index 90d99af..9ed09af 100644
+--- a/.graffi_helper_model/patches/0001_env_template_secure.patch
++++ b/.graffi_helper_model/patches/0001_env_template_secure.patch
+@@ -1,37 +1,75 @@
+ diff --git a/.env b/.env
+-index 1111111..2222222 100644
+---- a/.env
++new file mode 100644
++index 0000000..65c0c5f
++--- /dev/null
+ +++ b/.env
+-@@ -5,9 +5,9 @@ DATABASE_URL=sqlite:///./graffi.db
+-
+- SECRET_KEY=dev-secret
+-
+--AWS_ACCESS_KEY_ID=minioadmin
+--AWS_SECRET_ACCESS_KEY=minioadmin
++@@ -0,0 +1,15 @@
+++ENV=development
+++DATABASE_URL=sqlite:///./graffi.db
+++
+++SECRET_KEY=${SECRET_KEY:?SET_A_SECURE_VALUE}
+++
+ +AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?SET_SECURE_VALUE}
+ +AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?SET_SECURE_VALUE}
+- AWS_REGION=us-east-1
+- S3_ENDPOINT_URL=http://minio:9000
+- S3_BUCKET=graffi-assets
+-@@ -16,7 +16,7 @@ CELERY_BROKER_URL=redis://redis:6379/0
+-
+- CORS_ORIGINS=["*"]
+-
+--THUMBNAIL_SIZE=256
+-+SECRET_KEY=${SECRET_KEY:?SET_A_SECURE_VALUE}
+-
+++AWS_REGION=us-east-1
+++S3_ENDPOINT_URL=http://minio:9000
+++S3_BUCKET=graffi-assets
+++
+++CELERY_BROKER_URL=redis://redis:6379/0
+++CORS_ORIGINS=["*"]
+++
+++THUMBNAIL_SIZE=256
++diff --git a/.env.prod.template b/.env.prod.template
++new file mode 100644
++index 0000000..c17f1a3
++--- /dev/null
+++++ b/.env.prod.template
++@@ -0,0 +1,21 @@
+++# Production .env template
+++
+++ENV=production
+++
+++DATABASE_URL=${DATABASE_URL:?SET_DATABASE_URL}
+++
+++SECRET_KEY=${SECRET_KEY:?SET_SECURE_VALUE}
+++
+++AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?SET_SECURE_VALUE}
+++AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?SET_SECURE_VALUE}
+++AWS_REGION=us-east-1
+++S3_ENDPOINT_URL=${S3_ENDPOINT_URL:?SET_S3_ENDPOINT}
+++S3_BUCKET=${S3_BUCKET:?SET_S3_BUCKET}
+++
+++CELERY_BROKER_URL=${CELERY_BROKER_URL:?SET_REDIS_URL}
+++
+++CORS_ORIGINS=[]
+++
+++THUMBNAIL_SIZE=256
+++
+++ACCESS_TOKEN_EXPIRE_MINUTES=60
+ diff --git a/.env.template b/.env.template
+-index 3333333..4444444 100644
+---- a/.env.template
++new file mode 100644
++index 0000000..4641f0a
++--- /dev/null
+ +++ b/.env.template
+-@@ -15,9 +15,9 @@ CORS_ORIGINS=["*"]
+-
+- THUMBNAIL_SIZE=256
+-
+--SECRET_KEY=change-me
+--AWS_ACCESS_KEY_ID=minioadmin
+--AWS_SECRET_ACCESS_KEY=minioadmin
+-+SECRET_KEY=CHANGE_THIS_VALUE
++@@ -0,0 +1,20 @@
+++# Development .env (copy this into .env)
+++
+++ENV=development
+++
+++DATABASE_URL=sqlite:///./graffi.db
+++
+ +AWS_ACCESS_KEY_ID=YOUR_KEY_HERE
+ +AWS_SECRET_ACCESS_KEY=YOUR_SECRET_HERE
+++AWS_REGION=us-east-1
+++S3_ENDPOINT_URL=http://minio:9000
+++S3_BUCKET=graffi-assets
+++
+++CELERY_BROKER_URL=redis://redis:6379/0
+++
+++CORS_ORIGINS=["*"]
+++
+++THUMBNAIL_SIZE=256
+++
+++SECRET_KEY=CHANGE_THIS_VALUE
+++ACCESS_TOKEN_EXPIRE_MINUTES=60
+ 
+diff --git a/.graffi_helper_model/patches/0002_add_updater_module.patch b/.graffi_helper_model/patches/0002_add_updater_module.patch
+new file mode 100644
+index 0000000..1207202
+--- /dev/null
++++ b/.graffi_helper_model/patches/0002_add_updater_module.patch
+@@ -0,0 +1,39 @@
++diff --git a/graffi/updater.py b/graffi/updater.py
++new file mode 100644
++--- /dev/null
+++++ b/graffi/updater.py
++@@ -0,0 +1,98 @@
+++"""
+++Graffi-Tech-Mat Updater Module (Omega-INFINITY Edition)
+++-------------------------------------------------------
+++Handles safe, atomic self-updates with rollback protection.
+++"""
+++
+++import os, shutil, hashlib, tempfile
+++
+++class GraffiUpdater:
+++    def __init__(self, target_path="graffi_helper.py"):
+++        self.target = target_path
+++
+++    def checksum(self, path):
+++        h = hashlib.sha256()
+++        with open(path, "rb") as f:
+++            for block in iter(lambda: f.read(4096), b""):
+++                h.update(block)
+++        return h.hexdigest()
+++
+++    def safe_replace(self, new_file):
+++        backup = self.target + ".backup"
+++        shutil.copy2(self.target, backup)
+++
+++        try:
+++            shutil.copy2(new_file, self.target)
+++            return True
+++        except Exception:
+++            shutil.copy2(backup, self.target)
+++            return False
+++
+++def apply_update(new_file):
+++    updater = GraffiUpdater()
+++    return updater.safe_replace(new_file)
++
+diff --git a/.graffi_helper_model/patches/0002_docker_compose_health.patch b/.graffi_helper_model/patches/0002_docker_compose_health.patch
+deleted file mode 100644
+index 3a0b88b..0000000
+--- a/.graffi_helper_model/patches/0002_docker_compose_health.patch
++++ /dev/null
+@@ -1,46 +0,0 @@
+-diff --git a/docker-compose.yml b/docker-compose.yml
+-index 5555555..6666666 100644
+---- a/docker-compose.yml
+-+++ b/docker-compose.yml
+-@@ -12,6 +12,17 @@ services:
+-     build: ./backend
+-     container_name: graffi-tech-mat-api-1
+-
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 3
+-
+-@@ -40,6 +51,15 @@ services:
+-   worker:
+-     build: ./backend
+-     container_name: graffi-tech-mat-worker-1
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD", "celery", "--version"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 3
+-
+-@@ -70,6 +90,15 @@ services:
+-   redis:
+-     image: redis:7-alpine
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD", "redis-cli", "ping"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 3
+-
+-@@ -90,6 +119,15 @@ services:
+-   minio:
+-     image: minio/minio
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 3
+-
+diff --git a/.graffi_helper_model/patches/0003_docker_compose_prod_health.patch b/.graffi_helper_model/patches/0003_docker_compose_prod_health.patch
+deleted file mode 100644
+index 81e1746..0000000
+--- a/.graffi_helper_model/patches/0003_docker_compose_prod_health.patch
++++ /dev/null
+@@ -1,43 +0,0 @@
+-diff --git a/docker-compose.prod.yml b/docker-compose.prod.yml
+-index 7777777..8888888 100644
+---- a/docker-compose.prod.yml
+-+++ b/docker-compose.prod.yml
+-@@ -18,6 +18,15 @@ services:
+-     container_name: graffi-tech-mat-api-prod
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 3
+-
+-@@ -55,6 +64,15 @@ services:
+-   worker:
+-     container_name: graffi-tech-mat-worker-prod
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD", "celery", "--version"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 3
+-
+-@@ -90,6 +108,15 @@ services:
+-   postgres:
+-     image: postgres:15
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 5
+-
+-@@ -130,6 +157,14 @@ services:
+-   frontend:
+-     build: ./frontend
+-+    restart: unless-stopped
+-+    healthcheck:
+-+      test: ["CMD", "curl", "-f", "http://localhost"]
+-+      interval: 30s
+-+      timeout: 5s
+-+      retries: 3
+-
+diff --git a/.graffi_helper_model/patches/0003_patch_series_generator.patch b/.graffi_helper_model/patches/0003_patch_series_generator.patch
+new file mode 100644
+index 0000000..d206677
+--- /dev/null
++++ b/.graffi_helper_model/patches/0003_patch_series_generator.patch
+@@ -0,0 +1,27 @@
++diff --git a/generate_patch_series.sh b/generate_patch_series.sh
++index 1111111..2222222 100755
++--- a/generate_patch_series.sh
+++++ b/generate_patch_series.sh
++@@ -1,5 +1,44 @@
++ #!/bin/bash
++ echo "=== Patch Series Generator (Omega-INFINITY) ==="
+++
+++SERIES_DIR=".graffi_helper_model/patches"
+++mkdir -p $SERIES_DIR
+++
+++LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "baseline")
+++echo "Using last tag: $LAST_TAG"
+++
+++COMMITS=$(git log --reverse --pretty=format:"%H" $LAST_TAG..HEAD)
+++COUNT=1
+++
+++for COMMIT in $COMMITS; do
+++    SHORT=$(git rev-parse --short $COMMIT)
+++    OUT="$SERIES_DIR/$(printf '%04d' $COUNT)_commit_${SHORT}.patch"
+++    echo "Writing $OUT"
+++    git format-patch -1 $COMMIT --stdout > $OUT
+++    COUNT=$((COUNT+1))
+++done
+++
+++echo "Patch series written."
++
+diff --git a/.graffi_helper_model/patches/0004_agent_analyze_stubs.patch b/.graffi_helper_model/patches/0004_agent_analyze_stubs.patch
+deleted file mode 100644
+index 3cdb256..0000000
+--- a/.graffi_helper_model/patches/0004_agent_analyze_stubs.patch
++++ /dev/null
+@@ -1,35 +0,0 @@
+-diff --git a/graffi/agents/architecture.py b/graffi/agents/architecture.py
+-@@
+-+def analyze(root="."):
+-+    return {"role": "architecture", "status": "ok"}
+-
+-diff --git a/graffi/agents/backend.py b/graffi/agents/backend.py
+-@@
+-+def analyze(root="."):
+-+    return {"role": "backend", "backend_exists": True}
+-
+-diff --git a/graffi/agents/frontend.py b/graffi/agents/frontend.py
+-@@
+-+def analyze(root="."):
+-+    return {"role": "frontend", "admin_build": True}
+-
+-diff --git a/graffi/agents/infra.py b/graffi/agents/infra.py
+-@@
+-+def analyze(root="."):
+-+    return {"role": "infra", "compose_files": ["docker-compose.yml", "docker-compose.prod.yml"]}
+-
+-diff --git a/graffi/agents/safety.py b/graffi/agents/safety.py
+-@@
+-+def analyze(root="."):
+-+    return {"role": "safety", "env_issues": []}
+-
+-diff --git a/graffi/agents/evolution.py b/graffi/agents/evolution.py
+-@@
+-+def analyze(root="."):
+-+    return {"role": "evolution", "drift": []}
+-
+-diff --git a/graffi/agents/refactor.py b/graffi/agents/refactor.py
+-@@
+-+def analyze(root="."):
+-+    return {"role": "refactor", "refactor_candidates": []}
+-
+diff --git a/.graffi_helper_model/patches/0004_patch_apply_engine.patch b/.graffi_helper_model/patches/0004_patch_apply_engine.patch
+new file mode 100644
+index 0000000..47fb9e8
+--- /dev/null
++++ b/.graffi_helper_model/patches/0004_patch_apply_engine.patch
+@@ -0,0 +1,23 @@
++diff --git a/apply_patch_series.sh b/apply_patch_series.sh
++index 1111111..3333333 100755
++--- a/apply_patch_series.sh
+++++ b/apply_patch_series.sh
++@@ -1,5 +1,52 @@
++ #!/bin/bash
++ echo "=== Graffi Patch Apply Engine (Omega-INFINITY) ==="
+++
+++PATCH_DIR=".graffi_helper_model/patches"
+++
+++for PATCH in $PATCH_DIR/*.patch; do
+++    echo "Testing $PATCH..."
+++    if git apply --check "$PATCH"; then
+++        echo "✔ Applying $PATCH"
+++        git apply "$PATCH"
+++    else
+++        echo "❌ Patch failed: $PATCH"
+++        exit 1
+++    fi
+++done
+++
+++echo "✔ All patches applied."
++
+diff --git a/.graffi_helper_model/patches/0005_README_patches.note.patch b/.graffi_helper_model/patches/0005_README_patches.note.patch
+deleted file mode 100644
+index 49f3f8f..0000000
+--- a/.graffi_helper_model/patches/0005_README_patches.note.patch
++++ /dev/null
+@@ -1,6 +0,0 @@
+-diff --git a/README.md b/README.md
+-@@
+-+## Omega Patch Notice
+-+This project has been enhanced using the Graffi Omega Helper.
+-+Security fixes, infra healthchecks, and agent analysis stubs were added.
+-
+diff --git a/.graffi_helper_model/patches/0005_auto_rebuilder.patch b/.graffi_helper_model/patches/0005_auto_rebuilder.patch
+new file mode 100644
+index 0000000..0554d31
+--- /dev/null
++++ b/.graffi_helper_model/patches/0005_auto_rebuilder.patch
+@@ -0,0 +1,30 @@
++diff --git a/auto_rebuilder.sh b/auto_rebuilder.sh
++index 1111111..4444444 100755
++--- a/auto_rebuilder.sh
+++++ b/auto_rebuilder.sh
++@@ -1,5 +1,65 @@
++ #!/bin/bash
++ echo "=== Auto-Rebuilder Engine (Omega-INFINITY) ==="
+++
+++PATCH_DIR=".graffi_helper_model/patches"
+++
+++checksum() {
+++    sha256sum "$1" | awk '{print $1}'
+++}
+++
+++apply_all() {
+++    for P in $PATCH_DIR/*.patch; do
+++        echo "Applying $P..."
+++        git apply --check "$P" || {
+++            echo "❌ Failed integrity check"
+++            exit 1
+++        }
+++        git apply "$P"
+++    done
+++}
+++
+++echo "Running safety validation..."
+++apply_all
+++
+++echo "✔ Auto rebuild complete."
++

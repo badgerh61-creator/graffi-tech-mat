@@ -1,7 +1,34 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Environments & secrets
 .env
 .env.*
+backend/.venv/
+.venv/
+.venv-signing/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / frontend
 node_modules/
+dist/
+build/
+
+# Admin build outputs
 frontend/admin/dist/
 backend/frontend/admin/dist/
+
+# ZIP archives
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+

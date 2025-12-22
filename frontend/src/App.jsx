@@ -1,16 +1,34 @@
-// src/App.jsx
 import React from "react";
-import { Routes, Route } from "react-router-dom";
-import Home from "./pages/Home";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+import Login from "./pages/Login";
 import Studio from "./pages/Studio";
-import Viewer from "./pages/Viewer";
+import { isAuthenticated } from "./utils/auth";
+
+function RequireAuth({ children }) {
+  return isAuthenticated()
+    ? children
+    : <Navigate to="/login" replace />;
+}
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/studio" element={<Studio />} />
-      <Route path="/viewer" element={<Viewer />} />
-    </Routes>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+
+        <Route
+          path="/studio"
+          element={
+            <RequireAuth>
+              <Studio />
+            </RequireAuth>
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/studio" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
+

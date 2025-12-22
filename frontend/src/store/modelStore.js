@@ -1,52 +1,107 @@
-// src/store/modelStore.js
 import { create } from "zustand";
-import { nanoid } from "nanoid";
+import { api } from "../api/client";
+
+/* ================= INTERNAL TIMER ================= */
+let refreshTimer = null;
 
 export const useModelStore = create((set, get) => ({
-  models: [],               // [{ id, name, url, size }]
+  /* ================= STATE ================= */
+
+  models: [],
   currentModelId: null,
+  currentModelUrl: null,
+  urlExpiresAt: null,
 
-  addModelFromAsset(asset) {
-    // Only accept actual 3D model file types
-    const valid = ["glb", "gltf", "fbx", "obj", "usdz"];
-    if (!valid.includes(asset.meta.ext)) return;
+  /* ================= MODELS ================= */
 
-    const id = asset.id || nanoid();
-
-    const model = {
-      id,
-      name: asset.name,
-      url: asset.url,
-      size: asset.size
-    };
-
-    set((s) => ({
-      models: [...s.models.filter((m) => m.id !== id), model],
-      currentModelId: id
-    }));
+  fetchModels: async () => {
+    try {
+      const res = await api.get("/models/");
+      set({ models: res.data });
+    } catch (err) {
+      console.error("Failed to fetch models", err);
+    }
   },
 
-  setCurrentModel(id) {
-    const exists = get().models.find((m) => m.id === id);
-    if (exists) set({ currentModelId: id });
+  /* ================= OPEN MODEL ================= */
+
+  openModel: async (id) => {
+    try {
+      // clear previous timer
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+
+      const res = await api.get(`/models/${id}/url`);
+      const { url, expires_in = 300 } = res.data;
+
+      const expiresAt = Date.now() + expires_in * 1000;
+
+      localStorage.setItem("last_model_id", String(id));
+
+      set({
+        currentModelId: id,
+        currentModelUrl: url,
+        urlExpiresAt: expiresAt,
+      });
+
+      // refresh 30s before expiry
+      refreshTimer = setTimeout(() => {
+        get().refreshModelUrl();
+      }, Math.max(expires_in * 1000 - 30_000, 10_000));
+    } catch (err) {
+      console.error("Failed to open model", err);
+    }
   },
 
-  removeModel(id) {
-    set((s) => {
-      const filtered = s.models.filter((m) => m.id !== id);
-      return {
-        models: filtered,
-        currentModelId:
-          s.currentModelId === id ? (filtered[0]?.id || null) : s.currentModelId
-      };
+  /* ================= REFRESH ================= */
+
+  refreshModelUrl: async () => {
+    const { currentModelId } = get();
+    if (!currentModelId) return;
+
+    try {
+      const res = await api.get(`/models/${currentModelId}/url`);
+      const { url, expires_in = 300 } = res.data;
+
+      set({
+        currentModelUrl: url,
+        urlExpiresAt: Date.now() + expires_in * 1000,
+      });
+
+      refreshTimer = setTimeout(() => {
+        get().refreshModelUrl();
+      }, Math.max(expires_in * 1000 - 30_000, 10_000));
+    } catch (err) {
+      console.warn("Failed to refresh model URL", err);
+    }
+  },
+
+  /* ================= RESTORE ================= */
+
+  restoreLastModel: async () => {
+    const id = localStorage.getItem("last_model_id");
+    if (id) {
+      await get().openModel(Number(id));
+    }
+  },
+
+  /* ================= CLEAR ================= */
+
+  clearModel: () => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+
+    localStorage.removeItem("last_model_id");
+
+    set({
+      currentModelId: null,
+      currentModelUrl: null,
+      urlExpiresAt: null,
     });
   },
-
-  getCurrentModel() {
-    return get().models.find((m) => m.id === get().currentModelId) || null;
-  },
-
-  clear() {
-    set({ models: [], currentModelId: null });
-  }
 }));
+

@@ -5,7 +5,8 @@ from app.db.session import get_db
 from app import schemas, crud
 from app.api.deps import require_admin
 
-router = APIRouter(prefix="/users", tags=["users"])
+# ❗ NO prefix here
+router = APIRouter(tags=["users"])
 
 
 @router.get("/", response_model=list[schemas.UserRead])

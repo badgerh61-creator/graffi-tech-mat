@@ -1,13 +1,18 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
-from .core.config import settings, validate_settings
-from .db.session import Base, engine
+from app.core.config import settings, validate_settings
+from app.db.session import Base, engine
+from app.api import auth, users, models, assets, upload, presign
 
-app = FastAPI()
+app = FastAPI(
+    title="Graffi Tech Mat API",
+    version="1.0.0",
+)
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -16,16 +21,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Admin panel – OPTIONAL during Docker development
-# app.mount('/admin', StaticFiles(directory='frontend/admin/dist', html=True), name='admin')
-
 @app.on_event("startup")
 def startup():
     validate_settings()
     Base.metadata.create_all(bind=engine)
 
+app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(models.router)
+app.include_router(assets.router)
+app.include_router(upload.router)
+app.include_router(presign.router)
 
-# Health check
 @app.get("/health")
 def health():
     return {"status": "ok"}

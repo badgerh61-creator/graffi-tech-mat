@@ -1,7 +1,8 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from ..db.session import Base
+from app.db.session import Base
+
 
 class Asset(Base):
     __tablename__ = "assets"
@@ -17,3 +18,4 @@ class Asset(Base):
 
     model_id = Column(Integer, ForeignKey("models.id"), nullable=True)
     model = relationship("ModelRecord", back_populates="assets")
+

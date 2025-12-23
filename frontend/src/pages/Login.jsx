@@ -1,7 +1,9 @@
-// src/pages/Login.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { setToken, isAuthenticated } from "../utils/auth";
+import {
+  setTokens,
+  isAuthenticated,
+} from "../utils/auth";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
@@ -14,7 +16,7 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  /* ---------------- REDIRECT IF LOGGED IN ---------------- */
+  /* ---------------- REDIRECT IF ALREADY LOGGED IN ---------------- */
   useEffect(() => {
     if (isAuthenticated()) {
       navigate("/studio", { replace: true });
@@ -46,14 +48,14 @@ export default function Login() {
 
       const data = await res.json();
 
-      if (!data.access_token) {
+      if (!data.access_token || !data.refresh_token) {
         throw new Error("Invalid login response");
       }
 
-      // ✅ persist token
-      setToken(data.access_token);
+      // ✅ STORE BOTH TOKENS
+      setTokens(data.access_token, data.refresh_token);
 
-      // ✅ go to studio
+      // ✅ GO TO STUDIO
       navigate("/studio", { replace: true });
     } catch (err) {
       console.error("Login failed:", err);

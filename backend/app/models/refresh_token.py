@@ -1,3 +1,5 @@
+# backend/app/models/refresh_token.py
+
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship

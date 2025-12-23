@@ -7,13 +7,22 @@ class Settings(BaseSettings):
     ENV: str = os.getenv("ENV", "development")
 
     # ================= SECURITY =================
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "CHANGE_ME")
+
+    ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
-        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
+        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
+    )
+
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(
+        os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "14")
     )
 
     # ================= DATABASE =================
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./graffi.db")
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", "sqlite:///./graffi.db"
+    )
 
     # ================= AWS / S3 =================
     AWS_ACCESS_KEY_ID: str | None = os.getenv("AWS_ACCESS_KEY_ID")
@@ -23,8 +32,7 @@ class Settings(BaseSettings):
     S3_BUCKET: str | None = os.getenv("S3_BUCKET")
     S3_ENDPOINT_URL: str | None = os.getenv("S3_ENDPOINT_URL")
 
-    # ================= MINIO (HARD ALIASES) =================
-    # These MUST be real attributes, not only properties
+    # ================= MINIO (ALIASES) =================
     MINIO_ACCESS_KEY: str | None = AWS_ACCESS_KEY_ID
     MINIO_SECRET_KEY: str | None = AWS_SECRET_ACCESS_KEY
     MINIO_BUCKET: str | None = S3_BUCKET

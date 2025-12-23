@@ -20,6 +20,13 @@ def get_user_by_email(db: Session, email: str):
     return db.query(User).filter(User.email == email).first()
 
 
+def list_users(db: Session):
+    """
+    Admin helper: list all users.
+    """
+    return db.query(User).order_by(User.id).all()
+
+
 def create_user(
     db: Session,
     user_in: UserCreate,
@@ -28,6 +35,7 @@ def create_user(
     user = User(
         email=user_in.email,
         hashed_password=hashed_password,
+        is_active=True,
     )
     db.add(user)
     db.commit()
@@ -60,7 +68,12 @@ def get_model(db: Session, model_id: int):
 
 
 def get_models_for_user(db: Session, user_id: int):
-    return db.query(ModelRecord).filter(ModelRecord.owner_id == user_id).all()
+    return (
+        db.query(ModelRecord)
+        .filter(ModelRecord.owner_id == user_id)
+        .order_by(ModelRecord.created_at.desc())
+        .all()
+    )
 
 
 # =========================
@@ -89,6 +102,15 @@ def get_asset(db: Session, asset_id: int):
     return db.query(Asset).filter(Asset.id == asset_id).first()
 
 
-def get_assets(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(Asset).offset(skip).limit(limit).all()
+def get_assets(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+):
+    return (
+        db.query(Asset)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 

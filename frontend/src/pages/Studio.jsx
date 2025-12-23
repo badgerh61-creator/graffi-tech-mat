@@ -1,3 +1,5 @@
+// src/pages/Studio.jsx
+
 import React, { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -8,7 +10,7 @@ import ModelLibrary from "../ui/ModelLibrary";
 import UploadPanel from "../widgets/UploadPanel";
 
 import { useHistoryStore } from "../store/historyStore";
-import { clearToken } from "../utils/auth";
+import { clearTokens } from "../utils/auth";
 import AppShortcuts from "../AppShortcuts";
 
 export default function Studio() {
@@ -20,7 +22,7 @@ export default function Studio() {
   const redo = useHistoryStore?.((s) => s.redo) ?? (() => {});
 
   function handleLogout() {
-    clearToken();
+    clearTokens();
     navigate("/login", { replace: true });
   }
 

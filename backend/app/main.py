@@ -1,3 +1,5 @@
+# backend/app/main.py
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -6,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings, validate_settings
 from app.db.session import Base, engine
-from app.api import auth, users, models, assets, upload, presign
+from app.api import auth, users, models, assets, upload, presign, admin
 
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -26,12 +28,14 @@ def startup():
     validate_settings()
     Base.metadata.create_all(bind=engine)
 
+# ===== ROUTERS =====
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(models.router)
 app.include_router(assets.router)
 app.include_router(upload.router)
 app.include_router(presign.router)
+app.include_router(admin.router)  # ✅ ADMIN ENABLED
 
 @app.get("/health")
 def health():

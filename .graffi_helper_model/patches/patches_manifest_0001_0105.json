@@ -1,0 +1,51 @@
+{
+  "manifest_version": "1.0",
+  "range": {
+    "from": 1,
+    "to": 105
+  },
+  "status": "frozen",
+  "frozen_at_phase": 9,
+  "project": "graffi-tech-mat",
+  "description": "Canonical patch manifest after Phase 9 freeze (Admin + Audit complete)",
+  "protected_zones": [
+    "backend/app/models",
+    "backend/app/db",
+    "backend/alembic",
+    "backend/app/core/config.py",
+    "backend/app/services/storage.py",
+    "frontend/src/store",
+    "frontend/src/api/client.ts",
+    "frontend/src/utils/auth.ts"
+  ],
+  "allowed_patch_types": [
+    "additive_api_endpoints",
+    "ui_extensions",
+    "observability",
+    "performance_hardening",
+    "non_breaking_fixes"
+  ],
+  "forbidden_patch_types": [
+    "schema_mutation",
+    "auth_flow_changes",
+    "rbac_semantics_change",
+    "data_migration",
+    "breaking_api_changes"
+  ],
+  "phases_covered": {
+    "1": "Backend write safety",
+    "2": "Shared models & collaboration",
+    "3": "Role-aware Studio UX",
+    "4": "Upload pipeline hardening",
+    "5": "Admin UI",
+    "6": "Alembic schema freeze",
+    "7": "Auditing (write)",
+    "8": "Admin activity log backend",
+    "9": "Admin audit log UI"
+  },
+  "notes": [
+    "All future work must be delivered as numbered patches",
+    "Direct edits to frozen areas are forbidden",
+    "Violations require new major version"
+  ]
+}

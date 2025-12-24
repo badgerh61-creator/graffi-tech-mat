@@ -21,6 +21,13 @@ class User(Base):
 
     hashed_password = Column(String, nullable=False)
 
+    # 🔐 ROLE SYSTEM
+    role = Column(
+        String,
+        nullable=False,
+        default="viewer",  # viewer | editor | admin
+    )
+
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
 
@@ -30,10 +37,19 @@ class User(Base):
         nullable=False,
     )
 
-    # ✅ ADD THIS (missing back_populates target)
+    # Relationships
     models = relationship(
         "ModelRecord",
         back_populates="owner",
         cascade="all, delete-orphan",
     )
+
+    # -------- ROLE HELPERS --------
+    @property
+    def is_editor(self) -> bool:
+        return self.role in ("editor", "admin")
+
+    @property
+    def is_viewer(self) -> bool:
+        return self.role in ("viewer", "editor", "admin")
 

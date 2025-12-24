@@ -21,11 +21,17 @@ class ModelRecord(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    owner = relationship("User", back_populates="models")
+
     assets = relationship(
         "Asset",
         back_populates="model",
         cascade="all, delete-orphan",
     )
 
-    owner = relationship("User", back_populates="models")
+    # ⭐ NEW
+    permissions = relationship(
+        "ModelPermission",
+        cascade="all, delete-orphan",
+    )
 

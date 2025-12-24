@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(BASE_DIR, "..")))
 from app.db.base import Base
 from app.models.user import User
 from app.models.asset import Asset
-from app.models.model_record import ModelRecord
+from app.models.model import ModelRecord
 from app.models.patch_registry import PatchRegistry
 
 # --- Alembic config ---

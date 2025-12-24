@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "../api/client";
+import { resolveStudioPermissions } from "../permissions/studioPermissions";
 
 /* ================= INTERNAL TIMER ================= */
 let refreshTimer = null;
@@ -11,6 +12,12 @@ export const useModelStore = create((set, get) => ({
   currentModelId: null,
   currentModelUrl: null,
   urlExpiresAt: null,
+
+  // 🔒 Phase 3
+  modelPermissions: resolveStudioPermissions(null),
+
+  // 🟡 Phase 4.4
+  modelStatus: "idle", // idle | loading | ready | failed
 
   /* ================= MODELS ================= */
 
@@ -27,31 +34,38 @@ export const useModelStore = create((set, get) => ({
 
   openModel: async (id) => {
     try {
-      // clear previous timer
       if (refreshTimer) {
         clearTimeout(refreshTimer);
         refreshTimer = null;
       }
 
+      set({ modelStatus: "loading" });
+
       const res = await api.get(`/models/${id}/url`);
-      const { url, expires_in = 300 } = res.data;
+      const { url, expires_in = 300, role } = res.data;
+
+      if (!url) {
+        set({ modelStatus: "failed" });
+        return;
+      }
 
       const expiresAt = Date.now() + expires_in * 1000;
-
       localStorage.setItem("last_model_id", String(id));
 
       set({
         currentModelId: id,
         currentModelUrl: url,
         urlExpiresAt: expiresAt,
+        modelPermissions: resolveStudioPermissions(role ?? "viewer"),
+        modelStatus: "ready",
       });
 
-      // refresh 30s before expiry
       refreshTimer = setTimeout(() => {
         get().refreshModelUrl();
       }, Math.max(expires_in * 1000 - 30_000, 10_000));
     } catch (err) {
       console.error("Failed to open model", err);
+      set({ modelStatus: "failed" });
     }
   },
 
@@ -65,9 +79,15 @@ export const useModelStore = create((set, get) => ({
       const res = await api.get(`/models/${currentModelId}/url`);
       const { url, expires_in = 300 } = res.data;
 
+      if (!url) {
+        set({ modelStatus: "failed" });
+        return;
+      }
+
       set({
         currentModelUrl: url,
         urlExpiresAt: Date.now() + expires_in * 1000,
+        modelStatus: "ready",
       });
 
       refreshTimer = setTimeout(() => {
@@ -75,15 +95,7 @@ export const useModelStore = create((set, get) => ({
       }, Math.max(expires_in * 1000 - 30_000, 10_000));
     } catch (err) {
       console.warn("Failed to refresh model URL", err);
-    }
-  },
-
-  /* ================= RESTORE ================= */
-
-  restoreLastModel: async () => {
-    const id = localStorage.getItem("last_model_id");
-    if (id) {
-      await get().openModel(Number(id));
+      set({ modelStatus: "failed" });
     }
   },
 
@@ -101,6 +113,8 @@ export const useModelStore = create((set, get) => ({
       currentModelId: null,
       currentModelUrl: null,
       urlExpiresAt: null,
+      modelPermissions: resolveStudioPermissions(null),
+      modelStatus: "idle",
     });
   },
 }));

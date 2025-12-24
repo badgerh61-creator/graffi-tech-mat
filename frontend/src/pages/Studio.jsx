@@ -1,5 +1,3 @@
-// src/pages/Studio.jsx
-
 import React, { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -10,6 +8,7 @@ import ModelLibrary from "../ui/ModelLibrary";
 import UploadPanel from "../widgets/UploadPanel";
 
 import { useHistoryStore } from "../store/historyStore";
+import { useModelStore } from "../store/modelStore";
 import { clearTokens } from "../utils/auth";
 import AppShortcuts from "../AppShortcuts";
 
@@ -17,21 +16,30 @@ export default function Studio() {
   const sceneRef = useRef(null);
   const navigate = useNavigate();
 
-  // ✅ Safe access (prevents white screen if store not ready)
   const undo = useHistoryStore?.((s) => s.undo) ?? (() => {});
   const redo = useHistoryStore?.((s) => s.redo) ?? (() => {});
+
+  const permissions = useModelStore((s) => s.modelPermissions);
+  const modelStatus = useModelStore((s) => s.modelStatus);
 
   function handleLogout() {
     clearTokens();
     navigate("/login", { replace: true });
   }
 
+  const statusText =
+    modelStatus === "loading"
+      ? "Processing model…"
+      : modelStatus === "failed"
+      ? "Model failed to process"
+      : permissions.isReadOnly
+      ? "Read-only mode"
+      : "Editing enabled";
+
   return (
     <div className="studio-page min-h-screen bg-slate-100 flex flex-col">
-      {/* Keyboard shortcuts */}
       <AppShortcuts undo={undo} redo={redo} />
 
-      {/* ===== TOP BAR ===== */}
       <header className="flex items-center justify-between px-4 py-3 bg-white border-b">
         <h1 className="text-lg font-semibold">
           Graffi Studio — Ultra
@@ -45,19 +53,16 @@ export default function Studio() {
         </button>
       </header>
 
-      {/* ===== MAIN CONTENT ===== */}
       <main
         className="flex-1 grid gap-3 p-3"
         style={{ gridTemplateColumns: "3fr 1fr" }}
       >
-        {/* ===== CANVAS ===== */}
         <section className="bg-white rounded border overflow-hidden">
           <CanvasBoundary>
             <SceneCanvas ref={sceneRef} />
           </CanvasBoundary>
         </section>
 
-        {/* ===== SIDEBAR ===== */}
         <aside className="space-y-3">
           <UIPanel title="Upload">
             <UploadPanel />
@@ -69,7 +74,7 @@ export default function Studio() {
 
           <UIPanel title="Status">
             <div className="text-sm text-slate-600">
-              Studio loaded successfully.
+              {statusText}
             </div>
           </UIPanel>
         </aside>

@@ -8,6 +8,9 @@ import {
 
 import Login from "./pages/Login";
 import Studio from "./pages/Studio";
+import Admin from "./pages/Admin";
+import AdminRoute from "./routes/AdminRoute";
+
 import {
   isAuthenticated,
   getRefreshToken,
@@ -79,8 +82,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* ---------- AUTH ---------- */}
         <Route path="/login" element={<Login />} />
 
+        {/* ---------- STUDIO ---------- */}
         <Route
           path="/studio"
           element={
@@ -90,6 +95,19 @@ export default function App() {
           }
         />
 
+        {/* ---------- ADMIN ---------- */}
+        <Route
+          path="/admin"
+          element={
+            <RequireAuth>
+              <AdminRoute>
+                <Admin />
+              </AdminRoute>
+            </RequireAuth>
+          }
+        />
+
+        {/* ---------- FALLBACK ---------- */}
         <Route
           path="*"
           element={<Navigate to="/studio" replace />}

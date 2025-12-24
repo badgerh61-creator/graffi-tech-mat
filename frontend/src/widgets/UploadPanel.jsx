@@ -1,5 +1,4 @@
-// src/widgets/UploadPanel.jsx
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useState } from "react";
 import { assetsApi } from "../api";
 import { useModelStore } from "../store/modelStore";
 import { isAuthenticated } from "../utils/auth";
@@ -7,56 +6,82 @@ import { isAuthenticated } from "../utils/auth";
 export default function UploadPanel() {
   const fetchModels = useModelStore((s) => s.fetchModels);
   const openModel = useModelStore((s) => s.openModel);
+  const permissions = useModelStore((s) => s.modelPermissions);
+  const modelStatus = useModelStore((s) => s.modelStatus);
+
   const fileInput = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   const handleFile = useCallback(
     async (file) => {
-      if (!file) return;
+      if (!file || uploading) return;
+      if (!permissions.canUpload) return;
 
       if (!isAuthenticated()) {
         alert("You are not logged in");
         return;
       }
 
+      setUploading(true);
+
       try {
         const res = await assetsApi.upload(file);
         const uploaded = res.data;
 
-        // refresh list
         await fetchModels();
 
-        // auto-open uploaded model if backend created one
         if (uploaded?.model_id) {
           await openModel(uploaded.model_id);
         }
       } catch (err) {
         console.error("Upload failed:", err);
-        alert("Upload failed");
+        alert("Upload failed. Please retry.");
+      } finally {
+        setUploading(false);
       }
     },
-    [fetchModels, openModel]
+    [fetchModels, openModel, uploading, permissions.canUpload]
   );
 
-  return (
-    <div className="flex items-center gap-3">
-      <button
-        type="button"
-        className="btn-sm"
-        onClick={() => fileInput.current?.click()}
-      >
-        Upload GLB
-      </button>
+  if (!permissions.canUpload) {
+    return <div className="text-sm text-slate-400">Read-only access</div>;
+  }
 
-      <input
-        ref={fileInput}
-        type="file"
-        accept=".glb,.gltf"
-        className="hidden"
-        onChange={(e) => {
-          handleFile(e.target.files?.[0]);
-          e.target.value = "";
-        }}
-      />
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className="btn-sm disabled:opacity-60"
+          disabled={uploading}
+          onClick={() => fileInput.current?.click()}
+        >
+          {uploading ? "Uploading…" : "Upload GLB"}
+        </button>
+
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".glb,.gltf"
+          className="hidden"
+          onChange={(e) => {
+            handleFile(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+      </div>
+
+      {modelStatus === "loading" && (
+        <div className="text-xs text-slate-500">
+          Processing model…
+        </div>
+      )}
+
+      {modelStatus === "failed" && (
+        <div className="text-xs text-rose-600">
+          Processing failed. You can retry upload.
+        </div>
+      )}
     </div>
   );
 }

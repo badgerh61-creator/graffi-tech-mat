@@ -6,3 +6,11 @@ from app.models.model import ModelRecord
 from app.models.model_permission import ModelPermission
 from app.models.audit_log import AuditLog
 
+__all__ = [
+    "User",
+    "Asset",
+    "ModelRecord",
+    "ModelPermission",
+    "AuditLog",
+]
+

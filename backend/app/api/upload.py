@@ -6,7 +6,7 @@ from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.services import storage as s3
 from app import crud, schemas
-from app.worker.tasks import process_asset_task
+from app.models.asset import AssetStatus
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -29,20 +29,7 @@ async def upload_asset(
 
     key = f"uploads/{uuid.uuid4().hex}_{file.filename}"
 
-    s3.upload_fileobj(
-        io.BytesIO(contents),
-        key,
-        content_type=file.content_type,
-    )
-
-    model = None
-    if file.filename.lower().endswith(".glb"):
-        model = crud.create_model(
-            db,
-            schemas.ModelCreate(name=file.filename),
-            owner_id=user.id,
-        )
-
+    # 1️⃣ Create asset row FIRST
     asset = crud.create_asset(
         db,
         schemas.AssetCreate(
@@ -51,9 +38,36 @@ async def upload_asset(
             size=len(contents),
             s3_key=key,
         ),
-        model_id=model.id if model else None,
     )
 
-    process_asset_task.delay(asset.id)
+    try:
+        crud.transition_asset_status(
+            db,
+            asset=asset,
+            new_status=AssetStatus.uploading,
+        )
+
+        # 2️⃣ Upload to storage
+        s3.upload_fileobj(
+            io.BytesIO(contents),
+            key,
+            content_type=file.content_type,
+        )
+
+        crud.transition_asset_status(
+            db,
+            asset=asset,
+            new_status=AssetStatus.uploaded,
+        )
+
+    except Exception as exc:
+        crud.transition_asset_status(
+            db,
+            asset=asset,
+            new_status=AssetStatus.failed,
+            error=str(exc),
+        )
+        raise HTTPException(503, "Upload failed")
+
     return asset
 

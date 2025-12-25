@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from app.schemas import ModelCreate, AssetCreate, UserCreate
 from app.models.user import User
-from app.models.asset import Asset
+from app.models.asset import Asset, AssetStatus
 from app.models.model import ModelRecord
 from app.models.model_permission import ModelPermission
 
@@ -104,17 +104,22 @@ def get_model_if_accessible(db: Session, *, model_id: int, user_id: int):
 
 
 # =========================
-# ASSETS (CORE)
+# ASSETS (PHASE 10 STATE MACHINE)
 # =========================
 
-def create_asset(db: Session, asset_in: AssetCreate, model_id: int | None = None):
+def create_asset(
+    db: Session,
+    asset_in: AssetCreate,
+    model_id: int | None = None,
+):
     asset = Asset(
         filename=asset_in.filename,
         content_type=asset_in.content_type,
         size=asset_in.size,
         s3_key=asset_in.s3_key,
         model_id=model_id,
-        processed=False,
+        status=AssetStatus.created,
+        status_updated_at=datetime.utcnow(),
         processing_error=None,
     )
     db.add(asset)
@@ -129,81 +134,110 @@ def delete_asset(db: Session, *, asset: Asset):
 
 
 # =========================
-# PHASE 4.3 — RECOVERY HELPERS
+# ASSET STATE TRANSITIONS
 # =========================
 
-def list_unprocessed_assets(db: Session, older_than_minutes: int = 5):
-    """
-    Assets stuck in pending state beyond threshold.
-    """
+ALLOWED_TRANSITIONS = {
+    AssetStatus.created: {AssetStatus.uploading, AssetStatus.failed},
+    AssetStatus.uploading: {AssetStatus.uploaded, AssetStatus.failed},
+    AssetStatus.uploaded: {AssetStatus.processing, AssetStatus.failed},
+    AssetStatus.processing: {AssetStatus.ready, AssetStatus.failed},
+    AssetStatus.ready: set(),
+    AssetStatus.failed: set(),
+}
+
+
+def transition_asset_status(
+    db: Session,
+    *,
+    asset: Asset,
+    new_status: AssetStatus,
+    error: str | None = None,
+):
+    if new_status not in ALLOWED_TRANSITIONS[asset.status]:
+        raise ValueError(
+            f"Illegal asset transition: {asset.status} → {new_status}"
+        )
+
+    asset.status = new_status
+    asset.status_updated_at = datetime.utcnow()
+
+    if new_status == AssetStatus.failed:
+        asset.processing_error = error
+    else:
+        asset.processing_error = None
+
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+# =========================
+# MAINTENANCE / RECOVERY
+# =========================
+
+def list_stuck_assets(
+    db: Session,
+    *,
+    older_than_minutes: int = 10,
+):
     cutoff = datetime.utcnow() - timedelta(minutes=older_than_minutes)
+
     return (
         db.query(Asset)
         .filter(
-            Asset.processed.is_(False),
-            Asset.created_at < cutoff,
+            Asset.status.in_(
+                [AssetStatus.uploading, AssetStatus.processing]
+            ),
+            Asset.status_updated_at < cutoff,
         )
         .all()
     )
 
 
 def list_failed_assets(db: Session):
-    """
-    Assets with explicit processing failures.
-    """
     return (
         db.query(Asset)
-        .filter(Asset.processing_error.isnot(None))
+        .filter(Asset.status == AssetStatus.failed)
         .all()
     )
 
 
-def mark_asset_failed(
+# =========================
+# PHASE 10.3 — ADMIN RECOVERY
+# =========================
+
+def admin_retry_asset(db: Session, *, asset: Asset):
+    """
+    Admin-triggered retry.
+    Only allowed from failed state.
+    """
+    if asset.status != AssetStatus.failed:
+        raise ValueError("Only failed assets can be retried")
+
+    asset.status = AssetStatus.uploaded
+    asset.processing_error = None
+    asset.status_updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+def admin_force_fail_asset(
     db: Session,
     *,
     asset: Asset,
     reason: str,
 ):
+    """
+    Admin-forced permanent failure.
+    """
+    asset.status = AssetStatus.failed
     asset.processing_error = reason
-    asset.processed = False
+    asset.status_updated_at = datetime.utcnow()
+
     db.commit()
     db.refresh(asset)
     return asset
-
-
-def mark_asset_processed(db: Session, *, asset: Asset):
-    asset.processed = True
-    asset.processing_error = None
-    db.commit()
-    db.refresh(asset)
-    return asset
-
-
-def cleanup_orphan_assets(
-    db: Session,
-    *,
-    max_age_minutes: int = 60,
-):
-    """
-    Deletes DB rows for assets that:
-    - never processed
-    - are old
-    - safe to remove
-    """
-    cutoff = datetime.utcnow() - timedelta(minutes=max_age_minutes)
-
-    orphans = (
-        db.query(Asset)
-        .filter(
-            Asset.processed.is_(False),
-            Asset.created_at < cutoff,
-        )
-        .all()
-    )
-
-    for asset in orphans:
-        db.delete(asset)
-
-    db.commit()
-    return len(orphans)
 

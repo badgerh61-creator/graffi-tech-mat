@@ -1,12 +1,14 @@
-# backend/app/api/admin.py
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
 
 from app.db.session import get_db
-from app.api.deps import require_admin, get_current_user
+from app.api.deps import require_admin
 from app.models.user import User
 from app.models.refresh_token import RefreshToken
+from app.models.asset import Asset, AssetStatus
+from app.worker.tasks import process_asset_task
+from app.services import audit
 from app import crud
 
 router = APIRouter(
@@ -56,14 +58,12 @@ def deactivate_user(
 
     user.is_active = False
 
-    # 🔒 revoke all refresh tokens
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user_id,
         RefreshToken.revoked.is_(False),
     ).update({RefreshToken.revoked: True})
 
     db.commit()
-
     return {"detail": "User deactivated and sessions revoked"}
 
 
@@ -79,7 +79,6 @@ def activate_user(
 
     user.is_active = True
     db.commit()
-
     return {"detail": "User activated"}
 
 
@@ -103,9 +102,95 @@ def revoke_user_sessions(
     )
 
     db.commit()
-
     return {
         "detail": "Sessions revoked",
         "revoked_count": count,
     }
+
+
+# =========================
+# PHASE 10.3 — ASSET RECOVERY
+# =========================
+
+@router.get("/assets/failed")
+def list_failed_assets_admin(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    return db.query(Asset).filter(
+        Asset.status == AssetStatus.failed
+    ).all()
+
+
+@router.get("/assets/stuck")
+def list_stuck_assets_admin(
+    older_than_minutes: int = 10,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    cutoff = datetime.utcnow() - timedelta(minutes=older_than_minutes)
+
+    return (
+        db.query(Asset)
+        .filter(
+            Asset.status.in_(
+                [AssetStatus.uploading, AssetStatus.processing]
+            ),
+            Asset.status_updated_at < cutoff,
+        )
+        .all()
+    )
+
+
+@router.post("/assets/{asset_id}/retry")
+def retry_asset_admin(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    asset = db.query(Asset).get(asset_id)
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+
+    crud.admin_retry_asset(db, asset=asset)
+    process_asset_task.delay(asset.id)
+
+    audit.log_event(
+        db,
+        user_id=admin.id,
+        action="asset.retry",
+        resource_type="asset",
+        resource_id=asset.id,
+    )
+
+    return {"detail": "Asset requeued for processing"}
+
+
+@router.post("/assets/{asset_id}/fail")
+def force_fail_asset_admin(
+    asset_id: int,
+    reason: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    asset = db.query(Asset).get(asset_id)
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+
+    crud.admin_force_fail_asset(
+        db,
+        asset=asset,
+        reason=reason,
+    )
+
+    audit.log_event(
+        db,
+        user_id=admin.id,
+        action="asset.force_fail",
+        resource_type="asset",
+        resource_id=asset.id,
+        extra={"reason": reason},
+    )
+
+    return {"detail": "Asset permanently failed"}
 

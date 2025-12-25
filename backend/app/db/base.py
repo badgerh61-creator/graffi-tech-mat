@@ -1,13 +1,17 @@
+# backend/app/db/base.py
+
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
-# Import all model modules so they are registered with Base.metadata
-from app.models import (
+# ✅ Import ALL current model modules so Alembic sees them
+# (module names must match actual filenames)
+
+from app.models import (  # noqa: F401
     user,
     asset,
-    model_record,
-    model_legacy,
-    patch_registry,
-)  # noqa: F401
+    model,              # ✅ WAS model_record
+    model_permission,
+    audit_log,
+)
 

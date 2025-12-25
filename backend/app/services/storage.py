@@ -1,8 +1,11 @@
-from minio import Minio
+from minio import Minio, S3Error
 from app.core.config import settings
-from fastapi import UploadFile
 from datetime import timedelta
 import io
+import time
+import logging
+
+log = logging.getLogger(__name__)
 
 client = Minio(
     settings.MINIO_ENDPOINT,
@@ -11,56 +14,68 @@ client = Minio(
     secure=settings.MINIO_SECURE,
 )
 
+_BUCKET_READY = False
+
 
 def ensure_bucket():
+    global _BUCKET_READY
+    if _BUCKET_READY:
+        return
     if not client.bucket_exists(settings.MINIO_BUCKET):
         client.make_bucket(settings.MINIO_BUCKET)
+    _BUCKET_READY = True
 
 
-# ===========================
-# Upload via UploadFile
-# ===========================
-def upload_file(*, file: UploadFile, object_name: str):
+def _retry(op, attempts=3, backoff=0.5):
+    last = None
+    for i in range(attempts):
+        try:
+            return op()
+        except S3Error as exc:
+            last = exc
+            log.warning("MinIO retry %s/%s failed: %s", i + 1, attempts, exc)
+            time.sleep(backoff * (2 ** i))
+    raise last
+
+
+def object_exists(key: str) -> bool:
     ensure_bucket()
-    client.put_object(
-        settings.MINIO_BUCKET,
-        object_name,
-        file.file,
-        length=-1,
-        part_size=10 * 1024 * 1024,
-        content_type=file.content_type,
-    )
+    try:
+        client.stat_object(settings.MINIO_BUCKET, key)
+        return True
+    except S3Error:
+        return False
 
 
-# ===========================
-# Upload via BytesIO
-# ===========================
 def upload_fileobj(
     fileobj: io.BytesIO,
-    object_name: str,
+    key: str,
+    *,
     content_type: str | None = None,
 ):
     ensure_bucket()
-    client.put_object(
-        settings.MINIO_BUCKET,
-        object_name,
-        fileobj,
-        length=fileobj.getbuffer().nbytes,
-        content_type=content_type or "application/octet-stream",
-    )
+    size = fileobj.getbuffer().nbytes
+
+    def _op():
+        client.put_object(
+            settings.MINIO_BUCKET,
+            key,
+            fileobj,
+            length=size,
+            content_type=content_type or "application/octet-stream",
+        )
+
+    return _retry(_op)
 
 
-# ===========================
-# Presigned URLs (EXPIRABLE)
-# ===========================
-def get_presigned_url(
-    object_name: str,
-    expires_seconds: int = 3600,
-) -> str:
+def get_presigned_url(key: str, expires_seconds: int = 3600) -> str:
     ensure_bucket()
+    if not object_exists(key):
+        raise FileNotFoundError(key)
+
     return client.presigned_get_object(
         settings.MINIO_BUCKET,
-        object_name,
+        key,
         expires=timedelta(seconds=expires_seconds),
     )
 

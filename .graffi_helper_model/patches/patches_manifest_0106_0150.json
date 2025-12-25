@@ -1,0 +1,42 @@
+{
+  "manifest_version": "1.0",
+  "project": "graffi-tech-mat",
+  "baseline": "PHASE_10_FROZEN",
+  "range": {
+    "from": "0106",
+    "to": "0150"
+  },
+  "assumptions": {
+    "single_alembic_head": true,
+    "asset_state_machine": "enforced",
+    "audit_logging": "enabled",
+    "worker_idempotency": "guaranteed"
+  },
+  "locked_components": [
+    "assets.status",
+    "assets.status_updated_at",
+    "celery.process_asset_task",
+    "audit_log",
+    "admin.recovery.endpoints"
+  ],
+  "allowed_changes": [
+    "frontend_only",
+    "additive_backend_endpoints",
+    "non-breaking_schema_additions",
+    "background_workers_extensions"
+  ],
+  "forbidden_changes": [
+    "asset_state_regression",
+    "migration_rewrites",
+    "state_machine_bypass",
+    "direct_db_mutations"
+  ],
+  "next_phases": {
+    "0110": "asset_status_ui",
+    "0120": "thumbnail_pipeline",
+    "0130": "retry_failed_assets_ui",
+    "0140": "background_job_observability",
+    "0150": "export_and_archival"
+  }
+}
+

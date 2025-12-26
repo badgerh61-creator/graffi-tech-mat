@@ -1,3 +1,5 @@
+# backend/app/main.py
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -17,7 +19,7 @@ from app.api import (
     presign,
     admin,
     audit,
-    exports,  # ✅ NEW (Phase A)
+    exports,  # ✅ Phase A
 )
 
 app = FastAPI(
@@ -47,12 +49,12 @@ app.include_router(models.router)
 app.include_router(assets.router)
 app.include_router(upload.router)
 app.include_router(presign.router)
-app.include_router(exports.router)  # ✅ REGISTER EXPORTS
+app.include_router(exports.router)  # ✅ REGISTERED
 
 # 🔐 ADMIN
 app.include_router(admin.router)
 
-# 🔵 PHASE 8 — ADMIN AUDIT LOG UI BACKEND
+# 🔵 AUDIT LOGS
 app.include_router(audit.router)
 
 # ===== HEALTH =====

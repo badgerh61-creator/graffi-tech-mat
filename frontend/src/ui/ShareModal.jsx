@@ -1,9 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useModelStore } from "../store/modelStore";
+import { getAccessToken } from "../utils/auth";
+
+/* ---------------- JWT HELPERS ---------------- */
+function decodeJwt(token) {
+  try {
+    return JSON.parse(atob(token.split(".")[1]));
+  } catch {
+    return null;
+  }
+}
 
 export default function ShareModal({ modelId, onClose }) {
   const permissions = useModelStore((s) => s.modelPermissions);
+
+  const token = getAccessToken();
+  const currentUser = token ? decodeJwt(token) : null;
+  const currentUserId = currentUser?.sub ?? null;
+  const currentUserEmail = currentUser?.email ?? null;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -117,13 +132,11 @@ export default function ShareModal({ modelId, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40"
         onClick={onClose}
       />
 
-      {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -166,6 +179,13 @@ export default function ShareModal({ modelId, onClose }) {
 
             {collaborators.map((c) => {
               const isOwner = c.role === "owner";
+              const isYou = c.user_id === currentUserId;
+
+              const label =
+                c.email ??
+                (isYou
+                  ? currentUserEmail
+                  : `User #${c.user_id}`);
 
               return (
                 <div
@@ -173,7 +193,12 @@ export default function ShareModal({ modelId, onClose }) {
                   className="flex items-center justify-between"
                 >
                   <div className="truncate">
-                    User #{c.user_id}
+                    {label}
+                    {isYou && (
+                      <span className="ml-1 text-xs text-slate-400">
+                        (You)
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -243,7 +268,7 @@ export default function ShareModal({ modelId, onClose }) {
 
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700">
-                    {i.role}
+                    invited as {i.role}
                   </span>
 
                   {permissions.canDelete && (

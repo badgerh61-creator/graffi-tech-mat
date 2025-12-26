@@ -38,15 +38,6 @@ def _retry(op, attempts=3, backoff=0.5):
     raise last
 
 
-def object_exists(key: str) -> bool:
-    ensure_bucket()
-    try:
-        client.stat_object(settings.MINIO_BUCKET, key)
-        return True
-    except S3Error:
-        return False
-
-
 def upload_fileobj(
     fileobj: io.BytesIO,
     key: str,
@@ -70,9 +61,6 @@ def upload_fileobj(
 
 def get_presigned_url(key: str, expires_seconds: int = 3600) -> str:
     ensure_bucket()
-    if not object_exists(key):
-        raise FileNotFoundError(key)
-
     return client.presigned_get_object(
         settings.MINIO_BUCKET,
         key,

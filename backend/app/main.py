@@ -16,7 +16,8 @@ from app.api import (
     upload,
     presign,
     admin,
-    audit,   # 🔵 PHASE 8 — AUDIT LOGS
+    audit,
+    exports,  # ✅ NEW (Phase A)
 )
 
 app = FastAPI(
@@ -46,6 +47,7 @@ app.include_router(models.router)
 app.include_router(assets.router)
 app.include_router(upload.router)
 app.include_router(presign.router)
+app.include_router(exports.router)  # ✅ REGISTER EXPORTS
 
 # 🔐 ADMIN
 app.include_router(admin.router)

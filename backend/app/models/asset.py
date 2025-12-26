@@ -6,6 +6,7 @@ from sqlalchemy import (
     ForeignKey,
     Text,
     Enum,
+    JSON,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -35,7 +36,9 @@ class Asset(Base):
     s3_key = Column(String, unique=True, nullable=False)
     thumbnail_key = Column(String, nullable=True)
 
-    # ✅ Phase 10 — canonical state machine
+    # ✅ Phase 11.1 — SAFE name (NOT "metadata")
+    asset_metadata = Column(JSON, nullable=True)
+
     status = Column(
         Enum(AssetStatus, name="asset_status"),
         nullable=False,

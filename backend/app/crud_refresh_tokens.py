@@ -1,5 +1,3 @@
-# backend/app/crud_refresh_tokens.py
-
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -17,17 +15,22 @@ def create_refresh_token(
     """
     Create a refresh token for a user.
 
-    IMPORTANT:
-    - Revokes ALL existing active refresh tokens for this user
-    - Guarantees ONE active refresh token per user
+    Guarantees:
+    - ONE active refresh token per user
+    - Transaction-safe
+    - No flush-time mutations
     """
 
-    # 🔒 Revoke all existing active tokens for this user
+    # 1️⃣ Revoke all existing active tokens (bulk update only)
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user_id,
         RefreshToken.revoked.is_(False),
-    ).update({RefreshToken.revoked: True})
+    ).update(
+        {RefreshToken.revoked: True},
+        synchronize_session=False,
+    )
 
+    # 2️⃣ Create new refresh token
     rt = RefreshToken(
         user_id=user_id,
         token_hash=hash_refresh_token(token),
@@ -36,8 +39,11 @@ def create_refresh_token(
     )
 
     db.add(rt)
+
+    # 3️⃣ Single commit
     db.commit()
     db.refresh(rt)
+
     return rt
 
 
@@ -59,9 +65,9 @@ def get_refresh_token(db: Session, token: str):
 
 def revoke_refresh_token(db: Session, rt: RefreshToken):
     """
-    Revoke a refresh token explicitly (logout / rotation).
+    Explicit logout / rotation revoke.
+    SAFE: mutates only a persistent object.
     """
     rt.revoked = True
-    db.add(rt)
     db.commit()
 

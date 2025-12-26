@@ -6,25 +6,22 @@ from app.api.deps import require_viewer, require_editor
 from app import crud
 from app.services import storage as s3
 from app.services import audit
+from app.services.email import send_invite_email
 from app.schemas import ModelCreate
+from app.models.asset import AssetStatus
+from app.models.model_permission import ModelPermission
+from app.models.model_invite import InviteStatus
 
 router = APIRouter(prefix="/models", tags=["models"])
 
 MODEL_URL_EXPIRES = 300
+EXPORT_URL_EXPIRES = 300
 
-
-# =========================
-# LIST MODELS
-# =========================
 
 @router.get("/")
 def list_models(db: Session = Depends(get_db), user=Depends(require_viewer)):
     return crud.get_models_accessible_to_user(db, user.id)
 
-
-# =========================
-# CREATE MODEL (AUDITED)
-# =========================
 
 @router.post("/")
 def create_model(
@@ -40,37 +37,11 @@ def create_model(
         action="model.create",
         resource_type="model",
         resource_id=model.id,
-        extra={
-            "name": model.name,
-        },
+        extra={"name": model.name},
     )
 
     return model
 
-
-# =========================
-# GET MODEL
-# =========================
-
-@router.get("/{model_id}")
-def get_model(
-    model_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(require_viewer),
-):
-    model = crud.get_model_if_accessible(
-        db,
-        model_id=model_id,
-        user_id=user.id,
-    )
-    if not model:
-        raise HTTPException(404, "Model not found or no access")
-    return model
-
-
-# =========================
-# GET MODEL URL (HARDENED)
-# =========================
 
 @router.get("/{model_id}/url")
 def get_model_glb_url(
@@ -78,75 +49,60 @@ def get_model_glb_url(
     db: Session = Depends(get_db),
     user=Depends(require_viewer),
 ):
-    model = crud.get_model_if_accessible(
-        db,
-        model_id=model_id,
-        user_id=user.id,
-    )
+    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
     if not model:
         raise HTTPException(404, "Model not found or no access")
 
     for asset in model.assets:
-        if asset.filename.lower().endswith(".glb"):
-            try:
-                return {
-                    "url": s3.get_presigned_url(
-                        asset.s3_key,
-                        expires_seconds=MODEL_URL_EXPIRES,
-                    ),
-                    "expires_in": MODEL_URL_EXPIRES,
-                    "asset_id": asset.id,
-                }
-            except FileNotFoundError:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Model file missing from storage",
-                )
-            except Exception:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Storage service unavailable",
-                )
+        if asset.filename.lower().endswith(".glb") and asset.status == AssetStatus.ready:
+            return {
+                "url": s3.get_presigned_url(asset.s3_key, MODEL_URL_EXPIRES),
+                "expires_in": MODEL_URL_EXPIRES,
+                "asset_id": asset.id,
+            }
 
-    raise HTTPException(404, "No GLB asset attached")
+    raise HTTPException(404, "No ready GLB asset attached")
 
 
-# =========================
-# COLLABORATION (PHASE 2)
-# =========================
-
-@router.get("/{model_id}/collaborators")
-def list_collaborators(
+@router.get("/{model_id}/exports/{export_type}")
+def export_model(
     model_id: int,
+    export_type: str,
     db: Session = Depends(get_db),
     user=Depends(require_viewer),
 ):
-    model = crud.get_model(db, model_id)
+    if export_type != "original_glb":
+        raise HTTPException(400, "Unsupported export type")
+
+    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
     if not model:
-        raise HTTPException(404, "Model not found")
+        raise HTTPException(404, "Model not found or no access")
 
-    try:
-        crud.require_model_role(
-            db,
-            user=user,
-            model=model,
-            min_role="viewer",
-        )
-    except PermissionError:
-        raise HTTPException(403, "No access")
+    for asset in model.assets:
+        if asset.filename.lower().endswith(".glb") and asset.status == AssetStatus.ready:
+            audit.log_event(
+                db,
+                user_id=user.id,
+                action="model.export.downloaded",
+                resource_type="model",
+                resource_id=model.id,
+                extra={"type": export_type},
+            )
 
-    return crud.list_model_collaborators(db, model_id)
+            return {
+                "url": s3.get_presigned_url(asset.s3_key, EXPORT_URL_EXPIRES),
+                "expires_in": EXPORT_URL_EXPIRES,
+                "type": export_type,
+            }
+
+    raise HTTPException(404, "Export not available")
 
 
-# =========================
-# ADD COLLABORATOR (AUDITED)
-# =========================
-
-@router.post("/{model_id}/collaborators")
-def add_collaborator(
+@router.post("/{model_id}/invites")
+def invite_by_email(
     model_id: int,
-    target_user_id: int,
-    role: str,
+    email: str,
+    role: str = "viewer",
     db: Session = Depends(get_db),
     user=Depends(require_editor),
 ):
@@ -154,79 +110,68 @@ def add_collaborator(
     if not model:
         raise HTTPException(404, "Model not found")
 
-    try:
-        crud.require_model_role(
-            db,
-            user=user,
-            model=model,
-            min_role="owner",
-        )
-    except PermissionError:
-        raise HTTPException(403, "Owner or admin required")
+    crud.require_owner(db, user=user, model=model)
 
-    perm = crud.add_model_collaborator(
+    existing_user = crud.get_user_by_email(db, email)
+    if existing_user:
+        perm = ModelPermission(
+            model_id=model.id,
+            user_id=existing_user.id,
+            role=role,
+        )
+        db.add(perm)
+        db.commit()
+        return {"status": "accepted"}
+
+    invite = crud.create_model_invite(
         db,
-        model_id=model_id,
-        user_id=target_user_id,
+        model=model,
+        email=email,
         role=role,
+        invited_by_id=user.id,
+    )
+
+    send_invite_email(
+        to_email=email,
+        model_name=model.name,
+        role=role,
+        token=invite.token,
     )
 
     audit.log_event(
         db,
         user_id=user.id,
-        action="model.collaborator.add",
+        action="model.invite.sent",
         resource_type="model",
-        resource_id=model_id,
-        extra={
-            "target_user_id": target_user_id,
-            "role": role,
-        },
+        resource_id=model.id,
+        extra={"email": email, "role": role},
     )
 
-    return perm
+    return invite
 
 
-# =========================
-# REMOVE COLLABORATOR (AUDITED)
-# =========================
-
-@router.delete("/{model_id}/collaborators/{target_user_id}")
-def remove_collaborator(
-    model_id: int,
-    target_user_id: int,
+@router.post("/invites/{token}/accept")
+def accept_invite(
+    token: str,
     db: Session = Depends(get_db),
-    user=Depends(require_editor),
+    user=Depends(require_viewer),
 ):
-    model = crud.get_model(db, model_id)
-    if not model:
-        raise HTTPException(404, "Model not found")
+    invite = crud.get_invite_by_token(db, token)
+    if not invite or invite.status != InviteStatus.pending:
+        raise HTTPException(404, "Invalid invite")
 
-    try:
-        crud.require_model_role(
-            db,
-            user=user,
-            model=model,
-            min_role="owner",
-        )
-    except PermissionError:
-        raise HTTPException(403, "Owner or admin required")
+    if invite.email.lower() != user.email.lower():
+        raise HTTPException(403, "Invite email mismatch")
 
-    crud.remove_model_collaborator(
-        db,
-        model_id=model_id,
-        user_id=target_user_id,
-    )
+    crud.accept_model_invite(db, invite=invite, user=user)
 
     audit.log_event(
         db,
         user_id=user.id,
-        action="model.collaborator.remove",
+        action="model.invite.accepted",
         resource_type="model",
-        resource_id=model_id,
-        extra={
-            "target_user_id": target_user_id,
-        },
+        resource_id=invite.model_id,
     )
 
-    return {"status": "removed"}
+    return {"status": "accepted"}
 

@@ -50,10 +50,19 @@ class ModelInvite(Base):
         nullable=True,
     )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
     accepted_at = Column(DateTime(timezone=True), nullable=True)
 
-    model = relationship("ModelRecord")
+    # ✅ FIX: explicitly link both sides + silence overlap warning
+    model = relationship(
+        "ModelRecord",
+        back_populates="invites",
+        overlaps="invites",
+    )
+
     invited_by = relationship("User")
 
     __table_args__ = (

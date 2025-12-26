@@ -1,9 +1,25 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useModelStore } from "../store/modelStore";
+import { getAccessToken } from "../utils/auth";
+import { timeAgo } from "../utils/time";
+
+/* ---------------- JWT HELPERS ---------------- */
+function decodeJwt(token) {
+  try {
+    return JSON.parse(atob(token.split(".")[1]));
+  } catch {
+    return null;
+  }
+}
 
 export default function ShareModal({ modelId, onClose }) {
   const permissions = useModelStore((s) => s.modelPermissions);
+
+  const token = getAccessToken();
+  const currentUser = token ? decodeJwt(token) : null;
+  const currentUserId = currentUser?.sub ?? null;
+  const currentUserEmail = currentUser?.email ?? null;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -166,6 +182,13 @@ export default function ShareModal({ modelId, onClose }) {
 
             {collaborators.map((c) => {
               const isOwner = c.role === "owner";
+              const isYou = c.user_id === currentUserId;
+
+              const label =
+                c.email ??
+                (isYou
+                  ? currentUserEmail
+                  : `User #${c.user_id}`);
 
               return (
                 <div
@@ -173,12 +196,20 @@ export default function ShareModal({ modelId, onClose }) {
                   className="flex items-center justify-between"
                 >
                   <div className="truncate">
-                    User #{c.user_id}
+                    {label}
+                    {isYou && (
+                      <span className="ml-1 text-xs text-slate-400">
+                        (You)
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
                     {isOwner ? (
-                      <span className="px-2 py-0.5 rounded text-xs bg-slate-200">
+                      <span
+                        className="px-2 py-0.5 rounded text-xs bg-slate-200"
+                        title="Owners have full control over this model."
+                      >
                         owner
                       </span>
                     ) : (
@@ -186,32 +217,42 @@ export default function ShareModal({ modelId, onClose }) {
                         <select
                           value={c.role}
                           onChange={(e) =>
-                            changeRole(
-                              c.user_id,
-                              e.target.value
-                            )
+                            changeRole(c.user_id, e.target.value)
                           }
                           disabled={!permissions.canEdit}
-                          className="text-xs border rounded px-1 py-0.5"
+                          title={
+                            !permissions.canEdit
+                              ? "Only editors or owners can change collaborator roles."
+                              : "Change collaborator role"
+                          }
+                          className={`text-xs border rounded px-1 py-0.5 ${
+                            !permissions.canEdit
+                              ? "cursor-not-allowed opacity-60"
+                              : ""
+                          }`}
                         >
-                          <option value="viewer">
-                            viewer
-                          </option>
-                          <option value="editor">
-                            editor
-                          </option>
+                          <option value="viewer">viewer</option>
+                          <option value="editor">editor</option>
                         </select>
 
-                        {permissions.canDelete && (
-                          <button
-                            onClick={() =>
-                              removeCollaborator(c.user_id)
-                            }
-                            className="text-xs text-rose-600 hover:underline"
-                          >
-                            remove
-                          </button>
-                        )}
+                        <button
+                          onClick={() =>
+                            removeCollaborator(c.user_id)
+                          }
+                          disabled={!permissions.canDelete}
+                          title={
+                            !permissions.canDelete
+                              ? "Only owners can remove collaborators."
+                              : "Remove collaborator"
+                          }
+                          className={`text-xs ${
+                            permissions.canDelete
+                              ? "text-rose-600 hover:underline"
+                              : "text-slate-400 cursor-not-allowed"
+                          }`}
+                        >
+                          remove
+                        </button>
                       </>
                     )}
                   </div>
@@ -229,6 +270,9 @@ export default function ShareModal({ modelId, onClose }) {
             {invites.length === 0 && (
               <div className="text-xs text-slate-400">
                 No pending invites
+                <div>
+                  Invites you send will appear here until accepted.
+                </div>
               </div>
             )}
 
@@ -239,30 +283,41 @@ export default function ShareModal({ modelId, onClose }) {
               >
                 <div className="truncate">
                   {i.email}
+                  {i.created_at && (
+                    <div className="text-xs text-slate-400">
+                      sent {timeAgo(i.created_at)}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700">
-                    {i.role}
+                    invited as {i.role}
                   </span>
 
-                  {permissions.canDelete && (
-                    <button
-                      onClick={() =>
-                        revokeInvite(i.id)
-                      }
-                      className="text-xs text-rose-600 hover:underline"
-                    >
-                      revoke
-                    </button>
-                  )}
+                  <button
+                    onClick={() => revokeInvite(i.id)}
+                    disabled={!permissions.canDelete}
+                    title={
+                      !permissions.canDelete
+                        ? "Only owners can revoke pending invites."
+                        : "Revoke invite"
+                    }
+                    className={`text-xs ${
+                      permissions.canDelete
+                        ? "text-rose-600 hover:underline"
+                        : "text-slate-400 cursor-not-allowed"
+                    }`}
+                  >
+                    revoke
+                  </button>
                 </div>
               </div>
             ))}
           </div>
 
           {/* SEND INVITE */}
-          {permissions.canEdit && (
+          {permissions.canEdit ? (
             <div className="pt-3 border-t space-y-2">
               <div className="font-medium text-slate-700">
                 Invite by email
@@ -286,12 +341,8 @@ export default function ShareModal({ modelId, onClose }) {
                   }
                   className="flex-1 px-2 py-1 border rounded text-sm"
                 >
-                  <option value="viewer">
-                    viewer
-                  </option>
-                  <option value="editor">
-                    editor
-                  </option>
+                  <option value="viewer">viewer</option>
+                  <option value="editor">editor</option>
                 </select>
 
                 <button
@@ -302,6 +353,10 @@ export default function ShareModal({ modelId, onClose }) {
                   Send
                 </button>
               </div>
+            </div>
+          ) : (
+            <div className="pt-3 border-t text-xs text-slate-400">
+              Only editors or owners can invite collaborators.
             </div>
           )}
         </div>

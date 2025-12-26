@@ -16,7 +16,8 @@ from app.api import (
     upload,
     presign,
     admin,
-    audit,   # 🔵 PHASE 8 — AUDIT LOGS
+    audit,     # 🔵 Phase 8 — Audit Logs
+    activity,  # 🟢 Phase F1 — Activity Feed
 )
 
 app = FastAPI(
@@ -50,8 +51,11 @@ app.include_router(presign.router)
 # 🔐 ADMIN
 app.include_router(admin.router)
 
-# 🔵 PHASE 8 — ADMIN AUDIT LOG UI BACKEND
+# 🔵 Phase 8 — Admin Audit Log UI
 app.include_router(audit.router)
+
+# 🟢 Phase F1 — User Activity Feed
+app.include_router(activity.router)
 
 # ===== HEALTH =====
 @app.get("/health")

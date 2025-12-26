@@ -6,6 +6,7 @@ import CanvasBoundary from "../engine/CanvasBoundary";
 import UIPanel from "../ui/UIPanel";
 import ModelLibrary from "../ui/ModelLibrary";
 import UploadPanel from "../widgets/UploadPanel";
+import ActivityFeed from "../ui/ActivityFeed"; // 🔵 PHASE F1.2
 
 import { useHistoryStore } from "../store/historyStore";
 import { useModelStore } from "../store/modelStore";
@@ -76,6 +77,11 @@ export default function Studio() {
             <div className="text-sm text-slate-600">
               {statusText}
             </div>
+          </UIPanel>
+
+          {/* 🔵 PHASE F1.2 — ACTIVITY FEED */}
+          <UIPanel title="Activity">
+            <ActivityFeed />
           </UIPanel>
         </aside>
       </main>

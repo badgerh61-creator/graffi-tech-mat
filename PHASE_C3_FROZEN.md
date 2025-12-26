@@ -48,9 +48,9 @@
 ### New
 - `backend/app/services/email.py`
 
-### Modified
-- `backend/app/api/models.py`
-- `backend/app/core/config.py`
+### Modified (via prior frozen phases)
+- backend/app/api/models.py
+- backend/app/core/config.py
 
 ---
 

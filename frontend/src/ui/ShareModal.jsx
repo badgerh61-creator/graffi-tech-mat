@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useModelStore } from "../store/modelStore";
 import { getAccessToken } from "../utils/auth";
+import { timeAgo } from "../utils/time";
 
 /* ---------------- JWT HELPERS ---------------- */
 function decodeJwt(token) {
@@ -216,10 +217,7 @@ export default function ShareModal({ modelId, onClose }) {
                         <select
                           value={c.role}
                           onChange={(e) =>
-                            changeRole(
-                              c.user_id,
-                              e.target.value
-                            )
+                            changeRole(c.user_id, e.target.value)
                           }
                           disabled={!permissions.canEdit}
                           title={
@@ -233,12 +231,8 @@ export default function ShareModal({ modelId, onClose }) {
                               : ""
                           }`}
                         >
-                          <option value="viewer">
-                            viewer
-                          </option>
-                          <option value="editor">
-                            editor
-                          </option>
+                          <option value="viewer">viewer</option>
+                          <option value="editor">editor</option>
                         </select>
 
                         <button
@@ -276,6 +270,9 @@ export default function ShareModal({ modelId, onClose }) {
             {invites.length === 0 && (
               <div className="text-xs text-slate-400">
                 No pending invites
+                <div>
+                  Invites you send will appear here until accepted.
+                </div>
               </div>
             )}
 
@@ -286,6 +283,11 @@ export default function ShareModal({ modelId, onClose }) {
               >
                 <div className="truncate">
                   {i.email}
+                  {i.created_at && (
+                    <div className="text-xs text-slate-400">
+                      sent {timeAgo(i.created_at)}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -294,9 +296,7 @@ export default function ShareModal({ modelId, onClose }) {
                   </span>
 
                   <button
-                    onClick={() =>
-                      revokeInvite(i.id)
-                    }
+                    onClick={() => revokeInvite(i.id)}
                     disabled={!permissions.canDelete}
                     title={
                       !permissions.canDelete
@@ -341,12 +341,8 @@ export default function ShareModal({ modelId, onClose }) {
                   }
                   className="flex-1 px-2 py-1 border rounded text-sm"
                 >
-                  <option value="viewer">
-                    viewer
-                  </option>
-                  <option value="editor">
-                    editor
-                  </option>
+                  <option value="viewer">viewer</option>
+                  <option value="editor">editor</option>
                 </select>
 
                 <button

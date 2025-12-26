@@ -29,9 +29,14 @@ class ModelRecord(Base):
         cascade="all, delete-orphan",
     )
 
-    # ⭐ NEW
     permissions = relationship(
         "ModelPermission",
+        cascade="all, delete-orphan",
+    )
+
+    # 🔵 PHASE C2 — email invites
+    invites = relationship(
+        "ModelInvite",
         cascade="all, delete-orphan",
     )
 

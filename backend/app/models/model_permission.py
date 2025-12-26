@@ -25,5 +25,10 @@ class ModelPermission(Base):
     )
 
     user = relationship("User")
-    model = relationship("ModelRecord")
+    model = relationship(
+    "ModelRecord",
+    back_populates="permissions",
+    overlaps="permissions",
+)
+
 

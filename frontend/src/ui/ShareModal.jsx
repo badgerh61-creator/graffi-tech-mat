@@ -132,11 +132,13 @@ export default function ShareModal({ modelId, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40"
         onClick={onClose}
       />
 
+      {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -203,7 +205,10 @@ export default function ShareModal({ modelId, onClose }) {
 
                   <div className="flex items-center gap-2">
                     {isOwner ? (
-                      <span className="px-2 py-0.5 rounded text-xs bg-slate-200">
+                      <span
+                        className="px-2 py-0.5 rounded text-xs bg-slate-200"
+                        title="Owners have full control over this model."
+                      >
                         owner
                       </span>
                     ) : (
@@ -217,7 +222,16 @@ export default function ShareModal({ modelId, onClose }) {
                             )
                           }
                           disabled={!permissions.canEdit}
-                          className="text-xs border rounded px-1 py-0.5"
+                          title={
+                            !permissions.canEdit
+                              ? "Only editors or owners can change collaborator roles."
+                              : "Change collaborator role"
+                          }
+                          className={`text-xs border rounded px-1 py-0.5 ${
+                            !permissions.canEdit
+                              ? "cursor-not-allowed opacity-60"
+                              : ""
+                          }`}
                         >
                           <option value="viewer">
                             viewer
@@ -227,16 +241,24 @@ export default function ShareModal({ modelId, onClose }) {
                           </option>
                         </select>
 
-                        {permissions.canDelete && (
-                          <button
-                            onClick={() =>
-                              removeCollaborator(c.user_id)
-                            }
-                            className="text-xs text-rose-600 hover:underline"
-                          >
-                            remove
-                          </button>
-                        )}
+                        <button
+                          onClick={() =>
+                            removeCollaborator(c.user_id)
+                          }
+                          disabled={!permissions.canDelete}
+                          title={
+                            !permissions.canDelete
+                              ? "Only owners can remove collaborators."
+                              : "Remove collaborator"
+                          }
+                          className={`text-xs ${
+                            permissions.canDelete
+                              ? "text-rose-600 hover:underline"
+                              : "text-slate-400 cursor-not-allowed"
+                          }`}
+                        >
+                          remove
+                        </button>
                       </>
                     )}
                   </div>
@@ -271,23 +293,31 @@ export default function ShareModal({ modelId, onClose }) {
                     invited as {i.role}
                   </span>
 
-                  {permissions.canDelete && (
-                    <button
-                      onClick={() =>
-                        revokeInvite(i.id)
-                      }
-                      className="text-xs text-rose-600 hover:underline"
-                    >
-                      revoke
-                    </button>
-                  )}
+                  <button
+                    onClick={() =>
+                      revokeInvite(i.id)
+                    }
+                    disabled={!permissions.canDelete}
+                    title={
+                      !permissions.canDelete
+                        ? "Only owners can revoke pending invites."
+                        : "Revoke invite"
+                    }
+                    className={`text-xs ${
+                      permissions.canDelete
+                        ? "text-rose-600 hover:underline"
+                        : "text-slate-400 cursor-not-allowed"
+                    }`}
+                  >
+                    revoke
+                  </button>
                 </div>
               </div>
             ))}
           </div>
 
           {/* SEND INVITE */}
-          {permissions.canEdit && (
+          {permissions.canEdit ? (
             <div className="pt-3 border-t space-y-2">
               <div className="font-medium text-slate-700">
                 Invite by email
@@ -327,6 +357,10 @@ export default function ShareModal({ modelId, onClose }) {
                   Send
                 </button>
               </div>
+            </div>
+          ) : (
+            <div className="pt-3 border-t text-xs text-slate-400">
+              Only editors or owners can invite collaborators.
             </div>
           )}
         </div>

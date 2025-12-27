@@ -80,6 +80,15 @@ Permissions are enforced explicitly at the API layer.
 
 ---
 
+> NOTE  
+> An earlier tag named `phase-f2-2-frozen` incorrectly pointed to a schema-only
+> commit from Phase F2.1.  
+>  
+> The corrected frozen state for Phase F2.2 is tagged as:
+> **`phase-f2-2-frozen-v2`**
+
+---
+
 ## Freeze Declaration
 
 Phase F2.2 is complete and frozen.  

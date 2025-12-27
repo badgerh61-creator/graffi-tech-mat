@@ -62,5 +62,11 @@ This phase ensures organizations coexist safely with:
 Phase F2.3 is complete and frozen.  
 This phase establishes the foundation required for F2.4.
 
+> NOTE  
+> Due to an earlier tagging overlap, the corrected frozen state for Phase F2.3
+> is tagged as:
+> **`phase-f2-3-frozen-v2`**
+
+
 No further changes are permitted without a new phase.
 

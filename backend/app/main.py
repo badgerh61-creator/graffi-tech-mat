@@ -7,7 +7,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings, validate_settings
-from app.db.session import Base, engine
+from app.db.base import Base
+from app.db.session import engine
 
 # ===== API ROUTERS =====
 from app.api import (
@@ -20,6 +21,7 @@ from app.api import (
     admin,
     audit,
     exports,
+    organizations,   # 🆕 F2.3
 )
 
 app = FastAPI(
@@ -54,6 +56,9 @@ app.include_router(presign.router)
 app.include_router(admin.router)
 app.include_router(audit.router)
 app.include_router(exports.router)
+
+# 🏢 ORGANIZATIONS (F2.3)
+app.include_router(organizations.router)
 
 # ===== HEALTH =====
 @app.get("/health")

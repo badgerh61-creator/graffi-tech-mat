@@ -3,7 +3,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from app.db.session import Base
+from app.db.base import Base
 
 
 class ModelRecord(Base):
@@ -21,22 +21,34 @@ class ModelRecord(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # 🔗 OWNER
     owner = relationship("User", back_populates="models")
 
+    # 🔗 ASSETS
     assets = relationship(
         "Asset",
         back_populates="model",
         cascade="all, delete-orphan",
     )
 
+    # 🔗 PERMISSIONS
     permissions = relationship(
         "ModelPermission",
+        back_populates="model",
         cascade="all, delete-orphan",
     )
 
-    # 🔵 PHASE C2 — email invites
+    # 🔗 EMAIL INVITES (Phase C2)
     invites = relationship(
         "ModelInvite",
+        back_populates="model",
+        cascade="all, delete-orphan",
+    )
+
+    # 🔗 PATCH REGISTRY (FIX for mapper crash)
+    patches = relationship(
+        "PatchRegistry",
+        back_populates="model",
         cascade="all, delete-orphan",
     )
 

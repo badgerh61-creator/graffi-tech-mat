@@ -1,12 +1,23 @@
+# backend/app/db/session.py
+
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
+from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.engine import Engine
-from ..core.config import settings
+from app.core.config import settings
 
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+connect_args = (
+    {"check_same_thread": False}
+    if settings.DATABASE_URL.startswith("sqlite")
+    else {}
+)
 
-engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, future=True)
+engine = create_engine(
+    settings.DATABASE_URL,
+    connect_args=connect_args,
+    future=True,
+)
 
+# ✅ Enforce FK constraints for SQLite
 if settings.DATABASE_URL.startswith("sqlite"):
     @event.listens_for(Engine, "connect")
     def _enable_fk(dbapi_connection, connection_record):
@@ -14,8 +25,14 @@ if settings.DATABASE_URL.startswith("sqlite"):
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-SessionLocal = scoped_session(sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True))
-Base = declarative_base()
+SessionLocal = scoped_session(
+    sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        future=True,
+    )
+)
 
 def get_db():
     db = SessionLocal()
@@ -23,3 +40,4 @@ def get_db():
         yield db
     finally:
         db.close()
+

@@ -1,4 +1,4 @@
-# app/models/patch_registry.py
+# backend/app/models/patch_registry.py
 
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
@@ -22,7 +22,7 @@ class PatchRegistry(Base):
     patch_name = Column(String, nullable=False)
     patch_version = Column(String, nullable=False)
 
-    # ❗ FIX: renamed from `metadata`
+    # ✅ SAFE name (not metadata)
     patch_metadata = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)

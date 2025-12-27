@@ -98,3 +98,20 @@ class TokenPair(BaseModel):
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
+
+# ======================
+# ORGANIZATIONS (F2.3)
+# ======================
+
+class OrganizationCreate(BaseModel):
+    name: str
+
+
+class OrganizationRead(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+

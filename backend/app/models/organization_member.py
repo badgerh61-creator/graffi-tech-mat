@@ -1,7 +1,7 @@
 # backend/app/models/organization_member.py
 
 from sqlalchemy import Column, Integer, ForeignKey, String, UniqueConstraint
-from app.db.session import Base
+from app.db.base import Base
 
 
 class OrganizationMember(Base):

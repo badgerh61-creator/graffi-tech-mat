@@ -8,7 +8,11 @@ from app.models import (  # noqa: F401
     asset,
     model,
     model_permission,
+    model_invite,
+    refresh_token,
     audit_log,
     organization,
     organization_member,
+    patch_registry,
 )
+

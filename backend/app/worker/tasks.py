@@ -1,3 +1,5 @@
+# backend/app/worker/tasks.py
+
 from celery import Celery
 import os
 import io
@@ -10,7 +12,6 @@ from PIL import Image
 
 from app.db.session import SessionLocal
 from app.models.asset import Asset, AssetStatus
-from app.crud import transition_asset_status
 from app.services import audit, storage as s3
 
 broker = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
@@ -37,6 +38,9 @@ def process_asset_task(self, asset_id: int):
     - Retry-safe
     - Preserves Phase-10 transitions
     """
+
+    # 🔑 LOCAL IMPORT (breaks circular dependency)
+    from app.crud import transition_asset_status
 
     db = _get_db()
 

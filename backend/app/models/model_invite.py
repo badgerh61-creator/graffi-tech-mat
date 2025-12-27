@@ -11,7 +11,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import enum
 
-from app.db.session import Base
+from app.db.base import Base
 
 
 class InviteStatus(str, enum.Enum):

@@ -1,7 +1,10 @@
-"""Phase F2.1 — add organizations core tables
+# backend/alembic/versions/afe3fa68ab1f_f2_1_add_organizations_tables.py
+
+"""
+Phase F2.1 — add organizations core tables
 
 Revision ID: afe3fa68ab1f
-Revises: e554187
+Revises: b264282e1afa
 Create Date: 2025-12-26
 """
 
@@ -11,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "afe3fa68ab1f"
-down_revision = "e554187"
+down_revision = "b264282e1afa"
 branch_labels = None
 depends_on = None
 
@@ -61,3 +64,4 @@ def upgrade():
 def downgrade():
     op.drop_table("organization_members")
     op.drop_table("organizations")
+

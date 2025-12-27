@@ -13,6 +13,7 @@ class ModelRecord(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
 
+    # 🔴 Legacy owner (DO NOT REMOVE)
     owner_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -21,8 +22,16 @@ class ModelRecord(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # 🔗 OWNER
+    # 🔗 LEGACY OWNER
     owner = relationship("User", back_populates="models")
+
+    # 🆕 OWNERSHIP BRIDGE (read-only, optional)
+    ownership = relationship(
+        "ModelOwner",
+        uselist=False,
+        viewonly=True,
+        primaryjoin="ModelRecord.id == foreign(ModelOwner.model_id)",
+    )
 
     # 🔗 ASSETS
     assets = relationship(
@@ -45,7 +54,7 @@ class ModelRecord(Base):
         cascade="all, delete-orphan",
     )
 
-    # 🔗 PATCH REGISTRY (FIX for mapper crash)
+    # 🔗 PATCH REGISTRY
     patches = relationship(
         "PatchRegistry",
         back_populates="model",

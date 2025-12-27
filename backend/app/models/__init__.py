@@ -5,6 +5,7 @@ from app.models.asset import Asset
 from app.models.model import ModelRecord
 from app.models.model_permission import ModelPermission
 from app.models.audit_log import AuditLog
+from app.models.model_owner import ModelOwner
 
 __all__ = [
     "User",
@@ -12,5 +13,6 @@ __all__ = [
     "ModelRecord",
     "ModelPermission",
     "AuditLog",
+    "ModelOwner",
 ]
 

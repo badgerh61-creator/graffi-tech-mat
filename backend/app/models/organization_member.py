@@ -35,4 +35,3 @@ class OrganizationMember(Base):
         ),
     )
 
-

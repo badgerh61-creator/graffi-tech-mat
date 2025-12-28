@@ -1,3 +1,5 @@
+// src/utils/time.ts
+
 export function timeAgo(date: string | Date): string {
   const ts = new Date(date).getTime();
   if (Number.isNaN(ts)) return "";

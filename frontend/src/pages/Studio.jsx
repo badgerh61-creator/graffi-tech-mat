@@ -1,4 +1,5 @@
-import React, { useRef } from "react";
+// src/pages/Studio.jsx
+import React, { useRef, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import SceneCanvas from "../engine/SceneCanvas";
@@ -6,12 +7,18 @@ import CanvasBoundary from "../engine/CanvasBoundary";
 import UIPanel from "../ui/UIPanel";
 import ModelLibrary from "../ui/ModelLibrary";
 import UploadPanel from "../widgets/UploadPanel";
-import ActivityFeed from "../ui/ActivityFeed"; // 🔵 PHASE F1.2
+import ActivityFeed from "../ui/ActivityFeed";
 
 import { useHistoryStore } from "../store/historyStore";
 import { useModelStore } from "../store/modelStore";
 import { clearTokens } from "../utils/auth";
 import AppShortcuts from "../AppShortcuts";
+
+import InviteBanner from "../ui/InviteBanner";
+import {
+  getInviteContext,
+  clearInviteContext,
+} from "../utils/inviteContext";
 
 export default function Studio() {
   const sceneRef = useRef(null);
@@ -22,6 +29,26 @@ export default function Studio() {
 
   const permissions = useModelStore((s) => s.modelPermissions);
   const modelStatus = useModelStore((s) => s.modelStatus);
+
+  const selectModel =
+    useModelStore((s) => s.selectModel) ??
+    useModelStore((s) => s.loadModel) ??
+    useModelStore((s) => s.setActiveModel);
+
+  const [inviteInfo, setInviteInfo] = useState(null);
+
+  useEffect(() => {
+    const ctx = getInviteContext();
+    if (!ctx) return;
+
+    setInviteInfo(ctx);
+
+    if (ctx.modelId && selectModel) {
+      selectModel(ctx.modelId);
+    }
+
+    clearInviteContext();
+  }, [selectModel]);
 
   function handleLogout() {
     clearTokens();
@@ -40,6 +67,14 @@ export default function Studio() {
   return (
     <div className="studio-page min-h-screen bg-slate-100 flex flex-col">
       <AppShortcuts undo={undo} redo={redo} />
+
+      {/* 🔵 ADD: dismissable invite banner */}
+      {inviteInfo && (
+        <InviteBanner
+          role={inviteInfo.role}
+          onDismiss={() => setInviteInfo(null)}
+        />
+      )}
 
       <header className="flex items-center justify-between px-4 py-3 bg-white border-b">
         <h1 className="text-lg font-semibold">
@@ -79,7 +114,6 @@ export default function Studio() {
             </div>
           </UIPanel>
 
-          {/* 🔵 PHASE F1.2 — ACTIVITY FEED */}
           <UIPanel title="Activity">
             <ActivityFeed />
           </UIPanel>

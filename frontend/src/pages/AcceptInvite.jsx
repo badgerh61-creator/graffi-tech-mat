@@ -1,23 +1,43 @@
+// src/pages/AcceptInvite.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
+import { invitesApi } from "../api/invites";
+import { isAuthenticated } from "../utils/auth";
+import { setInviteContext } from "../utils/inviteContext";
 
 export default function AcceptInvite() {
   const { token } = useParams();
   const navigate = useNavigate();
 
-  const [state, setState] = useState("loading"); // loading | success | error
+  const [state, setState] = useState("loading");
   const [error, setError] = useState(null);
 
   useEffect(() => {
     async function acceptInvite() {
+      // 🔵 ADD: magic link support
+      if (!isAuthenticated()) {
+        setInviteContext({ token });
+        navigate(`/login?invite=${token}`, { replace: true });
+        return;
+      }
+
       try {
-        await api.post(`/models/invites/${token}/accept`);
+        const res = await invitesApi.accept(token);
+
+        const { model_id, role } = res.data || {};
+
+        if (model_id && role) {
+          setInviteContext({ modelId: model_id, role });
+        }
+
         setState("success");
 
         setTimeout(() => {
-          navigate("/studio", { replace: true });
-        }, 1500);
+          navigate(
+            model_id ? `/studio?model=${model_id}` : "/studio",
+            { replace: true }
+          );
+        }, 1200);
       } catch (err) {
         setState("error");
         setError(
@@ -48,7 +68,7 @@ export default function AcceptInvite() {
               Invitation accepted 🎉
             </h2>
             <p className="text-sm text-slate-600">
-              Redirecting to studio…
+              Opening studio…
             </p>
           </>
         )}
@@ -61,6 +81,7 @@ export default function AcceptInvite() {
             <p className="text-sm text-slate-600 mb-4">
               {error}
             </p>
+
             <button
               onClick={() => navigate("/login")}
               className="px-4 py-2 rounded bg-slate-800 text-white text-sm hover:bg-slate-900"

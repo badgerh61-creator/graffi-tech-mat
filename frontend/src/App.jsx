@@ -1,3 +1,5 @@
+// src/App.jsx
+
 import React, { useEffect, useState } from "react";
 import {
   BrowserRouter,
@@ -9,6 +11,7 @@ import {
 import Login from "./pages/Login";
 import Studio from "./pages/Studio";
 import Admin from "./pages/Admin";
+import AcceptInvite from "./pages/AcceptInvite";
 import AdminRoute from "./routes/AdminRoute";
 
 import {
@@ -35,7 +38,6 @@ export default function App() {
     async function restoreSession() {
       const refreshToken = getRefreshToken();
 
-      // No refresh token → normal login flow
       if (!refreshToken) {
         setReady(true);
         return;
@@ -45,20 +47,13 @@ export default function App() {
         const res = await fetch(`${API_BASE}/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            refresh_token: refreshToken,
-          }),
+          body: JSON.stringify({ refresh_token: refreshToken }),
         });
 
-        if (!res.ok) {
-          throw new Error("Refresh failed");
-        }
+        if (!res.ok) throw new Error("Refresh failed");
 
         const data = await res.json();
-
-        if (!data.access_token) {
-          throw new Error("Invalid refresh response");
-        }
+        if (!data.access_token) throw new Error("Invalid refresh");
 
         setTokens(data.access_token, data.refresh_token);
       } catch {
@@ -84,6 +79,12 @@ export default function App() {
       <Routes>
         {/* ---------- AUTH ---------- */}
         <Route path="/login" element={<Login />} />
+
+        {/* ---------- INVITES ---------- */}
+        <Route
+          path="/models/invites/:token/accept"
+          element={<AcceptInvite />}
+        />
 
         {/* ---------- STUDIO ---------- */}
         <Route

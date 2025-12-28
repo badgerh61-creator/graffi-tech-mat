@@ -1,20 +1,19 @@
+// src/utils/auth.js
+
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 
 /* ================= GETTERS ================= */
 
-export const getAccessToken = (): string | null =>
+export const getAccessToken = () =>
   localStorage.getItem(ACCESS_TOKEN_KEY);
 
-export const getRefreshToken = (): string | null =>
+export const getRefreshToken = () =>
   localStorage.getItem(REFRESH_TOKEN_KEY);
 
 /* ================= SETTERS ================= */
 
-export const setTokens = (
-  accessToken: string,
-  refreshToken?: string
-) => {
+export const setTokens = (accessToken, refreshToken) => {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
   if (refreshToken) {
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
@@ -30,7 +29,7 @@ export const clearTokens = () => {
 
 /* ================= JWT HELPERS ================= */
 
-function decodeJwt(token: string): any | null {
+function decodeJwt(token) {
   try {
     const payload = token.split(".")[1];
     return JSON.parse(atob(payload));
@@ -39,7 +38,7 @@ function decodeJwt(token: string): any | null {
   }
 }
 
-export const isAccessTokenExpired = (): boolean => {
+export const isAccessTokenExpired = () => {
   const token = getAccessToken();
   if (!token) return true;
 
@@ -51,7 +50,11 @@ export const isAccessTokenExpired = (): boolean => {
 
 /* ================= AUTH STATE ================= */
 
-export const isAuthenticated = (): boolean => {
-  return !!getAccessToken() && !isAccessTokenExpired();
+export const isAuthenticated = () => {
+  try {
+    return !!getAccessToken() && !isAccessTokenExpired();
+  } catch {
+    return false;
+  }
 };
 

@@ -1,9 +1,8 @@
+// src/pages/Login.jsx
+
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  setTokens,
-  isAuthenticated,
-} from "../utils/auth";
+import { setTokens, isAuthenticated } from "../utils/auth";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
@@ -16,14 +15,14 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  /* ---------------- REDIRECT IF ALREADY LOGGED IN ---------------- */
+  /* ---------- REDIRECT IF ALREADY LOGGED IN ---------- */
   useEffect(() => {
     if (isAuthenticated()) {
       navigate("/studio", { replace: true });
     }
   }, [navigate]);
 
-  /* ---------------- SUBMIT ---------------- */
+  /* ---------- SUBMIT ---------- */
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
@@ -33,13 +32,14 @@ export default function Login() {
       const form = new URLSearchParams();
       form.append("username", email);
       form.append("password", password);
+      form.append("grant_type", "password"); // REQUIRED by OAuth2PasswordRequestForm
 
       const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: form,
+        body: form.toString(),
       });
 
       if (!res.ok) {
@@ -52,10 +52,7 @@ export default function Login() {
         throw new Error("Invalid login response");
       }
 
-      // ✅ STORE BOTH TOKENS
       setTokens(data.access_token, data.refresh_token);
-
-      // ✅ GO TO STUDIO
       navigate("/studio", { replace: true });
     } catch (err) {
       console.error("Login failed:", err);
@@ -65,7 +62,7 @@ export default function Login() {
     }
   }
 
-  /* ---------------- UI ---------------- */
+  /* ---------- UI ---------- */
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <form

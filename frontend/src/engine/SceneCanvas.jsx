@@ -3,6 +3,7 @@ import React, {
   forwardRef,
   useRef,
   useImperativeHandle,
+  Suspense,
 } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Line } from "@react-three/drei";
@@ -54,13 +55,13 @@ const CameraController = forwardRef(function CameraController(
   const { camera } = useThree();
 
   useImperativeHandle(ref, () => ({
-    setCameraPreset: (name) => {
+    setCameraPreset(name) {
       if (name === "front") camera.position.set(0, 1.2, 4.5);
       if (name === "iso") camera.position.set(3, 2, 3);
       camera.lookAt(0, 1, 0);
       controlsRef.current?.update();
     },
-    resetCamera: () => {
+    resetCamera() {
       camera.position.set(4, 2, 5);
       camera.lookAt(0, 1, 0);
       controlsRef.current?.update();
@@ -72,10 +73,13 @@ const CameraController = forwardRef(function CameraController(
 
 /* =========================== SCENE ============================== */
 const SceneCanvas = forwardRef(function SceneCanvas(_, ref) {
-  const controlsRef = useRef();
-  const cameraRef = useRef();
+  const controlsRef = useRef(null);
+  const cameraRef = useRef(null);
 
-  const modelUrl = useModelStore((s) => s.currentModelUrl);
+  // 🔒 Defensive selector (prevents transient undefined crashes)
+  const modelUrl = useModelStore(
+    (s) => s?.currentModelUrl ?? null
+  );
 
   useImperativeHandle(ref, () => ({
     setCameraPreset: (name) =>
@@ -85,38 +89,35 @@ const SceneCanvas = forwardRef(function SceneCanvas(_, ref) {
   }));
 
   return (
-    <div className="relative w-full h-[520px]">
+    <div className="relative w-full h-[520px] bg-slate-50">
       <Canvas
         shadows
         dpr={[1, 2]}
-        gl={{ antialias: true, preserveDrawingBuffer: false }}
+        gl={{ antialias: true }}
         camera={{ position: [4, 2, 5], fov: 38 }}
       >
-        {/* Background */}
         <color attach="background" args={["#f6f8fb"]} />
 
-        {/* Lights */}
         <ambientLight intensity={0.6} />
         <directionalLight position={[5, 8, 5]} intensity={1.1} />
 
-        {/* Grid */}
         <WireGrid />
 
-        {/* Model or fallback */}
-        {modelUrl ? (
-          <ModelLoader url={modelUrl} />
-        ) : (
-          <mesh position={[0, 1, 0]}>
-            <boxGeometry />
-            <meshStandardMaterial
-              color="#d9dee3"
-              roughness={0.5}
-              metalness={0.1}
-            />
-          </mesh>
-        )}
+        <Suspense fallback={null}>
+          {modelUrl ? (
+            <ModelLoader url={modelUrl} />
+          ) : (
+            <mesh position={[0, 1, 0]}>
+              <boxGeometry args={[1, 1, 1]} />
+              <meshStandardMaterial
+                color="#d9dee3"
+                roughness={0.5}
+                metalness={0.1}
+              />
+            </mesh>
+          )}
+        </Suspense>
 
-        {/* Controls */}
         <OrbitControls ref={controlsRef} />
         <CameraController
           ref={cameraRef}

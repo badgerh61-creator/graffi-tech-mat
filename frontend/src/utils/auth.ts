@@ -1,5 +1,7 @@
 // src/utils/auth.js
 
+import { resetSessionState } from "./session";
+
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 
@@ -25,6 +27,7 @@ export const setTokens = (accessToken, refreshToken) => {
 export const clearTokens = () => {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  resetSessionState(); // 🔒 F3.5 REQUIRED
 };
 
 /* ================= JWT HELPERS ================= */

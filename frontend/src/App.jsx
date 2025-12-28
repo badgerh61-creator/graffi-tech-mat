@@ -1,5 +1,4 @@
 // src/App.jsx
-
 import React, { useEffect, useState } from "react";
 import {
   BrowserRouter,
@@ -35,11 +34,13 @@ export default function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function restoreSession() {
       const refreshToken = getRefreshToken();
 
       if (!refreshToken) {
-        setReady(true);
+        if (!cancelled) setReady(true);
         return;
       }
 
@@ -53,17 +54,18 @@ export default function App() {
         if (!res.ok) throw new Error("Refresh failed");
 
         const data = await res.json();
-        if (!data.access_token) throw new Error("Invalid refresh");
-
         setTokens(data.access_token, data.refresh_token);
       } catch {
         clearTokens();
       } finally {
-        setReady(true);
+        if (!cancelled) setReady(true);
       }
     }
 
     restoreSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!ready) {
@@ -77,16 +79,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* ---------- AUTH ---------- */}
         <Route path="/login" element={<Login />} />
 
-        {/* ---------- INVITES ---------- */}
         <Route
           path="/models/invites/:token/accept"
           element={<AcceptInvite />}
         />
 
-        {/* ---------- STUDIO ---------- */}
         <Route
           path="/studio"
           element={
@@ -96,7 +95,6 @@ export default function App() {
           }
         />
 
-        {/* ---------- ADMIN ---------- */}
         <Route
           path="/admin"
           element={
@@ -108,7 +106,6 @@ export default function App() {
           }
         />
 
-        {/* ---------- FALLBACK ---------- */}
         <Route
           path="*"
           element={<Navigate to="/studio" replace />}

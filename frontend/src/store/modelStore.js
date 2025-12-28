@@ -1,3 +1,5 @@
+// src/store/modelStores.js
+
 import { create } from "zustand";
 import { api } from "../api/client";
 import { resolveStudioPermissions } from "../permissions/studioPermissions";
@@ -13,7 +15,7 @@ export const useModelStore = create((set, get) => ({
   currentModelUrl: null,
   urlExpiresAt: null,
 
-  // 🔒 Phase 3
+  // 🔒 Phase F3 — frontend authority only
   modelPermissions: resolveStudioPermissions(null),
 
   // 🟡 Phase 4.4
@@ -42,7 +44,7 @@ export const useModelStore = create((set, get) => ({
       set({ modelStatus: "loading" });
 
       const res = await api.get(`/models/${id}/url`);
-      const { url, expires_in = 300, role } = res.data;
+      const { url, expires_in = 300 } = res.data;
 
       if (!url) {
         set({ modelStatus: "failed" });
@@ -52,11 +54,14 @@ export const useModelStore = create((set, get) => ({
       const expiresAt = Date.now() + expires_in * 1000;
       localStorage.setItem("last_model_id", String(id));
 
+      // ✅ PHASE-F3 FIX:
+      // Backend does NOT return role yet.
+      // If model opens, assume editor-level UI access.
       set({
         currentModelId: id,
         currentModelUrl: url,
         urlExpiresAt: expiresAt,
-        modelPermissions: resolveStudioPermissions(role ?? "viewer"),
+        modelPermissions: resolveStudioPermissions("editor"),
         modelStatus: "ready",
       });
 

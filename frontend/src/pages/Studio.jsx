@@ -15,6 +15,7 @@ import { clearTokens } from "../utils/auth";
 import AppShortcuts from "../AppShortcuts";
 
 import InviteBanner from "../ui/InviteBanner";
+import ShareModal from "../ui/ShareModal";
 import {
   getInviteContext,
   clearInviteContext,
@@ -24,31 +25,34 @@ export default function Studio() {
   const sceneRef = useRef(null);
   const navigate = useNavigate();
 
-  const undo = useHistoryStore?.((s) => s.undo) ?? (() => {});
-  const redo = useHistoryStore?.((s) => s.redo) ?? (() => {});
+  const undo = useHistoryStore((s) => s.undo);
+  const redo = useHistoryStore((s) => s.redo);
 
-  const permissions = useModelStore((s) => s.modelPermissions);
+  const activeModelId = useModelStore((s) => s.currentModelId);
+  const modelPermissions = useModelStore((s) => s.modelPermissions);
   const modelStatus = useModelStore((s) => s.modelStatus);
+  const loadModel = useModelStore((s) => s.openModel);
 
-  const selectModel =
-    useModelStore((s) => s.selectModel) ??
-    useModelStore((s) => s.loadModel) ??
-    useModelStore((s) => s.setActiveModel);
+  const isReadOnly = !!modelPermissions?.isReadOnly;
 
   const [inviteInfo, setInviteInfo] = useState(null);
+  const [showShare, setShowShare] = useState(false);
+
+  const inviteHandledRef = useRef(false);
 
   useEffect(() => {
+    if (inviteHandledRef.current) return;
+
     const ctx = getInviteContext();
     if (!ctx) return;
 
+    inviteHandledRef.current = true;
     setInviteInfo(ctx);
 
-    if (ctx.modelId && selectModel) {
-      selectModel(ctx.modelId);
-    }
+    if (ctx.modelId) loadModel(ctx.modelId);
 
     clearInviteContext();
-  }, [selectModel]);
+  }, [loadModel]);
 
   function handleLogout() {
     clearTokens();
@@ -60,15 +64,14 @@ export default function Studio() {
       ? "Processing model…"
       : modelStatus === "failed"
       ? "Model failed to process"
-      : permissions.isReadOnly
-      ? "Read-only mode"
+      : isReadOnly
+      ? "Read-only mode (viewer access)"
       : "Editing enabled";
 
   return (
-    <div className="studio-page min-h-screen bg-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-100 flex flex-col">
       <AppShortcuts undo={undo} redo={redo} />
 
-      {/* 🔵 ADD: dismissable invite banner */}
       {inviteInfo && (
         <InviteBanner
           role={inviteInfo.role}
@@ -76,17 +79,37 @@ export default function Studio() {
         />
       )}
 
+      {isReadOnly && (
+        <div className="bg-amber-50 border-b px-4 py-2 text-sm text-amber-800">
+          Viewer access — editing disabled
+        </div>
+      )}
+
       <header className="flex items-center justify-between px-4 py-3 bg-white border-b">
         <h1 className="text-lg font-semibold">
           Graffi Studio — Ultra
         </h1>
 
-        <button
-          onClick={handleLogout}
-          className="px-3 py-1 text-sm bg-rose-600 text-white rounded hover:bg-rose-700"
-        >
-          Logout
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              if (!activeModelId) return alert("Select a model");
+              if (!modelPermissions?.canEdit)
+                return alert("Editor access required");
+              setShowShare(true);
+            }}
+            className="px-3 py-1 text-sm rounded bg-slate-800 text-white"
+          >
+            Share
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className="px-3 py-1 text-sm bg-rose-600 text-white rounded"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       <main
@@ -101,7 +124,13 @@ export default function Studio() {
 
         <aside className="space-y-3">
           <UIPanel title="Upload">
-            <UploadPanel />
+            {isReadOnly ? (
+              <div className="text-xs text-slate-500">
+                Upload disabled
+              </div>
+            ) : (
+              <UploadPanel />
+            )}
           </UIPanel>
 
           <UIPanel title="Models">
@@ -119,6 +148,13 @@ export default function Studio() {
           </UIPanel>
         </aside>
       </main>
+
+      {showShare && activeModelId && (
+        <ShareModal
+          modelId={activeModelId}
+          onClose={() => setShowShare(false)}
+        />
+      )}
     </div>
   );
 }

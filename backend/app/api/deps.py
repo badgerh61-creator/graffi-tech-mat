@@ -1,3 +1,5 @@
+# backend/app/api/deps.py
+
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -39,15 +41,15 @@ def get_current_user(
 
 
 # =========================
-# ROLE GUARDS (PHASE 10)
+# SAFE GLOBAL GUARDS
 # =========================
 
 def require_viewer(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """
-    Viewer-level access.
-    (Lowest authenticated permission)
+    Any authenticated user.
+    Viewer is the lowest permission.
     """
     return current_user
 
@@ -56,15 +58,13 @@ def require_editor(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """
-    Editor-level access.
-    Editors and admins allowed.
-    """
-    if current_user.role not in ("editor", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Editor privileges required",
-        )
+    Editor-level *intent* guard.
 
+    ⚠️ Does NOT enforce model permissions.
+    Real enforcement happens via:
+    - crud.require_model_role(...)
+    - crud.require_owner(...)
+    """
     return current_user
 
 
@@ -72,7 +72,7 @@ def require_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """
-    Admin-only access.
+    Global admin-only access.
     """
     if not current_user.is_admin:
         raise HTTPException(

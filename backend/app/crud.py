@@ -16,6 +16,73 @@ from app.services.ownership import get_model_owner
 
 
 # =========================
+# USERS  ✅ REQUIRED BY AUTH
+# =========================
+
+def get_user_by_email(db: Session, email: str):
+    return (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
+
+
+def get_user_by_id(db: Session, user_id: int):
+    return (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+
+def create_user(
+    db: Session,
+    user_in: UserCreate,
+    hashed_password: str,
+):
+    user = User(
+        email=user_in.email,
+        hashed_password=hashed_password,
+        is_admin=False,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+# =========================
+# ASSETS  ✅ REQUIRED BY UPLOAD
+# =========================
+
+def create_asset(
+    db: Session,
+    asset_in: AssetCreate,
+    *,
+    model_id: int,
+    user_id: int,
+):
+    """
+    Creates an asset record after upload.
+    Matches upload route + frontend expectations.
+    """
+    asset = Asset(
+        model_id=model_id,
+        filename=asset_in.filename,
+        s3_key=asset_in.s3_key,
+        content_type=asset_in.content_type,
+        status=AssetStatus.processing,
+        uploaded_by_id=user_id,
+        created_at=datetime.utcnow(),
+    )
+
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+# =========================
 # MODELS — ACCESS
 # =========================
 
@@ -119,7 +186,6 @@ ROLE_ORDER = {
     "owner": 3,
     "admin": 4,
 }
-
 
 ORG_ROLE_MAP = {
     "member": "viewer",

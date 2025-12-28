@@ -19,7 +19,10 @@ EXPORT_URL_EXPIRES = 300
 
 
 @router.get("/")
-def list_models(db: Session = Depends(get_db), user=Depends(require_viewer)):
+def list_models(
+    db: Session = Depends(get_db),
+    user=Depends(require_viewer),
+):
     return crud.get_models_accessible_to_user(db, user.id)
 
 
@@ -49,12 +52,19 @@ def get_model_glb_url(
     db: Session = Depends(get_db),
     user=Depends(require_viewer),
 ):
-    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
+    model = crud.get_model_if_accessible(
+        db,
+        model_id=model_id,
+        user_id=user.id,
+    )
     if not model:
         raise HTTPException(404, "Model not found or no access")
 
     for asset in model.assets:
-        if asset.filename.lower().endswith(".glb") and asset.status == AssetStatus.ready:
+        if (
+            asset.filename.lower().endswith(".glb")
+            and asset.status == AssetStatus.ready
+        ):
             return {
                 "url": s3.get_presigned_url(asset.s3_key, MODEL_URL_EXPIRES),
                 "expires_in": MODEL_URL_EXPIRES,
@@ -74,12 +84,19 @@ def export_model(
     if export_type != "original_glb":
         raise HTTPException(400, "Unsupported export type")
 
-    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
+    model = crud.get_model_if_accessible(
+        db,
+        model_id=model_id,
+        user_id=user.id,
+    )
     if not model:
         raise HTTPException(404, "Model not found or no access")
 
     for asset in model.assets:
-        if asset.filename.lower().endswith(".glb") and asset.status == AssetStatus.ready:
+        if (
+            asset.filename.lower().endswith(".glb")
+            and asset.status == AssetStatus.ready
+        ):
             audit.log_event(
                 db,
                 user_id=user.id,
@@ -106,9 +123,13 @@ def invite_by_email(
     db: Session = Depends(get_db),
     user=Depends(require_editor),
 ):
-    model = crud.get_model(db, model_id)
+    model = crud.get_model_if_accessible(
+        db,
+        model_id=model_id,
+        user_id=user.id,
+    )
     if not model:
-        raise HTTPException(404, "Model not found")
+        raise HTTPException(404, "Model not found or no access")
 
     crud.require_owner(db, user=user, model=model)
 

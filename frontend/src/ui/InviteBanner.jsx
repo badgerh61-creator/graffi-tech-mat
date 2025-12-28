@@ -1,26 +1,23 @@
 // src/ui/InviteBanner.jsx
+
 import React from "react";
+import InviteExpiry from "./InviteExpiry";
 
-const DISMISS_KEY = "invite_banner_dismissed";
-
-export default function InviteBanner({ role, onDismiss }) {
-  if (localStorage.getItem(DISMISS_KEY)) return null;
-
-  function dismiss() {
-    localStorage.setItem(DISMISS_KEY, "1");
-    onDismiss?.();
-  }
-
+export default function InviteBanner({ role, createdAt, onDismiss }) {
   return (
-    <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-sm flex items-center justify-between">
-      <div>
-        You were invited as{" "}
-        <strong className="capitalize">{role}</strong>
+    <div className="bg-indigo-50 border-b border-indigo-200 px-4 py-3 text-sm flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-1">
+        <div className="text-indigo-900">
+          You were invited as{" "}
+          <strong>{role}</strong>
+        </div>
+
+        <InviteExpiry createdAt={createdAt} />
       </div>
 
       <button
-        onClick={dismiss}
-        className="text-blue-700 hover:underline text-xs"
+        onClick={onDismiss}
+        className="text-xs text-indigo-700 hover:underline"
       >
         Dismiss
       </button>

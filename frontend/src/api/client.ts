@@ -1,3 +1,4 @@
+// src/api/client.ts
 import axios from "axios";
 import {
   getAccessToken,
@@ -23,7 +24,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-/* ================= RESPONSE (AUTO REFRESH) ================= */
+/* ================= RESPONSE ================= */
 
 let isRefreshing = false;
 let queue: {
@@ -45,7 +46,9 @@ api.interceptors.response.use(
 
     if (
       error.response?.status === 401 &&
-      !original._retry
+      !original._retry &&
+      original.url !== "/login" &&
+      original.url !== "/refresh"
     ) {
       original._retry = true;
 
@@ -69,12 +72,10 @@ api.interceptors.response.use(
           { refresh_token: refreshToken }
         );
 
-        const { access_token, refresh_token } = res.data;
+        setTokens(res.data.access_token, res.data.refresh_token);
+        resolveQueue(null, res.data.access_token);
 
-        setTokens(access_token, refresh_token);
-        resolveQueue(null, access_token);
-
-        original.headers.Authorization = `Bearer ${access_token}`;
+        original.headers.Authorization = `Bearer ${res.data.access_token}`;
         return api(original);
       } catch (err) {
         resolveQueue(err, null);

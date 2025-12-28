@@ -1,46 +1,82 @@
-import { useEffect, useState } from "react";
+// src/ui/ActivityFeed.jsx
+
+import React, { useEffect, useState } from "react";
 import { activityApi } from "../api/activity";
-import { formatActivity } from "../utils/activityFormat";
 
 export default function ActivityFeed() {
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("loading"); 
+  // loading | ready | empty | unavailable
 
   useEffect(() => {
-    activityApi
-      .list()
-      .then((res) => setItems(res.data.items))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    async function loadActivity() {
+      try {
+        const res = await activityApi.list({ page: 1, limit: 50 });
+        if (cancelled) return;
+
+        if (Array.isArray(res.data) && res.data.length > 0) {
+          setItems(res.data);
+          setStatus("ready");
+        } else {
+          setStatus("empty");
+        }
+      } catch (err) {
+        // 🔒 IMPORTANT: 404 = backend not implemented (expected)
+        if (err?.response?.status === 404) {
+          setStatus("unavailable");
+          return;
+        }
+
+        // Any other error → fail closed but silent
+        setStatus("unavailable");
+      }
+    }
+
+    loadActivity();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (loading) {
+  // 🔵 LOADING STATE
+  if (status === "loading") {
     return (
-      <div className="text-sm text-slate-500">
+      <div className="text-xs text-slate-400">
         Loading activity…
       </div>
     );
   }
 
-  if (!items.length) {
+  // 🔵 BACKEND NOT AVAILABLE (EXPECTED)
+  if (status === "unavailable") {
     return (
-      <div className="text-sm text-slate-500">
-        No recent activity.
+      <div className="text-xs text-slate-400">
+        Activity coming soon.
       </div>
     );
   }
 
+  // 🔵 EMPTY BUT WORKING
+  if (status === "empty") {
+    return (
+      <div className="text-xs text-slate-400">
+        No recent activity yet.
+      </div>
+    );
+  }
+
+  // 🔵 NORMAL RENDER
   return (
-    <ul className="space-y-2">
-      {items.map((e) => (
+    <ul className="space-y-2 text-sm">
+      {items.map((item) => (
         <li
-          key={e.id}
-          className="text-sm text-slate-700 flex gap-2"
+          key={item.id}
+          className="border-b last:border-b-0 pb-1"
         >
-          <span>•</span>
-          <span>{formatActivity(e)}</span>
-          <span className="text-slate-400 text-xs">
-            {new Date(e.created_at).toLocaleString()}
-          </span>
+          {item.message}
         </li>
       ))}
     </ul>

@@ -1,4 +1,5 @@
 // src/pages/AcceptInvite.jsx
+
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { invitesApi } from "../api/invites";
@@ -14,7 +15,8 @@ export default function AcceptInvite() {
 
   useEffect(() => {
     async function acceptInvite() {
-      // 🔵 ADD: magic link support
+      // 🔵 Magic-link support:
+      // If user is not logged in, store invite context and redirect to login
       if (!isAuthenticated()) {
         setInviteContext({ token });
         navigate(`/login?invite=${token}`, { replace: true });
@@ -26,12 +28,14 @@ export default function AcceptInvite() {
 
         const { model_id, role } = res.data || {};
 
+        // 🔵 Persist invite context for Studio UX (banner + auto-select)
         if (model_id && role) {
           setInviteContext({ modelId: model_id, role });
         }
 
         setState("success");
 
+        // 🔵 Smooth redirect into Studio
         setTimeout(() => {
           navigate(
             model_id ? `/studio?model=${model_id}` : "/studio",

@@ -1,3 +1,5 @@
+// frontend/src/widgets/UploadPanel.jsx
+
 import React, { useRef, useCallback, useState } from "react";
 import { assetsApi } from "../api";
 import { useModelStore } from "../store/modelStore";
@@ -8,6 +10,9 @@ export default function UploadPanel() {
   const openModel = useModelStore((s) => s.openModel);
   const permissions = useModelStore((s) => s.modelPermissions);
   const modelStatus = useModelStore((s) => s.modelStatus);
+
+  // ✅ ACTIVE MODEL ID (THIS WAS MISSING)
+  const activeModelId = useModelStore((s) => s.activeModelId);
 
   const fileInput = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -22,10 +27,16 @@ export default function UploadPanel() {
         return;
       }
 
+      if (!activeModelId) {
+        alert("No active model selected");
+        return;
+      }
+
       setUploading(true);
 
       try {
-        const res = await assetsApi.upload(file);
+        // ✅ FIXED: model_id is now sent
+        const res = await assetsApi.upload(file, activeModelId);
         const uploaded = res.data;
 
         await fetchModels();
@@ -40,7 +51,13 @@ export default function UploadPanel() {
         setUploading(false);
       }
     },
-    [fetchModels, openModel, uploading, permissions.canUpload]
+    [
+      uploading,
+      permissions.canUpload,
+      activeModelId,
+      fetchModels,
+      openModel,
+    ]
   );
 
   if (!permissions.canUpload) {

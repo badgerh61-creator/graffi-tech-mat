@@ -1,3 +1,5 @@
+// frontend/src/api/index.ts
+
 import { api } from "./client";
 
 /* ---------- AUTH ---------- */
@@ -14,9 +16,11 @@ export const authApi = {
 
 /* ---------- ASSETS ---------- */
 export const assetsApi = {
-  upload: (file: File) => {
+  upload: (file: File, modelId: number) => {
     const form = new FormData();
     form.append("file", file);
+    form.append("model_id", String(modelId)); // ✅ REQUIRED
+
     return api.post("/upload/", form);
   },
 };

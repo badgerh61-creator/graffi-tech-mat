@@ -24,12 +24,10 @@ export default function ModelLibrary() {
       {models.map((m) => (
         <button
           key={m.id}
-          onClick={() => openModel(m.id)}
+          onClick={() => openModel(m.id)}   // ✅ SINGLE SOURCE OF TRUTH
           className="w-full text-left px-3 py-2 rounded bg-ui-surface border border-ui-border hover:bg-ui-button"
         >
           {m.name}
-
-          {/* 🔵 ADD: invite role badge */}
           {m.role && (
             <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1 rounded">
               {m.role}

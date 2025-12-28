@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   BrowserRouter,
   Routes,
@@ -13,15 +13,7 @@ import Admin from "./pages/Admin";
 import AcceptInvite from "./pages/AcceptInvite";
 import AdminRoute from "./routes/AdminRoute";
 
-import {
-  isAuthenticated,
-  getRefreshToken,
-  setTokens,
-  clearTokens,
-} from "./utils/auth";
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+import { isAuthenticated } from "./utils/auth";
 
 /* ---------------- AUTH GUARD ---------------- */
 function RequireAuth({ children }) {
@@ -31,61 +23,19 @@ function RequireAuth({ children }) {
 }
 
 export default function App() {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function restoreSession() {
-      const refreshToken = getRefreshToken();
-
-      if (!refreshToken) {
-        if (!cancelled) setReady(true);
-        return;
-      }
-
-      try {
-        const res = await fetch(`${API_BASE}/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-
-        if (!res.ok) throw new Error("Refresh failed");
-
-        const data = await res.json();
-        setTokens(data.access_token, data.refresh_token);
-      } catch {
-        clearTokens();
-      } finally {
-        if (!cancelled) setReady(true);
-      }
-    }
-
-    restoreSession();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!ready) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-slate-500">
-        Restoring session…
-      </div>
-    );
-  }
-
   return (
     <BrowserRouter>
       <Routes>
+        {/* ---------- AUTH ---------- */}
         <Route path="/login" element={<Login />} />
 
+        {/* ---------- INVITES ---------- */}
         <Route
           path="/models/invites/:token/accept"
           element={<AcceptInvite />}
         />
 
+        {/* ---------- STUDIO ---------- */}
         <Route
           path="/studio"
           element={
@@ -95,6 +45,7 @@ export default function App() {
           }
         />
 
+        {/* ---------- ADMIN ---------- */}
         <Route
           path="/admin"
           element={
@@ -106,6 +57,7 @@ export default function App() {
           }
         />
 
+        {/* ---------- FALLBACK ---------- */}
         <Route
           path="*"
           element={<Navigate to="/studio" replace />}

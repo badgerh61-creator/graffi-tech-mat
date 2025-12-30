@@ -1,7 +1,7 @@
 // src/store/modelStore.js
 // =========================================
-// Graffi-Tech-Mat — Model Store (Phase F3 FINAL)
-// Viewer-safe permissions, backend-authoritative
+// Graffi-Tech-Mat — Model Store (Phase F3 → Step 2B FINAL)
+// Viewer-safe, backend-authoritative role consumption
 // =========================================
 
 import { create } from "zustand";
@@ -57,13 +57,16 @@ export const useModelStore = create((set, get) => ({
       const expiresAt = Date.now() + expires_in * 1000;
       localStorage.setItem("last_model_id", String(id));
 
-      // ✅ PHASE F3 RULE:
-      // Until backend sends role explicitly → viewer only
+      // ✅ STEP 2B:
+      // Consume backend-provided role from /models/
+      const model = get().models.find((m) => m.id === id);
+      const role = model?.role ?? "viewer";
+
       set({
         currentModelId: id,
         currentModelUrl: url,
         urlExpiresAt: expiresAt,
-        modelPermissions: resolveStudioPermissions("viewer"),
+        modelPermissions: resolveStudioPermissions(role),
         modelStatus: "ready",
       });
 

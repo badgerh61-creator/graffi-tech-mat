@@ -1,3 +1,9 @@
+# backend/app/models/asset.py
+# =========================================
+# Graffi-Tech-Mat — Asset ORM Model
+# FIX: expose `processed` for Pydantic
+# =========================================
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -36,7 +42,6 @@ class Asset(Base):
     s3_key = Column(String, unique=True, nullable=False)
     thumbnail_key = Column(String, nullable=True)
 
-    # ✅ Phase 11.1 — SAFE name (NOT "metadata")
     asset_metadata = Column(JSON, nullable=True)
 
     status = Column(
@@ -61,4 +66,9 @@ class Asset(Base):
 
     model_id = Column(Integer, ForeignKey("models.id"), nullable=True)
     model = relationship("ModelRecord", back_populates="assets")
+
+    # ✅ FIX — derived property for API layer
+    @property
+    def processed(self) -> bool:
+        return self.status == AssetStatus.ready
 

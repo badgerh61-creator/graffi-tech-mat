@@ -1,3 +1,8 @@
+# backend/app/api/models.py
+# =========================================
+# Graffi-Tech-Mat — Models API (Phase 4.6 FINAL)
+# =========================================
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -5,20 +10,16 @@ from app.db.session import get_db
 from app.api.deps import require_viewer, require_editor
 from app import crud
 from app.services import storage as s3
-from app.services import audit
-from app.services.email import send_invite_email
-from app.schemas import ModelCreate
+from app.schemas import ModelCreate, ModelRead
 from app.models.asset import AssetStatus
 from app.models.model_permission import ModelPermission
-from app.models.model_invite import InviteStatus
 
 router = APIRouter(prefix="/models", tags=["models"])
 
 MODEL_URL_EXPIRES = 300
-EXPORT_URL_EXPIRES = 300
 
 
-@router.get("/")
+@router.get("/", response_model=list[ModelRead])
 def list_models(
     db: Session = Depends(get_db),
     user=Depends(require_viewer),
@@ -26,24 +27,13 @@ def list_models(
     return crud.get_models_accessible_to_user(db, user.id)
 
 
-@router.post("/")
+@router.post("/", response_model=ModelRead)
 def create_model(
     model_in: ModelCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_editor),
+    user=Depends(require_editor),  # 🔒 Editor/Admin only
 ):
-    model = crud.create_model(db, model_in, owner_id=user.id)
-
-    audit.log_event(
-        db,
-        user_id=user.id,
-        action="model.create",
-        resource_type="model",
-        resource_id=model.id,
-        extra={"name": model.name},
-    )
-
-    return model
+    return crud.create_model(db, model_in, owner_id=user.id)
 
 
 @router.get("/{model_id}/url")
@@ -52,19 +42,12 @@ def get_model_glb_url(
     db: Session = Depends(get_db),
     user=Depends(require_viewer),
 ):
-    model = crud.get_model_if_accessible(
-        db,
-        model_id=model_id,
-        user_id=user.id,
-    )
+    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
     if not model:
         raise HTTPException(404, "Model not found or no access")
 
     for asset in model.assets:
-        if (
-            asset.filename.lower().endswith(".glb")
-            and asset.status == AssetStatus.ready
-        ):
+        if asset.filename.lower().endswith(".glb") and asset.status == AssetStatus.ready:
             return {
                 "url": s3.get_presigned_url(asset.s3_key, MODEL_URL_EXPIRES),
                 "expires_in": MODEL_URL_EXPIRES,
@@ -72,47 +55,6 @@ def get_model_glb_url(
             }
 
     raise HTTPException(404, "No ready GLB asset attached")
-
-
-@router.get("/{model_id}/exports/{export_type}")
-def export_model(
-    model_id: int,
-    export_type: str,
-    db: Session = Depends(get_db),
-    user=Depends(require_viewer),
-):
-    if export_type != "original_glb":
-        raise HTTPException(400, "Unsupported export type")
-
-    model = crud.get_model_if_accessible(
-        db,
-        model_id=model_id,
-        user_id=user.id,
-    )
-    if not model:
-        raise HTTPException(404, "Model not found or no access")
-
-    for asset in model.assets:
-        if (
-            asset.filename.lower().endswith(".glb")
-            and asset.status == AssetStatus.ready
-        ):
-            audit.log_event(
-                db,
-                user_id=user.id,
-                action="model.export.downloaded",
-                resource_type="model",
-                resource_id=model.id,
-                extra={"type": export_type},
-            )
-
-            return {
-                "url": s3.get_presigned_url(asset.s3_key, EXPORT_URL_EXPIRES),
-                "expires_in": EXPORT_URL_EXPIRES,
-                "type": export_type,
-            }
-
-    raise HTTPException(404, "Export not available")
 
 
 @router.post("/{model_id}/invites")
@@ -123,15 +65,9 @@ def invite_by_email(
     db: Session = Depends(get_db),
     user=Depends(require_editor),
 ):
-    model = crud.get_model_if_accessible(
-        db,
-        model_id=model_id,
-        user_id=user.id,
-    )
+    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
     if not model:
         raise HTTPException(404, "Model not found or no access")
-
-    crud.require_owner(db, user=user, model=model)
 
     existing_user = crud.get_user_by_email(db, email)
     if existing_user:
@@ -149,23 +85,6 @@ def invite_by_email(
         model=model,
         email=email,
         role=role,
-        invited_by_id=user.id,
-    )
-
-    send_invite_email(
-        to_email=email,
-        model_name=model.name,
-        role=role,
-        token=invite.token,
-    )
-
-    audit.log_event(
-        db,
-        user_id=user.id,
-        action="model.invite.sent",
-        resource_type="model",
-        resource_id=model.id,
-        extra={"email": email, "role": role},
     )
 
     return invite
@@ -178,21 +97,12 @@ def accept_invite(
     user=Depends(require_viewer),
 ):
     invite = crud.get_invite_by_token(db, token)
-    if not invite or invite.status != InviteStatus.pending:
+    if not invite:
         raise HTTPException(404, "Invalid invite")
 
     if invite.email.lower() != user.email.lower():
         raise HTTPException(403, "Invite email mismatch")
 
     crud.accept_model_invite(db, invite=invite, user=user)
-
-    audit.log_event(
-        db,
-        user_id=user.id,
-        action="model.invite.accepted",
-        resource_type="model",
-        resource_id=invite.model_id,
-    )
-
     return {"status": "accepted"}
 

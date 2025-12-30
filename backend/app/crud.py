@@ -1,7 +1,10 @@
 # backend/app/crud.py
+# =========================================
+# Graffi-Tech-Mat — CRUD (Phase 4.6 FINAL)
+# Status-free invites • RBAC-safe • SQLite-safe
+# =========================================
 
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from datetime import datetime
 import secrets
 
@@ -10,36 +13,24 @@ from app.models.user import User
 from app.models.asset import Asset, AssetStatus
 from app.models.model import ModelRecord
 from app.models.model_permission import ModelPermission
-from app.models.model_invite import ModelInvite, InviteStatus
+from app.models.model_invite import ModelInvite
 from app.models.organization_member import OrganizationMember
 from app.services.ownership import get_model_owner
 
 
 # =========================
-# USERS  ✅ REQUIRED BY AUTH
+# USERS
 # =========================
 
 def get_user_by_email(db: Session, email: str):
-    return (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+    return db.query(User).filter(User.email == email).first()
 
 
 def get_user_by_id(db: Session, user_id: int):
-    return (
-        db.query(User)
-        .filter(User.id == user_id)
-        .first()
-    )
+    return db.query(User).filter(User.id == user_id).first()
 
 
-def create_user(
-    db: Session,
-    user_in: UserCreate,
-    hashed_password: str,
-):
+def create_user(db: Session, user_in: UserCreate, hashed_password: str):
     user = User(
         email=user_in.email,
         hashed_password=hashed_password,
@@ -52,7 +43,7 @@ def create_user(
 
 
 # =========================
-# ASSETS  ✅ REQUIRED BY UPLOAD
+# ASSETS
 # =========================
 
 def create_asset(
@@ -62,10 +53,6 @@ def create_asset(
     model_id: int,
     user_id: int,
 ):
-    """
-    Creates an asset record after upload.
-    Matches upload route + frontend expectations.
-    """
     asset = Asset(
         model_id=model_id,
         filename=asset_in.filename,
@@ -75,7 +62,6 @@ def create_asset(
         uploaded_by_id=user_id,
         created_at=datetime.utcnow(),
     )
-
     db.add(asset)
     db.commit()
     db.refresh(asset)
@@ -83,35 +69,38 @@ def create_asset(
 
 
 # =========================
-# MODELS — ACCESS
+# MODELS
 # =========================
 
-def get_models_accessible_to_user(db: Session, user_id: int):
-    """
-    Returns all models accessible to the user via:
-    - direct ownership
-    - collaboration
-    - organization membership
-    """
-
-    models = (
-        db.query(ModelRecord)
-        .outerjoin(ModelPermission, ModelPermission.model_id == ModelRecord.id)
-        .distinct()
-        .all()
+def create_model(
+    db: Session,
+    model_in: ModelCreate,
+    *,
+    owner_id: int,
+):
+    model = ModelRecord(
+        name=model_in.name,
+        description=model_in.description,
+        owner_id=owner_id,
+        created_at=datetime.utcnow(),
     )
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+    return model
 
+
+def get_models_accessible_to_user(db: Session, user_id: int):
+    models = db.query(ModelRecord).all()
     accessible = []
 
     for model in models:
         owner = get_model_owner(db, model)
 
-        # User-owned
         if owner["type"] == "user" and owner["id"] == user_id:
             accessible.append(model)
             continue
 
-        # Explicit permission
         perm = (
             db.query(ModelPermission)
             .filter(
@@ -124,7 +113,6 @@ def get_models_accessible_to_user(db: Session, user_id: int):
             accessible.append(model)
             continue
 
-        # Organization-owned
         if owner["type"] == "organization":
             member = (
                 db.query(OrganizationMember)
@@ -140,7 +128,12 @@ def get_models_accessible_to_user(db: Session, user_id: int):
     return sorted(accessible, key=lambda m: m.created_at, reverse=True)
 
 
-def get_model_if_accessible(db: Session, *, model_id: int, user_id: int):
+def get_model_if_accessible(
+    db: Session,
+    *,
+    model_id: int,
+    user_id: int,
+):
     model = db.query(ModelRecord).filter(ModelRecord.id == model_id).first()
     if not model:
         return None
@@ -177,90 +170,48 @@ def get_model_if_accessible(db: Session, *, model_id: int, user_id: int):
 
 
 # =========================
-# ROLE ENFORCEMENT
+# INVITES — STATUS-FREE (FINAL)
 # =========================
 
-ROLE_ORDER = {
-    "viewer": 1,
-    "editor": 2,
-    "owner": 3,
-    "admin": 4,
-}
-
-ORG_ROLE_MAP = {
-    "member": "viewer",
-    "admin": "editor",
-    "owner": "owner",
-}
-
-
-def require_model_role(
-    db: Session,
-    *,
-    user: User,
-    model: ModelRecord,
-    min_role: str,
-):
-    if user.is_admin:
-        return
-
-    owner = get_model_owner(db, model)
-
-    # User-owned
-    if owner["type"] == "user" and owner["id"] == user.id:
-        return
-
-    # Org-owned
-    if owner["type"] == "organization":
-        member = (
-            db.query(OrganizationMember)
-            .filter(
-                OrganizationMember.organization_id == owner["id"],
-                OrganizationMember.user_id == user.id,
-            )
-            .first()
-        )
-        if member:
-            mapped_role = ORG_ROLE_MAP.get(member.role, "viewer")
-            if ROLE_ORDER[mapped_role] >= ROLE_ORDER[min_role]:
-                return
-
-    # Explicit permission
-    perm = (
-        db.query(ModelPermission)
-        .filter(
-            ModelPermission.model_id == model.id,
-            ModelPermission.user_id == user.id,
-        )
+def get_invite_by_token(db: Session, token: str):
+    return (
+        db.query(ModelInvite)
+        .filter(ModelInvite.token == token)
         .first()
     )
-    if perm and ROLE_ORDER[perm.role] >= ROLE_ORDER[min_role]:
-        return
-
-    raise PermissionError(f"Requires {min_role} role or higher")
 
 
-def require_owner(db: Session, *, user: User, model: ModelRecord):
-    if user.is_admin:
-        return
+def create_model_invite(
+    db: Session,
+    *,
+    model,
+    email: str,
+    role: str,
+):
+    invite = ModelInvite(
+        model_id=model.id,
+        email=email,
+        role=role,
+        token=secrets.token_urlsafe(32),
+    )
+    db.add(invite)
+    db.commit()
+    db.refresh(invite)
+    return invite
 
-    owner = get_model_owner(db, model)
 
-    if owner["type"] == "user" and owner["id"] == user.id:
-        return
-
-    if owner["type"] == "organization":
-        member = (
-            db.query(OrganizationMember)
-            .filter(
-                OrganizationMember.organization_id == owner["id"],
-                OrganizationMember.user_id == user.id,
-                OrganizationMember.role == "owner",
-            )
-            .first()
-        )
-        if member:
-            return
-
-    raise PermissionError("Owner access required")
+def accept_model_invite(
+    db: Session,
+    *,
+    invite: ModelInvite,
+    user: User,
+):
+    perm = ModelPermission(
+        model_id=invite.model_id,
+        user_id=user.id,
+        role=invite.role,
+    )
+    db.add(perm)
+    db.delete(invite)
+    db.commit()
 

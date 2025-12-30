@@ -1,4 +1,8 @@
 # backend/app/schemas.py
+# =========================================
+# Graffi-Tech-Mat — Pydantic Schemas
+# FIX: AssetRead.processed safety
+# =========================================
 
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
@@ -22,7 +26,7 @@ class AssetRead(AssetBase):
     id: int
     s3_key: str
     thumbnail_key: Optional[str]
-    processed: bool
+    processed: bool = False   # ✅ SAFE DEFAULT
     created_at: datetime
 
     class Config:
@@ -44,6 +48,7 @@ class ModelCreate(ModelBase):
 
 class ModelRead(ModelBase):
     id: int
+    owner_id: int
     created_at: datetime
     assets: List[AssetRead] = []
 
@@ -100,7 +105,7 @@ class RefreshTokenRequest(BaseModel):
 
 
 # ======================
-# ORGANIZATIONS (F2.3)
+# ORGANIZATIONS
 # ======================
 
 class OrganizationCreate(BaseModel):

@@ -1,4 +1,8 @@
-// src/store/modelStores.js
+// src/store/modelStore.js
+// =========================================
+// Graffi-Tech-Mat — Model Store (Phase F3 FINAL)
+// Viewer-safe permissions, backend-authoritative
+// =========================================
 
 import { create } from "zustand";
 import { api } from "../api/client";
@@ -15,10 +19,9 @@ export const useModelStore = create((set, get) => ({
   currentModelUrl: null,
   urlExpiresAt: null,
 
-  // 🔒 Phase F3 — frontend authority only
+  // 🔒 Always derived — never guessed
   modelPermissions: resolveStudioPermissions(null),
 
-  // 🟡 Phase 4.4
   modelStatus: "idle", // idle | loading | ready | failed
 
   /* ================= MODELS ================= */
@@ -54,14 +57,13 @@ export const useModelStore = create((set, get) => ({
       const expiresAt = Date.now() + expires_in * 1000;
       localStorage.setItem("last_model_id", String(id));
 
-      // ✅ PHASE-F3 FIX:
-      // Backend does NOT return role yet.
-      // If model opens, assume editor-level UI access.
+      // ✅ PHASE F3 RULE:
+      // Until backend sends role explicitly → viewer only
       set({
         currentModelId: id,
         currentModelUrl: url,
         urlExpiresAt: expiresAt,
-        modelPermissions: resolveStudioPermissions("editor"),
+        modelPermissions: resolveStudioPermissions("viewer"),
         modelStatus: "ready",
       });
 

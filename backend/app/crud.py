@@ -1,7 +1,5 @@
-# backend/app/crud.py
 # =========================================
 # Graffi-Tech-Mat — CRUD (Phase 4.6 FINAL)
-# Adds model-role resolution (NO RBAC CHANGE)
 # =========================================
 
 from sqlalchemy.orm import Session
@@ -30,29 +28,11 @@ def get_user_by_id(db: Session, user_id: int):
     return db.query(User).filter(User.id == user_id).first()
 
 
-def create_user(db: Session, user_in: UserCreate, hashed_password: str):
-    user = User(
-        email=user_in.email,
-        hashed_password=hashed_password,
-        is_admin=False,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
 # =========================
 # ASSETS
 # =========================
 
-def create_asset(
-    db: Session,
-    asset_in: AssetCreate,
-    *,
-    model_id: int,
-    user_id: int,
-):
+def create_asset(db: Session, asset_in: AssetCreate, *, model_id: int, user_id: int):
     asset = Asset(
         model_id=model_id,
         filename=asset_in.filename,
@@ -72,12 +52,7 @@ def create_asset(
 # MODELS
 # =========================
 
-def create_model(
-    db: Session,
-    model_in: ModelCreate,
-    *,
-    owner_id: int,
-):
+def create_model(db: Session, model_in: ModelCreate, *, owner_id: int):
     model = ModelRecord(
         name=model_in.name,
         description=model_in.description,
@@ -90,12 +65,22 @@ def create_model(
     return model
 
 
-def resolve_user_role_for_model(db: Session, *, model: ModelRecord, user: User) -> str:
-    """
-    Returns the user's role for a given model.
-    This is READ-ONLY logic. No permissions enforced here.
-    """
+def get_model_by_id(db: Session, model_id: int):
+    return db.query(ModelRecord).filter(ModelRecord.id == model_id).first()
 
+
+def require_owner(db: Session, *, user: User, model: ModelRecord):
+    if user.is_admin:
+        return
+
+    owner = get_model_owner(db, model)
+    if owner["type"] == "user" and owner["id"] == user.id:
+        return
+
+    raise PermissionError("Owner access required")
+
+
+def resolve_user_role_for_model(db: Session, *, model: ModelRecord, user: User) -> str:
     if user.is_admin:
         return "admin"
 
@@ -130,56 +115,39 @@ def resolve_user_role_for_model(db: Session, *, model: ModelRecord, user: User) 
 
 
 def get_models_accessible_to_user(db: Session, user_id: int):
-    models = db.query(ModelRecord).all()
     user = get_user_by_id(db, user_id)
-    result = []
+    results = []
 
-    for model in models:
+    for model in db.query(ModelRecord).all():
         owner = get_model_owner(db, model)
 
-        allowed = False
-
-        if owner["type"] == "user" and owner["id"] == user_id:
-            allowed = True
-
-        if not allowed:
-            perm = (
-                db.query(ModelPermission)
-                .filter(
-                    ModelPermission.model_id == model.id,
-                    ModelPermission.user_id == user_id,
-                )
-                .first()
-            )
-            if perm:
-                allowed = True
-
-        if not allowed and owner["type"] == "organization":
-            member = (
-                db.query(OrganizationMember)
+        allowed = (
+            (owner["type"] == "user" and owner["id"] == user_id)
+            or db.query(ModelPermission)
+              .filter(
+                  ModelPermission.model_id == model.id,
+                  ModelPermission.user_id == user_id,
+              )
+              .first()
+            or (
+                owner["type"] == "organization"
+                and db.query(OrganizationMember)
                 .filter(
                     OrganizationMember.organization_id == owner["id"],
                     OrganizationMember.user_id == user_id,
                 )
                 .first()
             )
-            if member:
-                allowed = True
+        )
 
         if allowed:
-            role = resolve_user_role_for_model(db, model=model, user=user)
-            result.append((model, role))
+            results.append((model, resolve_user_role_for_model(db, model=model, user=user)))
 
-    return sorted(result, key=lambda r: r[0].created_at, reverse=True)
+    return sorted(results, key=lambda r: r[0].created_at, reverse=True)
 
 
-def get_model_if_accessible(
-    db: Session,
-    *,
-    model_id: int,
-    user_id: int,
-):
-    model = db.query(ModelRecord).filter(ModelRecord.id == model_id).first()
+def get_model_if_accessible(db: Session, *, model_id: int, user_id: int):
+    model = get_model_by_id(db, model_id)
     if not model:
         return None
 
@@ -188,34 +156,24 @@ def get_model_if_accessible(
     if owner["type"] == "user" and owner["id"] == user_id:
         return model
 
-    perm = (
-        db.query(ModelPermission)
-        .filter(
-            ModelPermission.model_id == model.id,
-            ModelPermission.user_id == user_id,
-        )
-        .first()
-    )
-    if perm:
+    if db.query(ModelPermission).filter(
+        ModelPermission.model_id == model.id,
+        ModelPermission.user_id == user_id,
+    ).first():
         return model
 
     if owner["type"] == "organization":
-        member = (
-            db.query(OrganizationMember)
-            .filter(
-                OrganizationMember.organization_id == owner["id"],
-                OrganizationMember.user_id == user_id,
-            )
-            .first()
-        )
-        if member:
+        if db.query(OrganizationMember).filter(
+            OrganizationMember.organization_id == owner["id"],
+            OrganizationMember.user_id == user_id,
+        ).first():
             return model
 
     return None
 
 
 # =========================
-# INVITES — STATUS-FREE
+# INVITES
 # =========================
 
 def get_invite_by_token(db: Session, token: str):
@@ -236,12 +194,13 @@ def create_model_invite(db: Session, *, model, email: str, role: str):
 
 
 def accept_model_invite(db: Session, *, invite: ModelInvite, user: User):
-    perm = ModelPermission(
-        model_id=invite.model_id,
-        user_id=user.id,
-        role=invite.role,
+    db.add(
+        ModelPermission(
+            model_id=invite.model_id,
+            user_id=user.id,
+            role=invite.role,
+        )
     )
-    db.add(perm)
     db.delete(invite)
     db.commit()
 

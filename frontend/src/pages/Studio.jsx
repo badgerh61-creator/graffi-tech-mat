@@ -1,4 +1,4 @@
-// src/pages/Studio.jsx
+// frontend/src/pages/Studio.jsx
 import React, { useRef, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -40,6 +40,8 @@ export default function Studio() {
 
   const inviteHandledRef = useRef(false);
 
+  /* ================= INVITE CONTEXT ================= */
+
   useEffect(() => {
     if (inviteHandledRef.current) return;
 
@@ -54,10 +56,14 @@ export default function Studio() {
     clearInviteContext();
   }, [loadModel]);
 
+  /* ================= LOGOUT ================= */
+
   function handleLogout() {
     clearTokens();
     navigate("/login", { replace: true });
   }
+
+  /* ================= STATUS TEXT ================= */
 
   const statusText =
     modelStatus === "loading"
@@ -67,6 +73,8 @@ export default function Studio() {
       : isReadOnly
       ? "Read-only mode (viewer access)"
       : "Editing enabled";
+
+  /* ================= RENDER ================= */
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
@@ -85,33 +93,39 @@ export default function Studio() {
         </div>
       )}
 
+      {/* ================= HEADER ================= */}
       <header className="flex items-center justify-between px-4 py-3 bg-white border-b">
         <h1 className="text-lg font-semibold">
           Graffi Studio — Ultra
         </h1>
 
         <div className="flex gap-2">
+          {/* 🔒 SHARE — permission-aware */}
           <button
-            onClick={() => {
-              if (!activeModelId) return alert("Select a model");
-              if (!modelPermissions?.canEdit)
-                return alert("Editor access required");
-              setShowShare(true);
-            }}
-            className="px-3 py-1 text-sm rounded bg-slate-800 text-white"
+            disabled={!activeModelId || !modelPermissions?.canEdit}
+            onClick={() => setShowShare(true)}
+            className={`
+              px-3 py-1 text-sm rounded text-white transition
+              ${
+                activeModelId && modelPermissions?.canEdit
+                  ? "bg-slate-800 hover:bg-slate-700"
+                  : "bg-slate-400 cursor-not-allowed"
+              }
+            `}
           >
             Share
           </button>
 
           <button
             onClick={handleLogout}
-            className="px-3 py-1 text-sm bg-rose-600 text-white rounded"
+            className="px-3 py-1 text-sm bg-rose-600 text-white rounded hover:bg-rose-500"
           >
             Logout
           </button>
         </div>
       </header>
 
+      {/* ================= MAIN ================= */}
       <main
         className="flex-1 grid gap-3 p-3"
         style={{ gridTemplateColumns: "3fr 1fr" }}
@@ -149,7 +163,8 @@ export default function Studio() {
         </aside>
       </main>
 
-      {showShare && activeModelId && (
+      {/* ================= SHARE MODAL ================= */}
+      {showShare && activeModelId && modelPermissions?.canEdit && (
         <ShareModal
           modelId={activeModelId}
           onClose={() => setShowShare(false)}

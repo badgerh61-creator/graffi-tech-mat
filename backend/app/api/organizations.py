@@ -1,5 +1,3 @@
-# backend/app/api/organizations.py
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -11,40 +9,29 @@ from app.models.organization_member import OrganizationMember
 from app.schemas import OrganizationCreate, OrganizationRead, ModelCreate, ModelRead
 from app import crud
 
-router = APIRouter(
-    prefix="/organizations",
-    tags=["organizations"],
-)
+router = APIRouter(prefix="/organizations", tags=["organizations"])
 
 
-@router.post(
-    "",
-    response_model=OrganizationRead,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("", response_model=OrganizationRead, status_code=status.HTTP_201_CREATED)
 def create_organization(
     org_in: OrganizationCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    existing = (
-        db.query(Organization)
-        .filter(Organization.name == org_in.name)
-        .first()
-    )
-    if existing:
+    if db.query(Organization).filter(Organization.name == org_in.name).first():
         raise HTTPException(400, "Organization name already exists")
 
     org = Organization(name=org_in.name)
     db.add(org)
     db.flush()
 
-    membership = OrganizationMember(
-        organization_id=org.id,
-        user_id=current_user.id,
-        role="owner",
+    db.add(
+        OrganizationMember(
+            organization_id=org.id,
+            user_id=current_user.id,
+            role="owner",
+        )
     )
-    db.add(membership)
 
     db.commit()
     db.refresh(org)
@@ -87,12 +74,15 @@ def create_org_model(
     if not membership:
         raise HTTPException(403, "Not a member of this organization")
 
-    # ✅ PHASE 4.6 BRIDGE — user-owned, org-controlled
-    model = crud.create_model(
-        db,
-        model_in,
-        owner_id=user.id,
-    )
+    model = crud.create_model(db, model_in, owner_id=user.id)
 
-    return model
+    return ModelRead(
+        id=model.id,
+        name=model.name,
+        description=model.description,
+        owner_id=model.owner_id,
+        created_at=model.created_at,
+        role="owner",
+        assets=model.assets,
+    )
 

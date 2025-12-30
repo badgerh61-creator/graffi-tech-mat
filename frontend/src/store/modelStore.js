@@ -1,4 +1,4 @@
-// src/store/modelStore.js
+// frontend/src/store/modelStore.js
 // =========================================
 // Graffi-Tech-Mat — Model Store (Phase F3 → Step 2B FINAL)
 // Viewer-safe, backend-authoritative role consumption

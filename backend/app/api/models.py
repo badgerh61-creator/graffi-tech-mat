@@ -1,6 +1,6 @@
-# backend/app/api/models.py
 # =========================================
-# Graffi-Tech-Mat — Models API (Phase 4.6 FINAL)
+# Graffi-Tech-Mat — Models API
+# Phase 4.6 — TUPLE-SAFE NORMALIZATION FIX
 # =========================================
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,85 +24,43 @@ def list_models(
     db: Session = Depends(get_db),
     user=Depends(require_viewer),
 ):
-    return crud.get_models_accessible_to_user(db, user.id)
+    raw_models = crud.get_models_accessible_to_user(db, user.id)
 
+    results = []
 
-@router.post("/", response_model=ModelRead)
-def create_model(
-    model_in: ModelCreate,
-    db: Session = Depends(get_db),
-    user=Depends(require_editor),  # 🔒 Editor/Admin only
-):
-    return crud.create_model(db, model_in, owner_id=user.id)
+    for row in raw_models:
+        # 🔧 FIX: unwrap tuple if needed
+        model = row[0] if isinstance(row, tuple) else row
 
+        # 🔐 Resolve role
+        role = "viewer"
 
-@router.get("/{model_id}/url")
-def get_model_glb_url(
-    model_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(require_viewer),
-):
-    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
-    if not model:
-        raise HTTPException(404, "Model not found or no access")
+        owner = crud.get_model_owner(db, model)
+        if owner["type"] == "user" and owner["id"] == user.id:
+            role = "owner"
+        else:
+            perm = (
+                db.query(ModelPermission)
+                .filter(
+                    ModelPermission.model_id == model.id,
+                    ModelPermission.user_id == user.id,
+                )
+                .first()
+            )
+            if perm:
+                role = perm.role
 
-    for asset in model.assets:
-        if asset.filename.lower().endswith(".glb") and asset.status == AssetStatus.ready:
-            return {
-                "url": s3.get_presigned_url(asset.s3_key, MODEL_URL_EXPIRES),
-                "expires_in": MODEL_URL_EXPIRES,
-                "asset_id": asset.id,
-            }
-
-    raise HTTPException(404, "No ready GLB asset attached")
-
-
-@router.post("/{model_id}/invites")
-def invite_by_email(
-    model_id: int,
-    email: str,
-    role: str = "viewer",
-    db: Session = Depends(get_db),
-    user=Depends(require_editor),
-):
-    model = crud.get_model_if_accessible(db, model_id=model_id, user_id=user.id)
-    if not model:
-        raise HTTPException(404, "Model not found or no access")
-
-    existing_user = crud.get_user_by_email(db, email)
-    if existing_user:
-        perm = ModelPermission(
-            model_id=model.id,
-            user_id=existing_user.id,
-            role=role,
+        results.append(
+            ModelRead(
+                id=model.id,
+                name=model.name,
+                description=model.description,
+                owner_id=model.owner_id,
+                created_at=model.created_at,
+                role=role,
+                assets=model.assets,
+            )
         )
-        db.add(perm)
-        db.commit()
-        return {"status": "accepted"}
 
-    invite = crud.create_model_invite(
-        db,
-        model=model,
-        email=email,
-        role=role,
-    )
-
-    return invite
-
-
-@router.post("/invites/{token}/accept")
-def accept_invite(
-    token: str,
-    db: Session = Depends(get_db),
-    user=Depends(require_viewer),
-):
-    invite = crud.get_invite_by_token(db, token)
-    if not invite:
-        raise HTTPException(404, "Invalid invite")
-
-    if invite.email.lower() != user.email.lower():
-        raise HTTPException(403, "Invite email mismatch")
-
-    crud.accept_model_invite(db, invite=invite, user=user)
-    return {"status": "accepted"}
+    return results
 

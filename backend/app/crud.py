@@ -1,7 +1,7 @@
 # backend/app/crud.py
 # =========================================
 # Graffi-Tech-Mat — CRUD (Phase 4.6 FINAL)
-# Status-free invites • RBAC-safe • SQLite-safe
+# Adds model-role resolution (NO RBAC CHANGE)
 # =========================================
 
 from sqlalchemy.orm import Session
@@ -90,30 +90,71 @@ def create_model(
     return model
 
 
+def resolve_user_role_for_model(db: Session, *, model: ModelRecord, user: User) -> str:
+    """
+    Returns the user's role for a given model.
+    This is READ-ONLY logic. No permissions enforced here.
+    """
+
+    if user.is_admin:
+        return "admin"
+
+    if model.owner_id == user.id:
+        return "owner"
+
+    perm = (
+        db.query(ModelPermission)
+        .filter(
+            ModelPermission.model_id == model.id,
+            ModelPermission.user_id == user.id,
+        )
+        .first()
+    )
+    if perm:
+        return perm.role
+
+    owner = get_model_owner(db, model)
+    if owner["type"] == "organization":
+        member = (
+            db.query(OrganizationMember)
+            .filter(
+                OrganizationMember.organization_id == owner["id"],
+                OrganizationMember.user_id == user.id,
+            )
+            .first()
+        )
+        if member:
+            return "viewer"
+
+    return "viewer"
+
+
 def get_models_accessible_to_user(db: Session, user_id: int):
     models = db.query(ModelRecord).all()
-    accessible = []
+    user = get_user_by_id(db, user_id)
+    result = []
 
     for model in models:
         owner = get_model_owner(db, model)
 
+        allowed = False
+
         if owner["type"] == "user" and owner["id"] == user_id:
-            accessible.append(model)
-            continue
+            allowed = True
 
-        perm = (
-            db.query(ModelPermission)
-            .filter(
-                ModelPermission.model_id == model.id,
-                ModelPermission.user_id == user_id,
+        if not allowed:
+            perm = (
+                db.query(ModelPermission)
+                .filter(
+                    ModelPermission.model_id == model.id,
+                    ModelPermission.user_id == user_id,
+                )
+                .first()
             )
-            .first()
-        )
-        if perm:
-            accessible.append(model)
-            continue
+            if perm:
+                allowed = True
 
-        if owner["type"] == "organization":
+        if not allowed and owner["type"] == "organization":
             member = (
                 db.query(OrganizationMember)
                 .filter(
@@ -123,9 +164,13 @@ def get_models_accessible_to_user(db: Session, user_id: int):
                 .first()
             )
             if member:
-                accessible.append(model)
+                allowed = True
 
-    return sorted(accessible, key=lambda m: m.created_at, reverse=True)
+        if allowed:
+            role = resolve_user_role_for_model(db, model=model, user=user)
+            result.append((model, role))
+
+    return sorted(result, key=lambda r: r[0].created_at, reverse=True)
 
 
 def get_model_if_accessible(
@@ -170,24 +215,14 @@ def get_model_if_accessible(
 
 
 # =========================
-# INVITES — STATUS-FREE (FINAL)
+# INVITES — STATUS-FREE
 # =========================
 
 def get_invite_by_token(db: Session, token: str):
-    return (
-        db.query(ModelInvite)
-        .filter(ModelInvite.token == token)
-        .first()
-    )
+    return db.query(ModelInvite).filter(ModelInvite.token == token).first()
 
 
-def create_model_invite(
-    db: Session,
-    *,
-    model,
-    email: str,
-    role: str,
-):
+def create_model_invite(db: Session, *, model, email: str, role: str):
     invite = ModelInvite(
         model_id=model.id,
         email=email,
@@ -200,12 +235,7 @@ def create_model_invite(
     return invite
 
 
-def accept_model_invite(
-    db: Session,
-    *,
-    invite: ModelInvite,
-    user: User,
-):
+def accept_model_invite(db: Session, *, invite: ModelInvite, user: User):
     perm = ModelPermission(
         model_id=invite.model_id,
         user_id=user.id,

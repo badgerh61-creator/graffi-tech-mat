@@ -1,7 +1,7 @@
 # backend/app/schemas.py
 # =========================================
 # Graffi-Tech-Mat — Pydantic Schemas
-# FIX: AssetRead.processed safety
+# Phase 4.6 — SAFE RESTORE + ROLE SUPPORT
 # =========================================
 
 from pydantic import BaseModel, EmailStr
@@ -26,7 +26,7 @@ class AssetRead(AssetBase):
     id: int
     s3_key: str
     thumbnail_key: Optional[str]
-    processed: bool = False   # ✅ SAFE DEFAULT
+    processed: bool = False   # SAFE DEFAULT
     created_at: datetime
 
     class Config:
@@ -50,6 +50,7 @@ class ModelRead(ModelBase):
     id: int
     owner_id: int
     created_at: datetime
+    role: str                      # ✅ Phase 2A
     assets: List[AssetRead] = []
 
     class Config:
@@ -94,7 +95,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
-class TokenPair(BaseModel):
+class TokenPair(BaseModel):         # 🔥 RESTORED — REQUIRED BY /login
     access_token: str
     refresh_token: str
     token_type: str = "bearer"

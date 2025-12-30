@@ -1,4 +1,3 @@
-// src/App.jsx
 import React from "react";
 import {
   BrowserRouter,
@@ -8,7 +7,8 @@ import {
 } from "react-router-dom";
 
 import Login from "./pages/Login";
-import Studio from "./pages/Studio";
+import Studio from "./pages/Studio";               // legacy
+import StudioEditor from "./pages/StudioEditor"; // NEW
 import Admin from "./pages/Admin";
 import AcceptInvite from "./pages/AcceptInvite";
 import AdminRoute from "./routes/AdminRoute";
@@ -26,6 +26,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+
         {/* ---------- AUTH ---------- */}
         <Route path="/login" element={<Login />} />
 
@@ -35,9 +36,19 @@ export default function App() {
           element={<AcceptInvite />}
         />
 
-        {/* ---------- STUDIO ---------- */}
+        {/* ---------- NEW STUDIO (PHASE G) ---------- */}
         <Route
           path="/studio"
+          element={
+            <RequireAuth>
+              <StudioEditor />
+            </RequireAuth>
+          }
+        />
+
+        {/* ---------- LEGACY STUDIO (TEMP) ---------- */}
+        <Route
+          path="/studio-legacy"
           element={
             <RequireAuth>
               <Studio />
@@ -62,6 +73,7 @@ export default function App() {
           path="*"
           element={<Navigate to="/studio" replace />}
         />
+
       </Routes>
     </BrowserRouter>
   );

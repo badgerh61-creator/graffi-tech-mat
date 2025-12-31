@@ -1,6 +1,9 @@
+// frontend/src/panels/PanelHost.jsx
+
 import React from "react";
 import { panelRegistry } from "./_panelRegistry";
 import { useActiveWorkspace } from "../state/workspaceStore";
+import PanelErrorBoundary from "../errors/PanelErrorBoundary";
 
 export default function PanelHost() {
   const workspace = useActiveWorkspace();
@@ -30,9 +33,14 @@ export default function PanelHost() {
               {panelDef.title}
             </header>
 
-            <div className="panel-content">
-              <PanelComponent />
-            </div>
+            <PanelErrorBoundary
+              panelId={panelDef.id}
+              panelTitle={panelDef.title}
+            >
+              <div className="panel-content">
+                <PanelComponent />
+              </div>
+            </PanelErrorBoundary>
           </section>
         );
       })}

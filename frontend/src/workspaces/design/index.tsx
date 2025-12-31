@@ -3,10 +3,13 @@
 import { useCapability } from "../../capabilities/useCapabilities";
 
 export default function DesignWorkspace() {
-  const canEdit = useCapability("design.edit");
   const canView = useCapability("design.view");
 
-  // 🚫 No access at all
+  // 🔐 GLOBAL + DOMAIN EDIT GATE (minimal alignment)
+  const canEdit =
+    useCapability("edit") &&
+    useCapability("design.edit");
+
   if (!canView) {
     return (
       <div className="workspace design-workspace design--disabled">

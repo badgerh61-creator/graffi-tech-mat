@@ -1,6 +1,6 @@
 // frontend/src/layout/DockDropZone.jsx
 
-import React from "react";
+import React, { useState } from "react";
 import { usePanelDrag } from "./usePanelDrag";
 
 /**
@@ -14,22 +14,35 @@ export default function DockDropZone({
   children,
 }) {
   const { dropPanel } = usePanelDrag();
+  const [hovering, setHovering] = useState(false);
 
   function onDragOver(e) {
     e.preventDefault();
+    setHovering(true);
+  }
+
+  function onDragLeave() {
+    setHovering(false);
   }
 
   function onDrop(e) {
     e.preventDefault();
+    setHovering(false);
     dropPanel(dock, index);
   }
 
   return (
     <div
-      className={`dock-drop-zone ${className}`}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
       data-dock={dock}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`
+        dock-drop-zone
+        transition-colors
+        ${hovering ? "outline outline-2 outline-indigo-500" : ""}
+        ${className}
+      `}
     >
       {children}
     </div>

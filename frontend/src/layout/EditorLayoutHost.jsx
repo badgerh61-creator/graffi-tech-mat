@@ -3,6 +3,8 @@
 import React, { useMemo, useEffect } from "react";
 import PanelHost from "../panels/PanelHost";
 import WorkspaceHost from "../workspaces/WorkspaceHost";
+import DockDropZone from "./DockDropZone";
+import DragGhost from "./DragGhost";
 import { DEFAULT_EDITOR_LAYOUT } from "./defaultEditorLayout";
 import {
   loadEditorLayout,
@@ -46,21 +48,30 @@ export default function EditorLayoutHost() {
 
   return (
     <div className="editor-root">
-      <aside className="dock dock-left">
-        <PanelHost panelIds={layout.left} />
-      </aside>
+      {/* 🎨 Week 12: visual drag preview */}
+      <DragGhost />
+
+      <DockDropZone dock="left">
+        <aside className="dock dock-left">
+          <PanelHost panelIds={layout.left} />
+        </aside>
+      </DockDropZone>
 
       <main className="dock dock-center">
         <WorkspaceHost />
       </main>
 
-      <aside className="dock dock-right">
-        <PanelHost panelIds={layout.right} />
-      </aside>
+      <DockDropZone dock="right">
+        <aside className="dock dock-right">
+          <PanelHost panelIds={layout.right} />
+        </aside>
+      </DockDropZone>
 
-      <footer className="dock dock-bottom">
-        <PanelHost panelIds={layout.bottom} />
-      </footer>
+      <DockDropZone dock="bottom">
+        <footer className="dock dock-bottom">
+          <PanelHost panelIds={layout.bottom} />
+        </footer>
+      </DockDropZone>
     </div>
   );
 }

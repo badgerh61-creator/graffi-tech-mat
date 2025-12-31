@@ -8,7 +8,7 @@ import { usePanelDrag } from "../layout/usePanelDrag";
  * Draggable header that emits drag intent only.
  */
 export default function PanelHeader({ panelId, title }) {
-  const { beginDrag, cancelDrag } = usePanelDrag();
+  const { beginDrag, cancelDrag, isDragging } = usePanelDrag();
 
   function onDragStart(e) {
     e.dataTransfer.effectAllowed = "move";
@@ -22,10 +22,20 @@ export default function PanelHeader({ panelId, title }) {
 
   return (
     <header
-      className="panel-header cursor-move select-none"
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      className={[
+        "panel-header",
+        "flex items-center",
+        "px-2 py-1",
+        "select-none",
+        "text-sm font-medium",
+        "cursor-grab active:cursor-grabbing",
+        "transition-colors duration-100",
+        "hover:bg-ui-hover",
+        isDragging ? "opacity-80" : "",
+      ].join(" ")}
     >
       {title}
     </header>

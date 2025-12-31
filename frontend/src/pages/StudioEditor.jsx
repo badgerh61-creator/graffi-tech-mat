@@ -1,6 +1,16 @@
+// frontend/src/pages/StudioEditor.jsx
+
 import EditorShell from "../app/EditorShell";
+import { CapabilityProvider } from "../capabilities";
+import { getCurrentUser } from "../utils/auth";
 
 export default function StudioEditor() {
-  return <EditorShell />;
+  const user = getCurrentUser();
+
+  return (
+    <CapabilityProvider role={user?.role ?? "viewer"}>
+      <EditorShell />
+    </CapabilityProvider>
+  );
 }
 

@@ -61,3 +61,23 @@ export const isAuthenticated = () => {
   }
 };
 
+/* ================= USER DESCRIPTOR ================= */
+/**
+ * Canonical, synchronous, read-only user snapshot.
+ * Used by capability gating, routing, and editor enforcement.
+ */
+export const getCurrentUser = () => {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  const decoded = decodeJwt(token);
+  if (!decoded) return null;
+
+  return {
+    id: decoded.sub ? Number(decoded.sub) : null,
+    isAdmin: !!decoded.is_admin,
+    roles: decoded.roles ?? [],
+    permissions: decoded.permissions ?? [],
+  };
+};
+

@@ -1,19 +1,39 @@
 import React from "react";
 import { useWorkspaceStore } from "../state/workspaceStore";
 import { workspaceRegistry, workspaceComponents } from "./_registry";
+import { useCapability } from "../capabilities/useCapabilities";
 
 export default function WorkspaceHost() {
   const activeWorkspaceId = useWorkspaceStore(
     (s) => s.activeWorkspaceId
   );
 
-  const workspaceDef = workspaceRegistry[activeWorkspaceId];
+  const workspaceDef = activeWorkspaceId
+    ? workspaceRegistry[activeWorkspaceId]
+    : null;
 
-  // 🔒 THIS IS THE ONLY SAFE WAY
-  const WorkspaceComponent =
-    workspaceComponents[activeWorkspaceId];
+  const WorkspaceComponent = activeWorkspaceId
+    ? workspaceComponents[activeWorkspaceId]
+    : null;
 
-  if (!workspaceDef || typeof WorkspaceComponent !== "function") {
+  const canView = useCapability("view");
+  const canEdit = useCapability("edit");
+
+  // 🔒 HARD BLOCK — no view capability
+  if (!canView) {
+    return (
+      <main className="workspace-denied">
+        Access denied
+      </main>
+    );
+  }
+
+  // 🧱 SAFETY — invalid registry entry
+  if (
+    !workspaceDef ||
+    !WorkspaceComponent ||
+    typeof WorkspaceComponent !== "function"
+  ) {
     return (
       <main className="workspace-error">
         Invalid workspace: {activeWorkspaceId}
@@ -22,9 +42,18 @@ export default function WorkspaceHost() {
   }
 
   return (
-    <main className="workspace-host">
+    <main
+      className={`workspace-host ${
+        canEdit ? "" : "workspace-readonly"
+      }`}
+    >
       <header className="workspace-header">
         {workspaceDef.title}
+        {!canEdit && (
+          <span className="workspace-readonly-badge">
+            Read-only
+          </span>
+        )}
       </header>
 
       <section className="workspace-content">

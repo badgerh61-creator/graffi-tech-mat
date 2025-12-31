@@ -1,6 +1,10 @@
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
-import WorkspaceHost from "./WorkspaceHost";
+
+// ✅ IMPORTANT: use Phase G WorkspaceHost
+import WorkspaceHost from "../workspaces/WorkspaceHost";
+
+import PanelHost from "../panels/PanelHost";
 
 export default function EditorShell() {
   return (
@@ -9,6 +13,7 @@ export default function EditorShell() {
       <div className="editor-body">
         <Sidebar />
         <WorkspaceHost />
+        <PanelHost />
       </div>
     </div>
   );

@@ -22,18 +22,29 @@ def list_assets(
 ):
     """
     List all assets belonging to models the user can access
+    (Phase 4.6 compatible)
     """
-    models = crud.get_models_accessible_to_user(db, user.id)
-    model_ids = [m.id for m in models]
+    rows = crud.get_models_accessible_to_user(db, user.id)
+
+    # rows = [(model, role), ...]
+    model_ids = [model.id for model, _role in rows]
 
     if not model_ids:
-        return []
+        return {
+            "items": [],
+            "total": 0,
+        }
 
-    return (
+    assets = (
         db.query(Asset)
         .filter(Asset.model_id.in_(model_ids))
         .all()
     )
+
+    return {
+        "items": assets,
+        "total": len(assets),
+    }
 
 
 @router.get("/{asset_id}/url")
@@ -55,12 +66,12 @@ def get_asset_url(
     if not asset:
         raise HTTPException(404, "Asset not found")
 
-    # 🔐 Permission check via model
     model = crud.get_model_if_accessible(
         db,
         model_id=asset.model_id,
         user_id=user.id,
     )
+
     if not model:
         raise HTTPException(403, "No access to asset")
 

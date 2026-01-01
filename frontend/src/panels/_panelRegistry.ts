@@ -2,12 +2,20 @@
 
 import type { ComponentType } from "react";
 import AssetBrowserPanel from "./asset-browser/AssetBrowserPanel";
+import { EnginePreviewPanel } from "./engine-preview/EnginePreviewPanel";
 
-export type PanelKey = "asset-browser";
+/**
+ * Panel keys must be declared explicitly.
+ * This is intentional — no dynamic injection.
+ */
+export type PanelKey =
+  | "asset-browser"
+  | "engine-preview";
 
 export type PanelCapability =
   | "assets.view"
-  | "assets.use";
+  | "assets.use"
+  | "engine.preview";
 
 export interface PanelDefinition {
   id: PanelKey;
@@ -33,8 +41,17 @@ export const panelRegistry = Object.freeze<
     title: "Assets",
     component: AssetBrowserPanel,
 
-    // Week 7 metadata (NO enforcement yet)
+    // Phase G / H — view-only
     requiredCapability: "assets.view",
+  }),
+
+  "engine-preview": Object.freeze({
+    id: "engine-preview",
+    title: "Preview",
+    component: EnginePreviewPanel,
+
+    // Phase H1 — read-only engine visibility
+    requiredCapability: "engine.preview",
   }),
 });
 

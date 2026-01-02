@@ -1,13 +1,15 @@
-import { EnginePreview } from "../../engine/EnginePreview";
+// frontend/src/panels/engine-preview/EnginePreviewPanel.tsx
+
+import EnginePreview from "../../engine/EnginePreview";
 import { useAssetPreview } from "../asset-browser/useAssetPreview";
 
 export function EnginePreviewPanel() {
-  const { engineAsset } = useAssetPreview();
+  const { selectedAsset } = useAssetPreview();
 
-  if (!engineAsset) {
-    return <div>No asset selected</div>;
-  }
-
-  return <EnginePreview asset={engineAsset} />;
+  return (
+    <div className="engine-preview-panel">
+      <EnginePreview asset={selectedAsset} />
+    </div>
+  );
 }
 

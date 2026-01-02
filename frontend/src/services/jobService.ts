@@ -4,10 +4,10 @@ import type { Job } from "../types/job.types";
 import { apiClient } from "./apiClient";
 
 /**
- * Fetch async jobs (read-only)
+ * Phase H3 — read-only background jobs
  */
 export async function fetchJobs(): Promise<Job[]> {
-  const res = await apiClient.get("/jobs");
+  const res = await apiClient.get("/jobs/");
   return res.data.items;
 }
 

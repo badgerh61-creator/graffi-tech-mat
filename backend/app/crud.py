@@ -32,7 +32,13 @@ def get_user_by_id(db: Session, user_id: int):
 # ASSETS
 # =========================
 
-def create_asset(db: Session, asset_in: AssetCreate, *, model_id: int, user_id: int):
+def create_asset(
+    db: Session,
+    asset_in: AssetCreate,
+    *,
+    model_id: int,
+    user_id: int,
+):
     asset = Asset(
         model_id=model_id,
         filename=asset_in.filename,
@@ -52,7 +58,12 @@ def create_asset(db: Session, asset_in: AssetCreate, *, model_id: int, user_id: 
 # MODELS
 # =========================
 
-def create_model(db: Session, model_in: ModelCreate, *, owner_id: int):
+def create_model(
+    db: Session,
+    model_in: ModelCreate,
+    *,
+    owner_id: int,
+):
     model = ModelRecord(
         name=model_in.name,
         description=model_in.description,
@@ -66,21 +77,36 @@ def create_model(db: Session, model_in: ModelCreate, *, owner_id: int):
 
 
 def get_model_by_id(db: Session, model_id: int):
-    return db.query(ModelRecord).filter(ModelRecord.id == model_id).first()
+    return (
+        db.query(ModelRecord)
+        .filter(ModelRecord.id == model_id)
+        .first()
+    )
 
 
-def require_owner(db: Session, *, user: User, model: ModelRecord):
+def require_owner(
+    db: Session,
+    *,
+    user: User,
+    model: ModelRecord,
+):
     if user.is_admin:
         return
 
     owner = get_model_owner(db, model)
+
     if owner["type"] == "user" and owner["id"] == user.id:
         return
 
     raise PermissionError("Owner access required")
 
 
-def resolve_user_role_for_model(db: Session, *, model: ModelRecord, user: User) -> str:
+def resolve_user_role_for_model(
+    db: Session,
+    *,
+    model: ModelRecord,
+    user: User,
+) -> str:
     if user.is_admin:
         return "admin"
 
@@ -99,6 +125,7 @@ def resolve_user_role_for_model(db: Session, *, model: ModelRecord, user: User) 
         return perm.role
 
     owner = get_model_owner(db, model)
+
     if owner["type"] == "organization":
         member = (
             db.query(OrganizationMember)
@@ -114,11 +141,24 @@ def resolve_user_role_for_model(db: Session, *, model: ModelRecord, user: User) 
     return "viewer"
 
 
+# =========================
+# ACCESS RESOLUTION (FIXED)
+# =========================
+
 def get_models_accessible_to_user(db: Session, user_id: int):
+    """
+    Canonical access resolver.
+    FIXED: Forces eager materialization to prevent
+    sqlite 'closed database' errors.
+    """
+
     user = get_user_by_id(db, user_id)
     results = []
 
-    for model in db.query(ModelRecord).all():
+    # ✅ CRITICAL FIX: materialize models while session is open
+    models = list(db.query(ModelRecord).all())
+
+    for model in models:
         owner = get_model_owner(db, model)
 
         allowed = (
@@ -141,12 +181,26 @@ def get_models_accessible_to_user(db: Session, user_id: int):
         )
 
         if allowed:
-            results.append((model, resolve_user_role_for_model(db, model=model, user=user)))
+            role = resolve_user_role_for_model(
+                db,
+                model=model,
+                user=user,
+            )
+            results.append((model, role))
 
-    return sorted(results, key=lambda r: r[0].created_at, reverse=True)
+    return sorted(
+        results,
+        key=lambda r: r[0].created_at,
+        reverse=True,
+    )
 
 
-def get_model_if_accessible(db: Session, *, model_id: int, user_id: int):
+def get_model_if_accessible(
+    db: Session,
+    *,
+    model_id: int,
+    user_id: int,
+):
     model = get_model_by_id(db, model_id)
     if not model:
         return None
@@ -177,10 +231,20 @@ def get_model_if_accessible(db: Session, *, model_id: int, user_id: int):
 # =========================
 
 def get_invite_by_token(db: Session, token: str):
-    return db.query(ModelInvite).filter(ModelInvite.token == token).first()
+    return (
+        db.query(ModelInvite)
+        .filter(ModelInvite.token == token)
+        .first()
+    )
 
 
-def create_model_invite(db: Session, *, model, email: str, role: str):
+def create_model_invite(
+    db: Session,
+    *,
+    model: ModelRecord,
+    email: str,
+    role: str,
+):
     invite = ModelInvite(
         model_id=model.id,
         email=email,
@@ -193,7 +257,12 @@ def create_model_invite(db: Session, *, model, email: str, role: str):
     return invite
 
 
-def accept_model_invite(db: Session, *, invite: ModelInvite, user: User):
+def accept_model_invite(
+    db: Session,
+    *,
+    invite: ModelInvite,
+    user: User,
+):
     db.add(
         ModelPermission(
             model_id=invite.model_id,

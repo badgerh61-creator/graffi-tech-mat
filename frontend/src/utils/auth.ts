@@ -2,8 +2,8 @@
 
 import { resetSessionState } from "./session";
 
-const ACCESS_TOKEN_KEY = "access_token";
-const REFRESH_TOKEN_KEY = "refresh_token";
+const ACCESS_TOKEN_KEY = "graffi.access_token";
+const REFRESH_TOKEN_KEY = "graffi.refresh_token";
 
 /* ================= GETTERS ================= */
 
@@ -17,6 +17,7 @@ export const getRefreshToken = () =>
 
 export const setTokens = (accessToken, refreshToken) => {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+
   if (refreshToken) {
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   }
@@ -62,10 +63,7 @@ export const isAuthenticated = () => {
 };
 
 /* ================= USER DESCRIPTOR ================= */
-/**
- * Canonical, synchronous, read-only user snapshot.
- * Used by capability gating, routing, and editor enforcement.
- */
+
 export const getCurrentUser = () => {
   const token = getAccessToken();
   if (!token) return null;

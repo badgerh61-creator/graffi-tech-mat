@@ -22,6 +22,7 @@ from app.api import (
     audit,
     exports,
     organizations,   # 🆕 F2.3
+    jobs,             # 🆕 Phase H3
 )
 
 app = FastAPI(
@@ -29,10 +30,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# ===== CORS =====
+# ===== CORS (FIXED — CREDENTIAL SAFE) =====
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=[
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,6 +55,9 @@ app.include_router(models.router)
 app.include_router(assets.router)
 app.include_router(upload.router)
 app.include_router(presign.router)
+
+# 🧩 PHASE H3 — ASYNC JOB SURFACE (READ-ONLY)
+app.include_router(jobs.router)
 
 # 🔐 ADMIN / OPS
 app.include_router(admin.router)

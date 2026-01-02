@@ -32,3 +32,9 @@ backend/frontend/admin/dist/
 .DS_Store
 Thumbs.db
 
+
+# Phase H — engine preview experiments
+engine/EngineBridge.ts
+engine/EnginePreview.tsx
+frontend/src/engine/EngineBridge.ts
+frontend/src/engine/EnginePreview.tsx

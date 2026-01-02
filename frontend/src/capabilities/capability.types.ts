@@ -10,7 +10,13 @@ export type Capability =
 
   // assets
   | "assets.view"
-  | "assets.use";
+  | "assets.use"
+
+  // engine
+  | "engine.preview"
+
+  // jobs
+  | "jobs.view";
 
 export type CapabilityMap = Partial<Record<Capability, boolean>>;
 

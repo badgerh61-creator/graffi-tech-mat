@@ -1,3 +1,5 @@
+// frontend/src/capabilities/roleCapabilities.ts
+
 import { CapabilityMap } from "./capability.types";
 
 /**
@@ -17,6 +19,12 @@ export const ROLE_CAPABILITIES = Object.freeze<
     // assets
     "assets.view": true,
     "assets.use": false,
+
+    // engine
+    "engine.preview": true,
+
+    // jobs
+    "jobs.view": true, // ✅ H3 visibility
   }),
 
   editor: Object.freeze({
@@ -29,6 +37,12 @@ export const ROLE_CAPABILITIES = Object.freeze<
     // assets
     "assets.view": true,
     "assets.use": true,
+
+    // engine
+    "engine.preview": true,
+
+    // jobs
+    "jobs.view": true,
   }),
 
   admin: Object.freeze({
@@ -42,6 +56,12 @@ export const ROLE_CAPABILITIES = Object.freeze<
     // assets
     "assets.view": true,
     "assets.use": true,
+
+    // engine
+    "engine.preview": true,
+
+    // jobs
+    "jobs.view": true,
   }),
 });
 

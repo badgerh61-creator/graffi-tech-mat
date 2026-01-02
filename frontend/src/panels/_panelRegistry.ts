@@ -3,6 +3,7 @@
 import type { ComponentType } from "react";
 import AssetBrowserPanel from "./asset-browser/AssetBrowserPanel";
 import { EnginePreviewPanel } from "./engine-preview/EnginePreviewPanel";
+import JobPanel from "./jobs/JobPanel";
 
 /**
  * Panel keys must be declared explicitly.
@@ -10,12 +11,14 @@ import { EnginePreviewPanel } from "./engine-preview/EnginePreviewPanel";
  */
 export type PanelKey =
   | "asset-browser"
-  | "engine-preview";
+  | "engine-preview"
+  | "jobs";
 
 export type PanelCapability =
   | "assets.view"
   | "assets.use"
-  | "engine.preview";
+  | "engine.preview"
+  | "jobs.view";
 
 export interface PanelDefinition {
   id: PanelKey;
@@ -50,8 +53,17 @@ export const panelRegistry = Object.freeze<
     title: "Preview",
     component: EnginePreviewPanel,
 
-    // Phase H1 — read-only engine visibility
+    // Phase H — read-only engine visibility
     requiredCapability: "engine.preview",
+  }),
+
+  "jobs": Object.freeze({
+    id: "jobs",
+    title: "Jobs",
+    component: JobPanel,
+
+    // Phase H3 — async job visibility only
+    requiredCapability: "jobs.view",
   }),
 });
 

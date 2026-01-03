@@ -1,5 +1,6 @@
 # =========================================
 # Graffi-Tech-Mat — CRUD (Phase 4.6 FINAL)
+# Phase I.2 compliant
 # =========================================
 
 from sqlalchemy.orm import Session
@@ -39,6 +40,13 @@ def create_asset(
     model_id: int,
     user_id: int,
 ):
+    """
+    Phase I.2 invariant:
+    - Asset visibility is metadata-only
+    - Initialized here
+    - Never mutated via CRUD
+    """
+
     asset = Asset(
         model_id=model_id,
         filename=asset_in.filename,
@@ -47,6 +55,7 @@ def create_asset(
         status=AssetStatus.processing,
         uploaded_by_id=user_id,
         created_at=datetime.utcnow(),
+        is_visible=True,  # ✅ Phase I.2 default
     )
     db.add(asset)
     db.commit()
@@ -146,7 +155,6 @@ def require_model_role(
             .first()
         )
         if member:
-            # org roles map to model roles
             org_role_map = {
                 "member": "viewer",
                 "admin": "editor",

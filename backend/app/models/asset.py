@@ -1,7 +1,7 @@
 # backend/app/models/asset.py
 # =========================================
 # Graffi-Tech-Mat — Asset ORM Model
-# FIX: expose `processed` for Pydantic
+# Phase I.2: add editor-level visibility
 # =========================================
 
 from sqlalchemy import (
@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     Enum,
     JSON,
+    Boolean,          # 🆕
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -66,6 +67,9 @@ class Asset(Base):
 
     model_id = Column(Integer, ForeignKey("models.id"), nullable=True)
     model = relationship("ModelRecord", back_populates="assets")
+
+    # 🆕 Phase I.2 — editor-level visibility (metadata only)
+    is_visible = Column(Boolean, nullable=False, default=True)
 
     # ✅ FIX — derived property for API layer
     @property

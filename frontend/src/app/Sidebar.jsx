@@ -2,14 +2,14 @@
 
 export default function Sidebar() {
   return (
-    <nav className="editor-sidebar">
+    <aside className="editor-sidebar">
       <ul className="sidebar-nav">
-        <li>Design</li>
-        <li>Decor</li>
-        <li>Tuning</li>
-        <li>Testing</li>
+        <li className="sidebar-item active">Design</li>
+        <li className="sidebar-item">Decor</li>
+        <li className="sidebar-item">Tuning</li>
+        <li className="sidebar-item">Testing</li>
       </ul>
-    </nav>
+    </aside>
   );
 }
 

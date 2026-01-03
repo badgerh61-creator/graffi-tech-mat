@@ -1,5 +1,4 @@
 // frontend/src/app/EditorShell.jsx
-
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 

@@ -11,6 +11,9 @@ from app.services.mutations.rename_asset import RenameAssetAdapter
 from app.services.mutations.toggle_asset_visibility import (
     ToggleAssetVisibilityAdapter,
 )
+from app.services.mutations.set_preview_camera_preset import (
+    SetPreviewCameraPresetAdapter,
+)
 
 router = APIRouter(prefix="/mutations", tags=["mutations"])
 
@@ -42,7 +45,10 @@ def rename_asset(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    require_model_role(db, user=user, model=model, min_role="editor")
+    try:
+        require_model_role(db, user=user, model=model, min_role="editor")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     if asset.filename != previous_name:
         raise HTTPException(
@@ -114,7 +120,10 @@ def toggle_asset_visibility(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    require_model_role(db, user=user, model=model, min_role="editor")
+    try:
+        require_model_role(db, user=user, model=model, min_role="editor")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     if asset.is_visible != previous_value:
         raise HTTPException(
@@ -136,7 +145,7 @@ def toggle_asset_visibility(
         ToggleAssetVisibilityAdapter.execute(
             db,
             asset=asset,
-            next_is_visible=next_value,  # ✅ FIXED
+            next_is_visible=next_value,
         )
         db.add(journal)
         db.commit()
@@ -151,5 +160,98 @@ def toggle_asset_visibility(
         "status": "ok",
         "assetId": asset.id,
         "isVisible": next_value,
+    }
+
+
+# ============================================================
+# PHASE I.3 — Set Preview Camera Preset (METADATA ONLY)
+# ============================================================
+
+@router.post("/set-preview-camera-preset")
+def set_preview_camera_preset(
+    *,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+    payload: dict,
+):
+    model_id = payload.get("modelId")
+    previous_preset = payload.get("previousPreset")
+    next_preset = payload.get("nextPreset")
+    reason = payload.get("reason")
+
+    # ---- 1. Validate payload ----
+    if not model_id or not previous_preset or not next_preset:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payload",
+        )
+
+    if previous_preset == next_preset:
+        raise HTTPException(
+            status_code=400,
+            detail="Preset must change",
+        )
+
+    # ---- 2. Load model ----
+    model = (
+        db.query(ModelRecord)
+        .filter(ModelRecord.id == model_id)
+        .first()
+    )
+    if not model:
+        raise HTTPException(
+            status_code=404,
+            detail="Model not found",
+        )
+
+    # ---- 3. Permission gate ----
+    try:
+        require_model_role(
+            db,
+            user=user,
+            model=model,
+            min_role="editor",
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    # ---- 4. Stale-state guard ----
+    if model.preview_camera_preset_id != previous_preset:
+        raise HTTPException(
+            status_code=409,
+            detail="Preview camera preset out of date. Refresh required.",
+        )
+
+    # ---- 5. Prepare journal ----
+    journal = MutationJournal(
+        intent_type="SetPreviewCameraPreset",
+        target_type="model",
+        target_id=model.id,
+        before_state={"preset": previous_preset},
+        after_state={"preset": next_preset},
+        issued_by_user_id=user.id,
+        reason=reason,
+    )
+
+    # ---- 6. Atomic mutation ----
+    try:
+        SetPreviewCameraPresetAdapter.execute(
+            db,
+            model=model,
+            next_preset=next_preset,
+        )
+        db.add(journal)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update preview camera preset",
+        )
+
+    return {
+        "status": "ok",
+        "modelId": model.id,
+        "previewCameraPreset": next_preset,
     }
 

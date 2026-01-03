@@ -1,5 +1,3 @@
-# backend/app/models/model.py
-
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -12,6 +10,13 @@ class ModelRecord(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+
+    # 🆕 Phase I.3 — active preview camera preset (ID only)
+    preview_camera_preset_id = Column(
+        String,
+        nullable=False,
+        default="front_iso",
+    )
 
     # 🔴 Legacy owner (DO NOT REMOVE)
     owner_id = Column(

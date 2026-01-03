@@ -18,6 +18,7 @@ from app.api import (
     assets,
     upload,
     presign,
+    mutations,
     admin,
     audit,
     exports,
@@ -53,6 +54,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(models.router)
 app.include_router(assets.router)
+app.include_router(mutations.router)
 app.include_router(upload.router)
 app.include_router(presign.router)
 

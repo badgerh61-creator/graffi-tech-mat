@@ -101,6 +101,76 @@ def require_owner(
     raise PermissionError("Owner access required")
 
 
+# =========================
+# 🆕 PHASE I — ROLE ENFORCEMENT
+# =========================
+
+ROLE_ORDER = {
+    "viewer": 1,
+    "editor": 2,
+    "owner": 3,
+    "admin": 4,
+}
+
+
+def require_model_role(
+    db: Session,
+    *,
+    user: User,
+    model: ModelRecord,
+    min_role: str,
+):
+    """
+    Enforce minimum role on a model.
+    Used by Phase I mutation intents.
+    """
+
+    # Admin bypass
+    if user.is_admin:
+        return
+
+    owner = get_model_owner(db, model)
+
+    # ---- User-owned model ----
+    if owner["type"] == "user" and owner["id"] == user.id:
+        return
+
+    # ---- Organization-owned model ----
+    if owner["type"] == "organization":
+        member = (
+            db.query(OrganizationMember)
+            .filter(
+                OrganizationMember.organization_id == owner["id"],
+                OrganizationMember.user_id == user.id,
+            )
+            .first()
+        )
+        if member:
+            # org roles map to model roles
+            org_role_map = {
+                "member": "viewer",
+                "admin": "editor",
+                "owner": "owner",
+            }
+            mapped = org_role_map.get(member.role, "viewer")
+            if ROLE_ORDER[mapped] >= ROLE_ORDER[min_role]:
+                return
+
+    # ---- Explicit collaborator permission ----
+    perm = (
+        db.query(ModelPermission)
+        .filter(
+            ModelPermission.model_id == model.id,
+            ModelPermission.user_id == user.id,
+        )
+        .first()
+    )
+    if perm and ROLE_ORDER[perm.role] >= ROLE_ORDER[min_role]:
+        return
+
+    raise PermissionError(f"Requires {min_role} role or higher")
+
+
 def resolve_user_role_for_model(
     db: Session,
     *,
@@ -155,7 +225,6 @@ def get_models_accessible_to_user(db: Session, user_id: int):
     user = get_user_by_id(db, user_id)
     results = []
 
-    # ✅ CRITICAL FIX: materialize models while session is open
     models = list(db.query(ModelRecord).all())
 
     for model in models:

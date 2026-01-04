@@ -1,1 +1,6 @@
-# package initializer
+from . import thumbnails
+
+__all__ = [
+    "thumbnails",
+]
+

@@ -255,3 +255,79 @@ def set_preview_camera_preset(
         "previewCameraPreset": next_preset,
     }
 
+
+# ============================================================
+# PHASE I.6 — Generate Asset Thumbnail (VALIDATED)
+# ============================================================
+
+@router.post("/generate-asset-thumbnail")
+def generate_asset_thumbnail(
+    *,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+    payload: dict,
+):
+    asset_id = payload.get("assetId")
+    reason = payload.get("reason")
+
+    if not asset_id:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    model = db.query(ModelRecord).filter(ModelRecord.id == asset.model_id).first()
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    # ---- Permission gate ----
+    try:
+        require_model_role(db, user=user, model=model, min_role="editor")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    # ---- 🔒 HARD TYPE GUARD (THE FIX) ----
+    if asset.content_type not in {
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Thumbnail generation is only supported for image assets. "
+                f"Asset type '{asset.content_type}' is not supported."
+            ),
+        )
+
+    # ---- ONLY NOW create journal + job ----
+    journal = MutationJournal(
+        intent_type="GenerateAssetThumbnail",
+        target_type="asset",
+        target_id=asset.id,
+        before_state={"thumbnail_key": asset.thumbnail_key},
+        after_state={"thumbnail_key": None},
+        issued_by_user_id=user.id,
+        reason=reason,
+    )
+
+    db.add(journal)
+    db.commit()
+    db.refresh(journal)
+
+    job = crud.create_job(
+        db,
+        mutation_id=journal.id,
+        job_type="THUMBNAIL_GENERATION",
+        target_type="asset",
+        target_id=asset.id,
+    )
+
+    return {
+        "status": "accepted",
+        "jobId": job.id,
+        "jobState": job.state,
+    }
+
+

@@ -6,6 +6,8 @@ from app.models.model import ModelRecord
 from app.models.model_permission import ModelPermission
 from app.models.audit_log import AuditLog
 from app.models.model_owner import ModelOwner
+from app.models.job import Job
+from app.models.mutation_journal import MutationJournal
 
 __all__ = [
     "User",
@@ -14,5 +16,7 @@ __all__ = [
     "ModelPermission",
     "AuditLog",
     "ModelOwner",
+    "Job",
+    "MutationJournal",
 ]
 

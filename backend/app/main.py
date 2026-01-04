@@ -6,32 +6,30 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings, validate_settings
+from app.core.config import validate_settings
 from app.db.base import Base
 from app.db.session import engine
 
-# ===== API ROUTERS =====
-from app.api import (
-    auth,
-    users,
-    models,
-    assets,
-    upload,
-    presign,
-    mutations,
-    admin,
-    audit,
-    exports,
-    organizations,   # 🆕 F2.3
-    jobs,             # 🆕 Phase H3
-)
+# ===== ROUTER IMPORTS (EXPLICIT & SAFE) =====
+from app.api.auth import router as auth_router
+from app.api.users import router as users_router
+from app.api.job import router as jobs_router
+from app.api.models import router as models_router
+from app.api.assets import router as assets_router
+from app.api.upload import router as upload_router
+from app.api.presign import router as presign_router
+from app.api.mutations import router as mutations_router
+from app.api.admin import router as admin_router
+from app.api.audit import router as audit_router
+from app.api.exports import router as exports_router
+from app.api.organizations import router as organizations_router
 
 app = FastAPI(
     title="Graffi Tech Mat API",
     version="1.0.0",
 )
 
-# ===== CORS (FIXED — CREDENTIAL SAFE) =====
+# ===== CORS =====
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -50,24 +48,18 @@ def startup():
     Base.metadata.create_all(bind=engine)
 
 # ===== ROUTERS =====
-app.include_router(auth.router)
-app.include_router(users.router)
-app.include_router(models.router)
-app.include_router(assets.router)
-app.include_router(mutations.router)
-app.include_router(upload.router)
-app.include_router(presign.router)
-
-# 🧩 PHASE H3 — ASYNC JOB SURFACE (READ-ONLY)
-app.include_router(jobs.router)
-
-# 🔐 ADMIN / OPS
-app.include_router(admin.router)
-app.include_router(audit.router)
-app.include_router(exports.router)
-
-# 🏢 ORGANIZATIONS (F2.3)
-app.include_router(organizations.router)
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(jobs_router)
+app.include_router(models_router)
+app.include_router(assets_router)
+app.include_router(mutations_router)
+app.include_router(upload_router)
+app.include_router(presign_router)
+app.include_router(admin_router)
+app.include_router(audit_router)
+app.include_router(exports_router)
+app.include_router(organizations_router)
 
 # ===== HEALTH =====
 @app.get("/health")

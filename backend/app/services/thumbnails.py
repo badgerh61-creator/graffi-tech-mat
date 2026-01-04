@@ -1,14 +1,39 @@
-import io
-from PIL import Image
-from ..core.config import settings
+# backend/app/services/thumbnails.py
 
-def create_thumbnail_from_fileobj(fileobj, size: int | None = None) -> bytes:
-    size = size or settings.THUMBNAIL_SIZE
-    image = Image.open(fileobj)
-    if image.mode not in ('RGB', 'RGBA'):
-        image = image.convert('RGBA' if image.mode == 'P' else 'RGB')
-    image.thumbnail((size, size))
-    out = io.BytesIO()
-    image.save(out, format='PNG')
-    out.seek(0)
-    return out.read()
+from sqlalchemy.orm import Session
+
+from app.models.asset import Asset
+
+
+SUPPORTED_IMAGE_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+}
+
+
+def generate_thumbnail_for_asset(
+    *,
+    db: Session,
+    asset: Asset,
+) -> None:
+    """
+    Phase I.6 — Job-safe thumbnail generation
+
+    RULES:
+    - NO engine rendering yet
+    - NO Pillow misuse
+    - GLB/GLTF MUST FAIL cleanly
+    - No commits
+    """
+
+    if asset.content_type not in SUPPORTED_IMAGE_TYPES:
+        raise RuntimeError(
+            f"Thumbnail generation not supported for asset type "
+            f"{asset.content_type}"
+        )
+
+    raise RuntimeError(
+        "Image thumbnails not wired yet (engine renderer pending)"
+    )
+

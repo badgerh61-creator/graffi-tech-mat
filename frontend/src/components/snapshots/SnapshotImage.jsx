@@ -1,51 +1,37 @@
 import { useState } from "react";
-
-import SnapshotStatusBadge from "./SnapshotStatusBadge";
 import SnapshotPlaceholder from "./SnapshotPlaceholder";
+import SnapshotStatusBadge from "./SnapshotStatusBadge";
 import SnapshotModal from "./SnapshotModal";
 
-export default function SnapshotPreview({ snapshot }) {
+export default function SnapshotImage({ snapshot }) {
   const [open, setOpen] = useState(false);
 
-  // ⏳ No snapshot yet
   if (!snapshot) {
-    return (
-      <div style={{ width: 48, height: 48 }}>
-        <SnapshotPlaceholder />
-      </div>
-    );
+    return <SnapshotPlaceholder />;
   }
 
-  const isClickable = snapshot.status === "completed";
+  const isCompleted = snapshot.status === "completed";
 
   return (
     <>
       <div
         style={{
           position: "relative",
-          width: 48,
-          height: 48,
-          cursor: isClickable ? "pointer" : "default",
+          cursor: isCompleted ? "pointer" : "default",
         }}
         onClick={() => {
-          if (isClickable) setOpen(true);
+          if (isCompleted) setOpen(true);
         }}
-        title={
-          isClickable
-            ? "Click to preview snapshot"
-            : "Snapshot not ready"
-        }
       >
-        {isClickable ? (
+        {isCompleted ? (
           <img
             src={snapshot.image_url}
-            alt="Project snapshot"
+            alt="Rendered snapshot"
             style={{
-              width: 48,
-              height: 48,
+              width: "100%",
+              aspectRatio: "1 / 1",
               objectFit: "cover",
               borderRadius: 6,
-              border: "1px solid #ccc",
             }}
           />
         ) : (

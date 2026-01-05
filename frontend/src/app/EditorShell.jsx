@@ -1,11 +1,12 @@
 // frontend/src/app/EditorShell.jsx
+
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 
-export default function EditorShell({ children }) {
+export default function EditorShell({ children, headerRight }) {
   return (
     <div className="editor-shell">
-      <Topbar />
+      <Topbar rightSlot={headerRight} />
       <div className="editor-body">
         <Sidebar />
         {children}

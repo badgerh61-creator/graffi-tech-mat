@@ -6,6 +6,7 @@ import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
 import { CapabilityProvider } from "../capabilities";
 import { getCurrentUser, getAccessToken } from "../utils/auth";
+import SnapshotPreview from "../components/snapshots/SnapshotPreview";
 
 export default function StudioEditor() {
   const user = getCurrentUser();
@@ -50,7 +51,11 @@ export default function StudioEditor() {
 
   return (
     <CapabilityProvider role={user?.role ?? "viewer"}>
-      <EditorShell>
+      <EditorShell
+        headerRight={
+          <SnapshotPreview snapshot={latestSnapshot} />
+        }
+      >
         <EditorLayoutHost />
       </EditorShell>
     </CapabilityProvider>

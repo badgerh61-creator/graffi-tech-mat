@@ -1,6 +1,6 @@
 // frontend/src/app/Topbar.jsx
 
-export default function Topbar() {
+export default function Topbar({ rightSlot }) {
   return (
     <header className="editor-topbar">
       {/* LEFT */}
@@ -25,7 +25,17 @@ export default function Topbar() {
       </div>
 
       {/* RIGHT */}
-      <div className="project-status">Saved</div>
+      <div
+        className="topbar-right"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <div className="project-status">Saved</div>
+        {rightSlot}
+      </div>
     </header>
   );
 }

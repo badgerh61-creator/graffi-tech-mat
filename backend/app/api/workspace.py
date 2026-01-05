@@ -5,6 +5,8 @@ from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
+from app.models.asset import Asset
+from app.models.model import ModelRecord
 from app.schemas import WorkspaceRead
 
 router = APIRouter(
@@ -43,8 +45,14 @@ def read_workspace(
         .all()
     )
 
-    # 🚧 Assets intentionally empty (Phase J.4B.4)
-    assets = []
+    # 🧩 Phase J.4B.4 — ASSET ASSEMBLY (OWNER → MODELS → ASSETS)
+    assets = (
+        db.query(Asset)
+        .join(ModelRecord, Asset.model_id == ModelRecord.id)
+        .filter(ModelRecord.owner_id == user.id)
+        .order_by(Asset.created_at.desc())
+        .all()
+    )
 
     return {
         "project": project,

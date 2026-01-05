@@ -164,3 +164,16 @@ class ProjectRead(BaseModel):
     class Config:
         orm_mode = True
 
+
+# ======================
+# WORKSPACE (READ-ONLY)
+# ======================
+
+class WorkspaceRead(BaseModel):
+    project: ProjectRead
+    snapshots: List[SnapshotRead]
+    assets: List[AssetRead]
+
+    class Config:
+        orm_mode = True
+

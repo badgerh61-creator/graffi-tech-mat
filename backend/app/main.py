@@ -24,7 +24,8 @@ from app.api.admin import router as admin_router
 from app.api.audit import router as audit_router
 from app.api.exports import router as exports_router
 from app.api.organizations import router as organizations_router
-from app.api.snapshots import router as snapshots_router   
+from app.api.snapshots import router as snapshots_router  
+from app.api.workspace import router as workspace_router 
 
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -52,7 +53,8 @@ def startup():
 # ===== ROUTERS =====
 app.include_router(auth_router)
 app.include_router(users_router)
-app.include_router(projects_router)  
+app.include_router(projects_router)
+app.include_router(workspace_router)  
 app.include_router(jobs_router)
 app.include_router(models_router)
 app.include_router(assets_router)

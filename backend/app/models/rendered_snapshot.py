@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 from app.db.base import Base
+
 
 class SnapshotStatus(str):
     PENDING = "pending"
@@ -12,6 +13,16 @@ class SnapshotStatus(str):
 class RenderedSnapshot(Base):
     __tablename__ = "rendered_snapshots"
 
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "scene_state_hash",
+            "render_profile",
+            "engine_version",
+            name="uq_snapshot_deterministic",
+        ),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
 
     project_id = Column(Integer, index=True, nullable=False)
@@ -21,7 +32,7 @@ class RenderedSnapshot(Base):
     image_url = Column(String, nullable=True)
     engine_version = Column(String, nullable=False)
 
-    status = Column(String, default=SnapshotStatus.PENDING)
+    status = Column(String, default=SnapshotStatus.PENDING, nullable=False)
     error_message = Column(String, nullable=True)
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)

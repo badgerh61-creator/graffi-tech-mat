@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -18,6 +18,23 @@ def create_snapshot(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    # 1️⃣ Deterministic cache lookup
+    existing = (
+        db.query(RenderedSnapshot)
+        .filter(
+            RenderedSnapshot.project_id == project_id,
+            RenderedSnapshot.scene_state_hash == snapshot_in.scene_state_hash,
+            RenderedSnapshot.render_profile == snapshot_in.render_profile,
+            RenderedSnapshot.engine_version == settings.ENGINE_VERSION,
+            RenderedSnapshot.status == SnapshotStatus.COMPLETED,
+        )
+        .first()
+    )
+
+    if existing:
+        return existing
+
+    # 2️⃣ Create new snapshot record
     snapshot = RenderedSnapshot(
         project_id=project_id,
         scene_state_hash=snapshot_in.scene_state_hash,
@@ -31,6 +48,7 @@ def create_snapshot(
     db.commit()
     db.refresh(snapshot)
 
+    # 3️⃣ Invoke engine adapter (pure)
     try:
         image_url = render_snapshot({}, snapshot.render_profile)
         snapshot.image_url = image_url

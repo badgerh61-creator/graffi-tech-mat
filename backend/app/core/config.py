@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     # ================= ENV =================
     ENV: str = os.getenv("ENV", "development")
 
+    # ================= ENGINE =================
+    ENGINE_VERSION: str = os.getenv("ENGINE_VERSION", "engine-v0")
+
     # ================= SECURITY =================
     SECRET_KEY: str = os.getenv("SECRET_KEY", "CHANGE_ME")
     ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
@@ -36,7 +39,7 @@ class Settings(BaseSettings):
     MINIO_ENDPOINT: str | None = None
     MINIO_SECURE: bool = False
 
-    # ================= EMAIL (SENDGRID — PHASE C3) =================
+    # ================= EMAIL =================
     SENDGRID_API_KEY: str | None = os.getenv("SENDGRID_API_KEY")
     EMAIL_FROM: str = os.getenv(
         "EMAIL_FROM",

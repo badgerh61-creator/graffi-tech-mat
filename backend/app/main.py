@@ -23,6 +23,7 @@ from app.api.admin import router as admin_router
 from app.api.audit import router as audit_router
 from app.api.exports import router as exports_router
 from app.api.organizations import router as organizations_router
+from app.api.snapshots import router as snapshots_router   
 
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -60,6 +61,7 @@ app.include_router(admin_router)
 app.include_router(audit_router)
 app.include_router(exports_router)
 app.include_router(organizations_router)
+app.include_router(snapshots_router) 
 
 # ===== HEALTH =====
 @app.get("/health")

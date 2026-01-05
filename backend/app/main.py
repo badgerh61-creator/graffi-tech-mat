@@ -13,6 +13,7 @@ from app.db.session import engine
 # ===== ROUTER IMPORTS (EXPLICIT & SAFE) =====
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
+from app.api.projects import router as projects_router  
 from app.api.job import router as jobs_router
 from app.api.models import router as models_router
 from app.api.assets import router as assets_router
@@ -51,6 +52,7 @@ def startup():
 # ===== ROUTERS =====
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(projects_router)  
 app.include_router(jobs_router)
 app.include_router(models_router)
 app.include_router(assets_router)
@@ -61,7 +63,7 @@ app.include_router(admin_router)
 app.include_router(audit_router)
 app.include_router(exports_router)
 app.include_router(organizations_router)
-app.include_router(snapshots_router) 
+app.include_router(snapshots_router)
 
 # ===== HEALTH =====
 @app.get("/health")

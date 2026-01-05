@@ -12,6 +12,7 @@ from . import (
     admin,
     audit,
     exports,
-    organizations,   
+    organizations, 
+    projects,  
 )
 

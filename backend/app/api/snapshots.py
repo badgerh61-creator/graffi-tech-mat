@@ -4,11 +4,15 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
+from app.models.project import Project  # 🟦 Phase J.4A.1
 from app.services.rendering import render_snapshot
 from app.schemas import SnapshotCreate, SnapshotRead
 from app.core.config import settings
 
-router = APIRouter(prefix="/projects/{project_id}/snapshots", tags=["Snapshots"])
+router = APIRouter(
+    prefix="/projects/{project_id}/snapshots",
+    tags=["Snapshots"],
+)
 
 
 @router.post("/", response_model=SnapshotRead)
@@ -53,6 +57,15 @@ def create_snapshot(
         image_url = render_snapshot({}, snapshot.render_profile)
         snapshot.image_url = image_url
         snapshot.status = SnapshotStatus.COMPLETED
+
+        # 🟦 Phase J.4A.1 — auto-select active snapshot
+        project = (
+            db.query(Project)
+            .filter(Project.id == project_id)
+            .one()
+        )
+        project.active_snapshot_id = snapshot.id
+
     except Exception as e:
         snapshot.status = SnapshotStatus.FAILED
         snapshot.error_message = str(e)

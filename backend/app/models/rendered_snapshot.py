@@ -25,7 +25,13 @@ class RenderedSnapshot(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    project_id = Column(Integer, index=True, nullable=False)
+    project_id = Column(
+    Integer,
+    ForeignKey("projects.id", ondelete="CASCADE"),
+    nullable=False,
+    index=True,
+    )
+
     scene_state_hash = Column(String, index=True, nullable=False)
     render_profile = Column(String, nullable=False)
 

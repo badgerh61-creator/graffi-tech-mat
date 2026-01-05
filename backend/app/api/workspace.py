@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.project import Project
+from app.models.rendered_snapshot import RenderedSnapshot
 from app.schemas import WorkspaceRead
 
 router = APIRouter(
@@ -34,9 +35,20 @@ def read_workspace(
             detail="Project not found",
         )
 
-    # 🚫 Phase J.4B.2 — STILL NO AGGREGATION
-    raise HTTPException(
-        status_code=501,
-        detail="Workspace data not assembled yet",
+    # 🧩 Phase J.4B.3 — SNAPSHOT ASSEMBLY (READ-ONLY)
+    snapshots = (
+        db.query(RenderedSnapshot)
+        .filter(RenderedSnapshot.project_id == project_id)
+        .order_by(RenderedSnapshot.created_at.desc())
+        .all()
     )
+
+    # 🚧 Assets intentionally empty (Phase J.4B.4)
+    assets = []
+
+    return {
+        "project": project,
+        "snapshots": snapshots,
+        "assets": assets,
+    }
 

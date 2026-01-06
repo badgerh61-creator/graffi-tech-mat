@@ -1,7 +1,7 @@
 // frontend/src/workspaces/design/index.tsx
 
 /**
- * WORKSPACE RENDERING CONTRACT
+ * PHASE J WORKSPACE CONTRACT (FROZEN)
  *
  * Phase G+ rule:
  * - Workspaces render ONLY the central canvas / engine surface
@@ -9,11 +9,16 @@
  * - No permission messaging
  * - No UI chrome
  *
- * Phase J clarification:
- * - Workspaces consume read-only workspace data
+ * Phase J guarantees:
+ * - Read-only workspace consumption
+ * - Snapshot-based visual truth
  * - No snapshot mutation
  * - No snapshot selection
+ * - No scene mutation
  * - No engine-side effects
+ *
+ * Visual truth only. No interaction.
+ * All interaction MUST go through Phase I mutation discipline.
  *
  * Capability enforcement happens at:
  * - WorkspaceHost (view/edit)

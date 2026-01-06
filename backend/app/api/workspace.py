@@ -1,13 +1,14 @@
 """
-PHASE J WORKSPACE CONTRACT (READ-ONLY)
+PHASE J WORKSPACE CONTRACT (FROZEN)
 
 This endpoint assembles the canonical workspace payload delivered to the editor.
 
-Rules:
-- Snapshot-based visual truth only
-- Deterministic ordering
+Guarantees:
+- Read-only
+- Deterministic
+- Snapshot-based visual truth
+- No scene mutation
 - No snapshot mutation
-- No snapshot selection
 - No engine side effects
 - No implicit writes during editor boot
 
@@ -23,7 +24,6 @@ from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
 from app.models.asset import Asset
 from app.models.model import ModelRecord
-from app.schemas import WorkspaceRead
 from app.workspaces.normalize import normalize_snapshots
 
 router = APIRouter(
@@ -63,7 +63,7 @@ def read_workspace(
         "can_edit_project": is_owner,
     }
 
-    # 🧩 Phase J.5.1 + J.5.2 — SNAPSHOT ASSEMBLY + NORMALIZATION (READ-ONLY)
+    # 🧩 Phase J.5 — SNAPSHOT ASSEMBLY + NORMALIZATION (READ-ONLY)
     raw_snapshots = (
         db.query(RenderedSnapshot)
         .filter(RenderedSnapshot.project_id == project_id)
@@ -77,7 +77,7 @@ def read_workspace(
         "pending": [],
     }
 
-    # 🧩 Phase J.5.2 — ASSET ASSEMBLY (DETERMINISTIC ORDER)
+    # 🧩 Phase J.5 — ASSET ASSEMBLY (DETERMINISTIC ORDER)
     assets = (
         db.query(Asset)
         .join(ModelRecord, Asset.model_id == ModelRecord.id)

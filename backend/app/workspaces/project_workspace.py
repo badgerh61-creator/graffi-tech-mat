@@ -15,7 +15,7 @@ Any write operation MUST go through the Phase I mutation system.
 """
 
 from sqlalchemy.orm import Session
-from app.models.snapshot import RenderedSnapshot
+from app.models.rendered_snapshot import RenderedSnapshot
 from app.workspaces.normalize import normalize_snapshots
 
 

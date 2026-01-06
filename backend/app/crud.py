@@ -1,6 +1,6 @@
 # =========================================
 # Graffi-Tech-Mat — CRUD (Phase 4.6 FINAL)
-# Phase I.2 compliant
+# Phase I.3 compliant
 # =========================================
 
 from sqlalchemy.orm import Session
@@ -111,7 +111,7 @@ def require_owner(
 
 
 # =========================
-# 🆕 PHASE I — ROLE ENFORCEMENT
+# 🆕 PHASE I — ROLE ENFORCEMENT (MODEL)
 # =========================
 
 ROLE_ORDER = {
@@ -217,6 +217,32 @@ def resolve_user_role_for_model(
             return "viewer"
 
     return "viewer"
+
+
+# =========================
+# PROJECT — ROLE ENFORCEMENT (PHASE I.3)
+# =========================
+
+def require_project_role(
+    db: Session,
+    *,
+    user: User,
+    project,
+    min_role: str,
+):
+    """
+    Phase I.3:
+    Simple project ownership enforcement.
+    Expandable later to org/project roles.
+    """
+
+    if user.is_admin:
+        return
+
+    if project.owner_id == user.id:
+        return
+
+    raise PermissionError("Insufficient project permissions")
 
 
 # =========================

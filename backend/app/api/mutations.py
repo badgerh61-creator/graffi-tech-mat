@@ -2,10 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
+
 from app.models.asset import Asset
 from app.models.model import ModelRecord
+from app.models.project import Project                    
+from app.models.rendered_snapshot import RenderedSnapshot 
+from app.models.rendered_snapshot import SnapshotStatus      
 from app.models.mutation_journal import MutationJournal
-from app.crud import require_model_role
+
+from app.crud import (
+    require_model_role,
+    require_project_role,                                  
+)
+from app import crud                                     
 
 from app.services.mutations.rename_asset import RenameAssetAdapter
 from app.services.mutations.toggle_asset_visibility import (
@@ -330,4 +339,114 @@ def generate_asset_thumbnail(
         "jobState": job.state,
     }
 
+
+# ============================================================
+# PHASE I.3 — Set Active Snapshot (PROJECT STATE)
+# ============================================================
+
+@router.post("/set-active-snapshot")
+def set_active_snapshot(
+    *,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+    payload: dict,
+):
+    project_id = payload.get("projectId")
+    previous_snapshot_id = payload.get("previousSnapshotId")
+    next_snapshot_id = payload.get("nextSnapshotId")
+    reason = payload.get("reason")
+
+    # ---- 1. Validate payload ----
+    if not project_id or not next_snapshot_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payload",
+        )
+
+    if previous_snapshot_id == next_snapshot_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Active snapshot must change",
+        )
+
+    # ---- 2. Load project ----
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    # ---- 3. Permission gate (project-level) ----
+    try:
+        require_project_role(
+            db,
+            user=user,
+            project=project,
+            min_role="editor",
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    # ---- 4. Stale-state guard ----
+    if project.active_snapshot_id != previous_snapshot_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Active snapshot out of date. Refresh required.",
+        )
+
+    # ---- 5. Load snapshot ----
+    snapshot = (
+        db.query(RenderedSnapshot)
+        .filter(
+            RenderedSnapshot.id == next_snapshot_id,
+            RenderedSnapshot.project_id == project_id,
+        )
+        .first()
+    )
+    if not snapshot:
+        raise HTTPException(
+            status_code=404,
+            detail="Snapshot not found",
+        )
+
+    if snapshot.status != SnapshotStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail="Only completed snapshots can be activated",
+        )
+
+    # ---- 6. Prepare journal ----
+    journal = MutationJournal(
+        intent_type="SetActiveSnapshot",
+        target_type="project",
+        target_id=project.id,
+        before_state={"active_snapshot_id": previous_snapshot_id},
+        after_state={"active_snapshot_id": next_snapshot_id},
+        issued_by_user_id=user.id,
+        reason=reason,
+    )
+
+    # ---- 7. Atomic mutation ----
+    try:
+        project.active_snapshot_id = next_snapshot_id
+        db.add(journal)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to set active snapshot",
+        )
+
+    return {
+        "status": "ok",
+        "projectId": project.id,
+        "previousSnapshotId": previous_snapshot_id,
+        "activeSnapshotId": next_snapshot_id,
+    }
 

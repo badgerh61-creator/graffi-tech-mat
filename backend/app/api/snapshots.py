@@ -1,12 +1,13 @@
+# backend/app/api/snapshots.py
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
-from app.models.project import Project  # 🟦 Phase J.4A.1
-from app.services.rendering import render_snapshot
 from app.schemas import SnapshotCreate, SnapshotRead
+from app.services.rendering import render_snapshot
 from app.core.config import settings
 
 router = APIRouter(
@@ -22,6 +23,14 @@ def create_snapshot(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    """
+    Phase J / Phase I invariant:
+    - Snapshot creation is deterministic
+    - No implicit project state mutation
+    - Snapshot activation is NOT handled here
+      (see Phase I.3 set-active-snapshot mutation)
+    """
+
     # 1️⃣ Deterministic cache lookup
     existing = (
         db.query(RenderedSnapshot)
@@ -38,7 +47,7 @@ def create_snapshot(
     if existing:
         return existing
 
-    # 2️⃣ Create new snapshot record
+    # 2️⃣ Create snapshot record (RUNNING)
     snapshot = RenderedSnapshot(
         project_id=project_id,
         scene_state_hash=snapshot_in.scene_state_hash,
@@ -52,19 +61,12 @@ def create_snapshot(
     db.commit()
     db.refresh(snapshot)
 
-    # 3️⃣ Invoke engine adapter (pure)
+    # 3️⃣ Invoke engine adapter (pure, side-effect free)
     try:
         image_url = render_snapshot({}, snapshot.render_profile)
+
         snapshot.image_url = image_url
         snapshot.status = SnapshotStatus.COMPLETED
-
-        # 🟦 Phase J.4A.1 — auto-select active snapshot
-        project = (
-            db.query(Project)
-            .filter(Project.id == project_id)
-            .one()
-        )
-        project.active_snapshot_id = snapshot.id
 
     except Exception as e:
         snapshot.status = SnapshotStatus.FAILED
@@ -72,6 +74,7 @@ def create_snapshot(
 
     db.commit()
     db.refresh(snapshot)
+
     return snapshot
 
 
@@ -81,6 +84,12 @@ def list_snapshots(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    """
+    Phase J / Phase I invariant:
+    - Listing is read-only
+    - Ordering is explicit and deterministic
+    """
+
     return (
         db.query(RenderedSnapshot)
         .filter(RenderedSnapshot.project_id == project_id)

@@ -78,6 +78,8 @@ def read_workspace(
     }
 
     # 🧩 Phase J.5 — ASSET ASSEMBLY (DETERMINISTIC ORDER)
+    # NOTE: Assets are intentionally USER-SCOPED, not PROJECT-SCOPED in Phase J.
+    # Project ↔ asset binding is introduced later via Phase I mutations.
     assets = (
         db.query(Asset)
         .join(ModelRecord, Asset.model_id == ModelRecord.id)

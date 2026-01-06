@@ -8,7 +8,7 @@ from app.models.audit_log import AuditLog
 from app.models.model_owner import ModelOwner
 from app.models.job import Job
 from app.models.mutation_journal import MutationJournal
-from .project import Project
+from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
 
 __all__ = [
@@ -19,7 +19,7 @@ __all__ = [
     "AuditLog",
     "ModelOwner",
     "Job",
-    "Project",           
+    "Project",
     "MutationJournal",
     "RenderedSnapshot",
 ]

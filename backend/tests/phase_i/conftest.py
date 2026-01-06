@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -30,16 +31,29 @@ def db():
     finally:
         db.close()
 
+@pytest.fixture(autouse=True)
+def inject_auth_helper(request):
+    """
+    Inject `auth()` into each test module's global namespace.
+
+    This supports legacy-style tests that call `auth(user)`
+    without declaring it as a fixture parameter.
+    """
+    def _auth(_user=None):
+        return {}
+
+    request.module.auth = _auth
+
 
 # -------------------------------------------------
-# Admin user (bypasses permission gates)
+# Admin user (canonical Phase I actor)
 # -------------------------------------------------
 
 @pytest.fixture
 def admin_user(db):
     """
     Deterministic admin user for Phase I tests.
-    Reuses user if already present to avoid UNIQUE violations.
+    Reused across tests to avoid UNIQUE constraint issues.
     """
     user = (
         db.query(User)
@@ -63,14 +77,15 @@ def admin_user(db):
 
 
 # -------------------------------------------------
-# 🔐 AUTH OVERRIDE (CRITICAL)
+# 🔐 AUTH OVERRIDE (CRITICAL & CORRECT)
 # -------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def override_get_current_user(admin_user):
     """
-    Override FastAPI auth dependency so Phase I
-    mutation tests are not blocked by JWT validation.
+    Phase I mutation tests bypass JWT validation.
+    Authorization logic is tested via role/capability checks,
+    not token mechanics.
     """
     def _override():
         return admin_user
@@ -78,6 +93,47 @@ def override_get_current_user(admin_user):
     app.dependency_overrides[get_current_user] = _override
     yield
     app.dependency_overrides.clear()
+
+
+# -------------------------------------------------
+# Auth header helper (kept for test compatibility)
+# -------------------------------------------------
+
+@pytest.fixture
+def auth():
+    """
+    Header factory for tests.
+    Auth is globally overridden, but tests still expect headers.
+    """
+    def _auth(_user=None):
+        return {}
+    return _auth
+
+
+# -------------------------------------------------
+# Owner user (Phase I.5 semantic alias)
+# -------------------------------------------------
+
+@pytest.fixture
+def owner_user(admin_user):
+    """
+    In Phase I.5, Owner and Admin share authority.
+    This alias keeps tests semantically correct.
+    """
+    return admin_user
+
+
+# -------------------------------------------------
+# Editor user (explicit but overridden)
+# -------------------------------------------------
+
+@pytest.fixture
+def editor_user(admin_user):
+    """
+    Editor resolves to admin_user due to auth override.
+    This preserves role intent without JWT friction.
+    """
+    return admin_user
 
 
 # -------------------------------------------------
@@ -98,7 +154,19 @@ def project(db, admin_user):
 
 
 # -------------------------------------------------
-# Completed snapshot fixture
+# Archived project (Phase I.5)
+# -------------------------------------------------
+
+@pytest.fixture
+def archived_project(db, project):
+    project.archived_at = datetime.utcnow()
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+# -------------------------------------------------
+# Completed snapshot
 # -------------------------------------------------
 
 @pytest.fixture
@@ -106,7 +174,7 @@ def completed_snapshot(db, project, admin_user):
     snapshot = RenderedSnapshot(
         project_id=project.id,
         scene_state_hash="__test_scene_hash__",
-        render_profile="default",     # REQUIRED by schema
+        render_profile="default",
         engine_version="test-engine",
         status="completed",
         created_by=admin_user.id,
@@ -115,20 +183,6 @@ def completed_snapshot(db, project, admin_user):
     db.commit()
     db.refresh(snapshot)
     return snapshot
-
-
-# -------------------------------------------------
-# Editor user (non-admin, still allowed by override)
-# -------------------------------------------------
-
-@pytest.fixture
-def editor_user(admin_user):
-    """
-    For Phase I tests, editor_user resolves to admin_user
-    because auth is overridden anyway.
-    This keeps role semantics explicit without JWT friction.
-    """
-    return admin_user
 
 
 # -------------------------------------------------
@@ -192,19 +246,15 @@ def obsolete_snapshot(db, project, admin_user):
 
 
 # -------------------------------------------------
-# Archived project snapshot
+# Archived project snapshot (Phase I.4 compatibility)
 # -------------------------------------------------
 
 @pytest.fixture
 def archived_project_snapshot(db, admin_user):
-    """
-    Placeholder fixture.
-    Project archiving is implemented in Phase I.5,
-    so this snapshot is used only for xfail tests.
-    """
     project = Project(
-        name="Future Archived Project",
+        name="Archived Snapshot Project",
         owner_id=admin_user.id,
+        archived_at=datetime.utcnow(),
     )
     db.add(project)
     db.commit()
@@ -223,4 +273,5 @@ def archived_project_snapshot(db, admin_user):
     db.refresh(snap)
 
     return snap
+
 

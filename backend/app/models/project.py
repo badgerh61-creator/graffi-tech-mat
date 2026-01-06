@@ -4,12 +4,17 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from app.db.base import Base
 
+
 class Project(Base):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    name = Column(String, nullable=False, default="Untitled Project")
+    name = Column(
+        String,
+        nullable=False,
+        default="Untitled Project",
+    )
 
     owner_id = Column(
         Integer,
@@ -26,5 +31,16 @@ class Project(Base):
         index=True,
     )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # 🔒 Phase I.5 — Project archival marker
+    # NULL   → project is active
+    # value  → project is archived (read-only)
+    archived_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
 

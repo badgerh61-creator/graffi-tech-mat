@@ -166,6 +166,16 @@ class ProjectRead(BaseModel):
 
 
 # ======================
+# WORKSPACE CAPABILITIES
+# ======================
+
+class WorkspaceCapabilities(BaseModel):
+    can_view_assets: bool
+    can_view_snapshots: bool
+    can_edit_project: bool
+
+
+# ======================
 # WORKSPACE (READ-ONLY)
 # ======================
 
@@ -173,7 +183,9 @@ class WorkspaceRead(BaseModel):
     project: ProjectRead
     snapshots: List[SnapshotRead]
     assets: List[AssetRead]
+    capabilities: WorkspaceCapabilities
 
     class Config:
         orm_mode = True
+
 

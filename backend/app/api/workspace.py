@@ -37,6 +37,15 @@ def read_workspace(
             detail="Project not found",
         )
 
+    # 🧠 Phase J.4C — CAPABILITY DERIVATION (READ-ONLY)
+    is_owner = project.owner_id == user.id
+
+    capabilities = {
+        "can_view_assets": is_owner,
+        "can_view_snapshots": is_owner,
+        "can_edit_project": is_owner,
+    }
+
     # 🧩 Phase J.4B.3 — SNAPSHOT ASSEMBLY (READ-ONLY)
     snapshots = (
         db.query(RenderedSnapshot)
@@ -56,7 +65,8 @@ def read_workspace(
 
     return {
         "project": project,
-        "snapshots": snapshots,
-        "assets": assets,
+        "snapshots": snapshots if is_owner else [],
+        "assets": assets if is_owner else [],
+        "capabilities": capabilities,
     }
 

@@ -116,3 +116,111 @@ def completed_snapshot(db, project, admin_user):
     db.refresh(snapshot)
     return snapshot
 
+
+# -------------------------------------------------
+# Editor user (non-admin, still allowed by override)
+# -------------------------------------------------
+
+@pytest.fixture
+def editor_user(admin_user):
+    """
+    For Phase I tests, editor_user resolves to admin_user
+    because auth is overridden anyway.
+    This keeps role semantics explicit without JWT friction.
+    """
+    return admin_user
+
+
+# -------------------------------------------------
+# Pending snapshot
+# -------------------------------------------------
+
+@pytest.fixture
+def pending_snapshot(db, project, admin_user):
+    snap = RenderedSnapshot(
+        project_id=project.id,
+        scene_state_hash="__pending_hash__",
+        render_profile="default",
+        engine_version="test-engine",
+        status="pending",
+        created_by=admin_user.id,
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+# -------------------------------------------------
+# Failed snapshot
+# -------------------------------------------------
+
+@pytest.fixture
+def failed_snapshot(db, project, admin_user):
+    snap = RenderedSnapshot(
+        project_id=project.id,
+        scene_state_hash="__failed_hash__",
+        render_profile="default",
+        engine_version="test-engine",
+        status="failed",
+        created_by=admin_user.id,
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+# -------------------------------------------------
+# Obsolete snapshot
+# -------------------------------------------------
+
+@pytest.fixture
+def obsolete_snapshot(db, project, admin_user):
+    snap = RenderedSnapshot(
+        project_id=project.id,
+        scene_state_hash="__obsolete_hash__",
+        render_profile="default",
+        engine_version="test-engine",
+        status="obsolete",
+        created_by=admin_user.id,
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+# -------------------------------------------------
+# Archived project snapshot
+# -------------------------------------------------
+
+@pytest.fixture
+def archived_project_snapshot(db, admin_user):
+    """
+    Placeholder fixture.
+    Project archiving is implemented in Phase I.5,
+    so this snapshot is used only for xfail tests.
+    """
+    project = Project(
+        name="Future Archived Project",
+        owner_id=admin_user.id,
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+
+    snap = RenderedSnapshot(
+        project_id=project.id,
+        scene_state_hash="__archived_hash__",
+        render_profile="default",
+        engine_version="test-engine",
+        status="completed",
+        created_by=admin_user.id,
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+
+    return snap
+

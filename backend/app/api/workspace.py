@@ -1,3 +1,19 @@
+"""
+PHASE J WORKSPACE CONTRACT (READ-ONLY)
+
+This endpoint assembles the canonical workspace payload delivered to the editor.
+
+Rules:
+- Snapshot-based visual truth only
+- Deterministic ordering
+- No snapshot mutation
+- No snapshot selection
+- No engine side effects
+- No implicit writes during editor boot
+
+Any write operation MUST go through the Phase I mutation system.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -8,6 +24,7 @@ from app.models.rendered_snapshot import RenderedSnapshot
 from app.models.asset import Asset
 from app.models.model import ModelRecord
 from app.schemas import WorkspaceRead
+from app.workspaces.normalize import normalize_snapshots
 
 router = APIRouter(
     prefix="/workspace",
@@ -15,13 +32,13 @@ router = APIRouter(
 )
 
 
-@router.get("/{project_id}", response_model=WorkspaceRead)
+@router.get("/{project_id}")
 def read_workspace(
     project_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # 🧱 Phase J.4B.2 — PROJECT OWNERSHIP ENFORCEMENT
+    # 🧱 Phase J.4B.2 — PROJECT OWNERSHIP ENFORCEMENT (READ-ONLY)
     project = (
         db.query(Project)
         .filter(
@@ -46,27 +63,37 @@ def read_workspace(
         "can_edit_project": is_owner,
     }
 
-    # 🧩 Phase J.4B.3 — SNAPSHOT ASSEMBLY (READ-ONLY)
-    snapshots = (
+    # 🧩 Phase J.5.1 + J.5.2 — SNAPSHOT ASSEMBLY + NORMALIZATION (READ-ONLY)
+    raw_snapshots = (
         db.query(RenderedSnapshot)
         .filter(RenderedSnapshot.project_id == project_id)
         .order_by(RenderedSnapshot.created_at.desc())
         .all()
     )
 
-    # 🧩 Phase J.4B.4 — ASSET ASSEMBLY (OWNER → MODELS → ASSETS)
+    normalized_snapshots = normalize_snapshots(raw_snapshots) if is_owner else {
+        "completed": [],
+        "failed": [],
+        "pending": [],
+    }
+
+    # 🧩 Phase J.5.2 — ASSET ASSEMBLY (DETERMINISTIC ORDER)
     assets = (
         db.query(Asset)
         .join(ModelRecord, Asset.model_id == ModelRecord.id)
         .filter(ModelRecord.owner_id == user.id)
         .order_by(Asset.created_at.desc())
         .all()
-    )
+    ) if is_owner else []
 
     return {
         "project": project,
-        "snapshots": snapshots if is_owner else [],
-        "assets": assets if is_owner else [],
+        "snapshots": normalized_snapshots,
+        "assets": assets,
         "capabilities": capabilities,
+        "meta": {
+            "snapshot_total": len(raw_snapshots),
+            "asset_total": len(assets),
+        },
     }
 

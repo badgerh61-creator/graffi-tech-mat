@@ -2,6 +2,8 @@
 
 Status: FROZEN  
 Phase: J  
+Tests: PASSING  
+Mutations: PROHIBITED  
 Scope: Editor Boot & Read-Only State Assembly
 
 ---

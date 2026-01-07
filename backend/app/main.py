@@ -30,6 +30,10 @@ from app.api.snapshots import (
 )
 from app.api.workspace import router as workspace_router
 
+# ✅ Phase I.7 — scene save mutation routes
+from app.api.scenes import router as scenes_router
+
+
 # ===== APP =====
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -65,6 +69,9 @@ app.include_router(models_router)
 app.include_router(assets_router)
 app.include_router(mutations_router)
 
+# 🔹 Phase I.7 — Scene save (editor "Save" capability)
+app.include_router(scenes_router)
+
 app.include_router(upload_router)
 app.include_router(presign_router)
 
@@ -73,10 +80,10 @@ app.include_router(audit_router)
 app.include_router(exports_router)
 app.include_router(organizations_router)
 
-# Phase J — project-scoped snapshot routes
+# 🔹 Phase J — project-scoped snapshot routes
 app.include_router(snapshots_router)
 
-# Phase I.4 — global snapshot mutation routes
+# 🔹 Phase I.4 — global snapshot mutation routes
 app.include_router(snapshot_mutation_router)
 
 # ===== HEALTH =====

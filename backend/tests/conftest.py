@@ -31,13 +31,18 @@ def db():
     finally:
         db.close()
 
+
+# -------------------------------------------------
+# Legacy auth() helper injection
+# -------------------------------------------------
+
 @pytest.fixture(autouse=True)
 def inject_auth_helper(request):
     """
     Inject `auth()` into each test module's global namespace.
 
-    This supports legacy-style tests that call `auth(user)`
-    without declaring it as a fixture parameter.
+    Supports legacy tests that still call:
+        headers=auth(user)
     """
     def _auth(_user=None):
         return {}
@@ -51,10 +56,6 @@ def inject_auth_helper(request):
 
 @pytest.fixture
 def admin_user(db):
-    """
-    Deterministic admin user for Phase I tests.
-    Reused across tests to avoid UNIQUE constraint issues.
-    """
     user = (
         db.query(User)
         .filter(User.email == "admin_phase_i@test.com")
@@ -77,14 +78,17 @@ def admin_user(db):
 
 
 # -------------------------------------------------
-# 🔐 AUTH OVERRIDE (FIXED — supports viewer tests)
+# 🔐 AUTH OVERRIDE (authoritative, Phase K safe)
 # -------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def override_get_current_user(request, admin_user):
     """
-    Default to admin_user unless a test explicitly injects:
-    request.node.user
+    Global auth override.
+
+    - Defaults to admin_user
+    - Tests may inject a user explicitly via:
+          request.node.user = <fixture_user>
     """
     def _override():
         return getattr(request.node, "user", admin_user)
@@ -95,56 +99,76 @@ def override_get_current_user(request, admin_user):
 
 
 # -------------------------------------------------
-# Auth header helper (kept for test compatibility)
+# Auth header helper (kept for compatibility)
 # -------------------------------------------------
 
 @pytest.fixture
 def auth():
-    """
-    Header factory for tests.
-    Auth is globally overridden, but tests still expect headers.
-    """
     def _auth(_user=None):
         return {}
     return _auth
 
 
 # -------------------------------------------------
-# Owner user (Phase I.5 semantic alias)
+# Owner user (distinct from admin in Phase K)
 # -------------------------------------------------
 
 @pytest.fixture
-def owner_user(admin_user):
-    """
-    In Phase I.5, Owner and Admin share authority.
-    This alias keeps tests semantically correct.
-    """
-    return admin_user
+def owner_user(db):
+    user = (
+        db.query(User)
+        .filter(User.email == "owner_phase_k@test.com")
+        .first()
+    )
+
+    if not user:
+        user = User(
+            email="owner_phase_k@test.com",
+            hashed_password="__test_hash__",
+            role="owner",
+            is_active=True,
+            is_admin=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    return user
 
 
 # -------------------------------------------------
-# Editor user (explicit but overridden)
+# Editor user (REAL editor, not admin)
 # -------------------------------------------------
 
 @pytest.fixture
-def editor_user(admin_user):
-    """
-    Editor resolves to admin_user due to auth override.
-    This preserves role intent without JWT friction.
-    """
-    return admin_user
+def editor_user(db):
+    user = (
+        db.query(User)
+        .filter(User.email == "editor_phase_k@test.com")
+        .first()
+    )
+
+    if not user:
+        user = User(
+            email="editor_phase_k@test.com",
+            hashed_password="__test_hash__",
+            role="editor",
+            is_active=True,
+            is_admin=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    return user
 
 
 # -------------------------------------------------
-# Viewer user (Phase I.7 permission enforcement)
+# Viewer user (read-only)
 # -------------------------------------------------
 
 @pytest.fixture
 def viewer_user(db):
-    """
-    Viewer-level user with read-only access.
-    Used to assert mutation denial in Phase I.7.
-    """
     user = (
         db.query(User)
         .filter(User.email == "viewer_phase_i@test.com")
@@ -184,7 +208,7 @@ def project(db, admin_user):
 
 
 # -------------------------------------------------
-# Archived project (Phase I.5)
+# Archived project
 # -------------------------------------------------
 
 @pytest.fixture
@@ -196,34 +220,30 @@ def archived_project(db, project):
 
 
 # -------------------------------------------------
-# Completed snapshot
+# Snapshot fixtures
 # -------------------------------------------------
 
 @pytest.fixture
 def completed_snapshot(db, project, admin_user):
-    snapshot = RenderedSnapshot(
+    snap = RenderedSnapshot(
         project_id=project.id,
-        scene_state_hash="__test_scene_hash__",
+        scene_state_hash="__completed__",
         render_profile="default",
         engine_version="test-engine",
         status="completed",
         created_by=admin_user.id,
     )
-    db.add(snapshot)
+    db.add(snap)
     db.commit()
-    db.refresh(snapshot)
-    return snapshot
+    db.refresh(snap)
+    return snap
 
-
-# -------------------------------------------------
-# Pending snapshot
-# -------------------------------------------------
 
 @pytest.fixture
 def pending_snapshot(db, project, admin_user):
     snap = RenderedSnapshot(
         project_id=project.id,
-        scene_state_hash="__pending_hash__",
+        scene_state_hash="__pending__",
         render_profile="default",
         engine_version="test-engine",
         status="pending",
@@ -235,15 +255,11 @@ def pending_snapshot(db, project, admin_user):
     return snap
 
 
-# -------------------------------------------------
-# Failed snapshot
-# -------------------------------------------------
-
 @pytest.fixture
 def failed_snapshot(db, project, admin_user):
     snap = RenderedSnapshot(
         project_id=project.id,
-        scene_state_hash="__failed_hash__",
+        scene_state_hash="__failed__",
         render_profile="default",
         engine_version="test-engine",
         status="failed",
@@ -255,15 +271,11 @@ def failed_snapshot(db, project, admin_user):
     return snap
 
 
-# -------------------------------------------------
-# Obsolete snapshot
-# -------------------------------------------------
-
 @pytest.fixture
 def obsolete_snapshot(db, project, admin_user):
     snap = RenderedSnapshot(
         project_id=project.id,
-        scene_state_hash="__obsolete_hash__",
+        scene_state_hash="__obsolete__",
         render_profile="default",
         engine_version="test-engine",
         status="obsolete",
@@ -276,7 +288,7 @@ def obsolete_snapshot(db, project, admin_user):
 
 
 # -------------------------------------------------
-# Archived project snapshot (Phase I.4 compatibility)
+# Archived project snapshot
 # -------------------------------------------------
 
 @pytest.fixture
@@ -292,7 +304,7 @@ def archived_project_snapshot(db, admin_user):
 
     snap = RenderedSnapshot(
         project_id=project.id,
-        scene_state_hash="__archived_hash__",
+        scene_state_hash="__archived__",
         render_profile="default",
         engine_version="test-engine",
         status="completed",
@@ -306,15 +318,11 @@ def archived_project_snapshot(db, admin_user):
 
 
 # -------------------------------------------------
-# Scene state fixtures (Phase I.7 — snapshot-based)
+# Scene state fixtures (Phase I.7)
 # -------------------------------------------------
 
 @pytest.fixture
 def valid_scene_state():
-    """
-    Minimal deterministic scene payload.
-    Phase I.7 stores scene state INSIDE snapshots.
-    """
     return {
         "models": [],
         "materials": [],
@@ -329,51 +337,35 @@ def valid_scene_state():
 
 @pytest.fixture
 def existing_snapshot(db, project, admin_user):
-    """
-    Existing completed snapshot to ensure immutability.
-    """
-    snapshot = RenderedSnapshot(
+    snap = RenderedSnapshot(
         project_id=project.id,
-        scene_state_hash="__existing_hash__",
+        scene_state_hash="__existing__",
         render_profile="default",
         engine_version="test-engine",
         status="completed",
         created_by=admin_user.id,
     )
-    db.add(snapshot)
+    db.add(snap)
     db.commit()
-    db.refresh(snapshot)
-    return snapshot
+    db.refresh(snap)
+    return snap
 
 
 # -------------------------------------------------
-# Scene compatibility fixtures (Phase I.7)
+# Scene compatibility helpers
 # -------------------------------------------------
 
 class _SceneHandle:
-    """
-    Lightweight scene handle for Phase I.7 tests.
-
-    This is NOT a persisted model.
-    It exists only to satisfy the test contract:
-    scene.id → project.id
-    """
     def __init__(self, project_id: int):
         self.id = project_id
 
 
 @pytest.fixture
 def scene(project):
-    """
-    Logical scene bound to a project.
-    """
     return _SceneHandle(project.id)
 
 
 @pytest.fixture
 def archived_scene(archived_project):
-    """
-    Logical scene bound to an archived project.
-    """
     return _SceneHandle(archived_project.id)
 

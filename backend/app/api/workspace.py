@@ -1,7 +1,8 @@
 """
 PHASE J WORKSPACE CONTRACT (FROZEN)
+PHASE K.0 CAPABILITY EXTENSION (FROZEN)
 
-This endpoint assembles the canonical workspace payload delivered to the editor.
+Canonical workspace payload.
 
 Guarantees:
 - Read-only
@@ -12,7 +13,12 @@ Guarantees:
 - No engine side effects
 - No implicit writes during editor boot
 
-Any write operation MUST go through the Phase I mutation system.
+Phase K.0:
+- Server-derived write capabilities
+- Role-based authority (NO client override)
+- Archived project hard stop
+
+Any write operation MUST go through Phase I mutations.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,10 +33,46 @@ from app.models.model import ModelRecord
 from app.workspaces.normalize import normalize_snapshots
 
 router = APIRouter(
-    prefix="/workspace",
+    prefix="/workspaces",
     tags=["Workspace"],
 )
 
+
+def derive_capabilities(user, project):
+    """
+    Phase K.0 — Authoritative write capability gate.
+    Role-based only. Client input ignored.
+    """
+
+    capabilities = {
+        "canDecorateExterior": False,
+        "canDecorateInterior": False,
+        "canTuneParameters": False,
+        "canModifyBody": False,
+        "canOverrideValidation": False,
+    }
+
+    # Archived project → absolute lock
+    if project.archived_at is not None:
+        return capabilities
+
+    role = getattr(user, "role", None)
+
+    # ADMIN → full authority
+    if role == "admin":
+        return {key: True for key in capabilities}
+
+    # EDITOR → limited write
+    if role == "editor":
+        capabilities.update({
+            "canDecorateExterior": True,
+            "canDecorateInterior": True,
+            "canTuneParameters": True,
+        })
+        return capabilities
+
+    # VIEWER / fallback → read-only
+    return capabilities
 
 @router.get("/{project_id}")
 def read_workspace(
@@ -38,32 +80,23 @@ def read_workspace(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # 🧱 Phase J.4B.2 — PROJECT OWNERSHIP ENFORCEMENT (READ-ONLY)
+    """
+    Assemble deterministic, read-only workspace payload.
+    """
+
     project = (
         db.query(Project)
-        .filter(
-            Project.id == project_id,
-            Project.owner_id == user.id,
-        )
+        .filter(Project.id == project_id)
         .first()
     )
 
     if not project:
-        raise HTTPException(
-            status_code=404,
-            detail="Project not found",
-        )
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    # 🧠 Phase J.4C — CAPABILITY DERIVATION (READ-ONLY)
-    is_owner = project.owner_id == user.id
+    # Phase K.0 — authoritative capabilities
+    capabilities = derive_capabilities(user, project)
 
-    capabilities = {
-        "can_view_assets": is_owner,
-        "can_view_snapshots": is_owner,
-        "can_edit_project": is_owner,
-    }
-
-    # 🧩 Phase J.5 — SNAPSHOT ASSEMBLY + NORMALIZATION (READ-ONLY)
+    # Phase J — snapshot assembly
     raw_snapshots = (
         db.query(RenderedSnapshot)
         .filter(RenderedSnapshot.project_id == project_id)
@@ -71,28 +104,33 @@ def read_workspace(
         .all()
     )
 
-    normalized_snapshots = normalize_snapshots(raw_snapshots) if is_owner else {
-        "completed": [],
-        "failed": [],
-        "pending": [],
-    }
+    if user.role == "admin" or project.owner_id == user.id:
+        normalized_snapshots = normalize_snapshots(raw_snapshots)
+    else:
+        normalized_snapshots = {
+            "completed": [],
+            "failed": [],
+            "pending": [],
+        }
 
-    # 🧩 Phase J.5 — ASSET ASSEMBLY (DETERMINISTIC ORDER)
-    # NOTE: Assets are intentionally USER-SCOPED, not PROJECT-SCOPED in Phase J.
-    # Project ↔ asset binding is introduced later via Phase I mutations.
+    # Phase J — asset assembly
     assets = (
         db.query(Asset)
         .join(ModelRecord, Asset.model_id == ModelRecord.id)
         .filter(ModelRecord.owner_id == user.id)
         .order_by(Asset.created_at.desc())
         .all()
-    ) if is_owner else []
+    )
 
     return {
-        "project": project,
+        "project": {
+            "id": project.id,
+            "name": project.name,
+            "archived": project.archived_at is not None,
+        },
+        "capabilities": capabilities,
         "snapshots": normalized_snapshots,
         "assets": assets,
-        "capabilities": capabilities,
         "meta": {
             "snapshot_total": len(raw_snapshots),
             "asset_total": len(assets),

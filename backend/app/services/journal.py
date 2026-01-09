@@ -1,12 +1,13 @@
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 
-from app.models.mutation_journal import MutationJournal
+from app.models.journal_entry import JournalEntry
 
 
 def write_journal_entry(
     *,
     db: Session,
+    project_id: int,
     intent_type: str,
     target_type: str,
     target_id: int,
@@ -14,19 +15,32 @@ def write_journal_entry(
     after_state: Dict[str, Any],
     issued_by_user_id: int,
     reason: str | None = None,
-) -> MutationJournal:
+) -> JournalEntry:
     """
     Canonical journal writer (Phase I + Phase K compliant)
     """
 
-    entry = MutationJournal(
-        intent_type=intent_type,
-        target_type=target_type,
-        target_id=target_id,
-        before_state=before_state,
-        after_state=after_state,
-        issued_by_user_id=issued_by_user_id,
-        reason=reason,
+    # Ensure FK targets exist
+    db.flush()
+
+    entry = JournalEntry(
+        # -----------------------------------------------------
+        # Legacy-required fields (schema compatibility)
+        # -----------------------------------------------------
+        type="mutation",
+        scene_id=None,
+        snapshot_id=after_state["snapshot_id"],
+        actor_user_id=issued_by_user_id,
+        scene_hash=None,
+
+        # -----------------------------------------------------
+        # Canonical fields
+        # -----------------------------------------------------
+        project_id=project_id,
+        actor_id=issued_by_user_id,
+        mutation_type=intent_type,
+        snapshot_before=before_state["snapshot_id"],
+        snapshot_after=after_state["snapshot_id"],
     )
 
     db.add(entry)

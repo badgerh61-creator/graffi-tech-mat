@@ -391,4 +391,3 @@ def scene(project):
 @pytest.fixture
 def archived_scene(archived_project):
     return _SceneHandle(archived_project.id)
-

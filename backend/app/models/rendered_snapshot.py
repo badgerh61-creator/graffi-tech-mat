@@ -43,44 +43,24 @@ class RenderedSnapshot(Base):
         index=True,
     )
 
-    # ---- Deterministic identity (Phase I / J) ----
     scene_state_hash = Column(String, index=True, nullable=False)
     render_profile = Column(String, nullable=False)
     engine_version = Column(String, nullable=False)
 
-    # ---- Snapshot state payloads (Phase K) ----
-    # NOTE:
-    # There is NO scene_state column by design.
-    # Scene state is referenced by hash only.
     decor_state = Column(JSON, nullable=True)
     tuning_state = Column(JSON, nullable=True)
     body_state = Column(JSON, nullable=True)
 
-    # ---- Render output ----
     image_url = Column(String, nullable=True)
 
-    # ---- Lifecycle ----
     status = Column(String, default=SnapshotStatus.PENDING, nullable=False)
     error_message = Column(String, nullable=True)
 
-    # ---- Audit ----
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # ------------------------------------------------------------------
-    # Phase K contract: deterministic, immutable snapshot hash
-    # ------------------------------------------------------------------
     @property
     def hash(self) -> str:
-        """
-        Deterministic content hash for snapshot immutability and deduplication.
-
-        IMPORTANT:
-        - Computed, not stored
-        - Compatible with Phase I/J schema
-        - Covers ONLY logical state
-        - Excludes DB ids, timestamps, URLs
-        """
         payload = {
             "scene_state_hash": self.scene_state_hash,
             "decor_state": self.decor_state,
@@ -90,41 +70,16 @@ class RenderedSnapshot(Base):
             "engine_version": self.engine_version,
         }
 
-        encoded = json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
 
-        return hashlib.sha256(encoded).hexdigest()
-
-    # ------------------------------------------------------------------
-    # Phase I.4 compatibility shim — snapshot invalidation
-    # ------------------------------------------------------------------
     @property
     def is_obsolete(self) -> bool:
-        """
-        Phase I.4 placeholder.
-
-        Until snapshot invalidation is implemented,
-        snapshots are never obsolete.
-        """
         return False
 
-    # ------------------------------------------------------------------
-    # Phase K.1 compatibility shim — vehicle surface definition
-    # ------------------------------------------------------------------
     @property
     def vehicle_panels(self) -> set[str]:
-        """
-        Phase K.1 placeholder.
-
-        Until vehicle body schema exists, expose a
-        deterministic, fixed exterior surface set.
-
-        This allows decor validation without coupling
-        snapshots to vehicle geometry.
-        """
         return {
             "door_left",
             "door_right",
@@ -137,5 +92,13 @@ class RenderedSnapshot(Base):
             "fender_rear_right",
             "bumper_front",
             "bumper_rear",
+        }
+
+    @property
+    def payload(self) -> dict:
+        return {
+            "decor": self.decor_state or {},
+            "tuning": self.tuning_state or {},
+            "body": self.body_state or {},
         }
 

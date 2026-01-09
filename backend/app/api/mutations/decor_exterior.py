@@ -18,13 +18,17 @@ from app.api.mutations.decor.schemas import (
     RemoveExteriorDecalPayload,
 )
 
+# -------------------------------------------------
+# ROUTER (MUST BE DEFINED FIRST)
+# -------------------------------------------------
+
 router = APIRouter(
     prefix="/mutations/decor/exterior",
     tags=["mutations"],
 )
 
 # -------------------------------------------------
-# APPLY DECAL (PHASE K.1)
+# APPLY DECAL
 # -------------------------------------------------
 
 @router.post("/apply-decal")
@@ -66,7 +70,6 @@ def apply_decal(
     db.commit()
     return {"snapshot_id": snapshot.id}
 
-
 # -------------------------------------------------
 # REMOVE DECAL (PHASE K.1)
 # -------------------------------------------------
@@ -78,6 +81,7 @@ def remove_decal(
     user: User = Depends(get_current_user),
     payload: RemoveExteriorDecalPayload,
 ):
+    # ---- Capability gate (viewer must fail here)
     try:
         require_capability(
             db=db,
@@ -98,6 +102,7 @@ def remove_decal(
             content={"error": "base_snapshot_not_found"},
         )
 
+    # ---- Missing decal instance → 404
     decals = (base_snapshot.decor_state or {}).get("decals", [])
     if not any(
         d.get("instance_id") == payload.decal_instance_id

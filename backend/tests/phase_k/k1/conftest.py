@@ -44,3 +44,4 @@ def completed_snapshot_with_decal(db, project, admin_user):
 
     return snapshot
 
+

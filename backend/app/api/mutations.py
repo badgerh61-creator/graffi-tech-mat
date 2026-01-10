@@ -1,3 +1,4 @@
+# app/api/mutations.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -8,15 +9,10 @@ from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
 from app.models.mutation_journal import MutationJournal
 
-from app.crud import require_model_role, require_project_role
+from app.services.capabilities import require_capability
 from app.services.mutations.rename_asset import RenameAssetAdapter
 
-# ============================================================
-# ROUTER — MUTATIONS ONLY
-# ============================================================
-
 router = APIRouter(prefix="/mutations", tags=["mutations"])
-
 
 # ============================================================
 # PHASE I.1 — Rename Asset
@@ -45,7 +41,13 @@ def rename_asset(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    require_model_role(db, user=user, model=model, min_role="editor")
+    # 🔐 Canonical gate
+    require_capability(
+        db=db,
+        user=user,
+        project_id=model.owner_id,
+        capability="canModifyBody",
+    )
 
     if asset.filename != previous_name:
         raise HTTPException(status_code=409, detail="Stale asset state")
@@ -72,7 +74,7 @@ def rename_asset(
 
 
 # ============================================================
-# PHASE I.3 — Set Active Snapshot (PRIVATE / MUTATION CONTEXT)
+# PHASE I.3 — Set Active Snapshot (PRIVATE)
 # ============================================================
 
 @router.post("/set-active-snapshot")
@@ -88,11 +90,13 @@ def set_active_snapshot(
     if not project_id or not next_snapshot_id:
         raise HTTPException(status_code=400, detail="Invalid payload")
 
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    require_project_role(db, user=user, project=project, min_role="editor")
+    # 🔐 Capability gate (editor/admin only)
+    require_capability(
+        db=db,
+        user=user,
+        project_id=project_id,
+        capability="canDecorateExterior",
+    )
 
     snapshot = (
         db.query(RenderedSnapshot)
@@ -106,6 +110,7 @@ def set_active_snapshot(
     if not snapshot:
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
+    project = db.get(Project, project_id)
     project.active_snapshot_id = snapshot.id
     db.commit()
 

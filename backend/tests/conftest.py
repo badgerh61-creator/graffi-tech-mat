@@ -1,16 +1,16 @@
 import pytest
 from datetime import datetime
 from fastapi.testclient import TestClient
-
 from sqlalchemy import text
+
 from app.main import app
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, engine
+from app.db.base import Base
+from app.api.deps import get_current_user
+
 from app.models.user import User
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
-from app.api.deps import get_current_user
-from app.db.base import Base
-from app.db.session import engine
 
 
 # -------------------------------------------------
@@ -23,18 +23,11 @@ def client():
 
 
 # -------------------------------------------------
-# Test database schema (MANDATORY for Phase K)
+# Test database schema (Phase K canonical)
 # -------------------------------------------------
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_db():
-    """
-    Recreate database schema for tests.
-
-    SQLite requires foreign keys to be disabled
-    temporarily to drop cyclic schemas safely.
-    """
-
     with engine.connect() as conn:
         conn.execute(text("PRAGMA foreign_keys=OFF"))
         Base.metadata.drop_all(bind=conn)
@@ -56,35 +49,57 @@ def db():
 
 
 # -------------------------------------------------
-# Legacy auth() helper injection
+# 🔐 AUTH IDENTITY OVERRIDE (SINGLE SOURCE OF TRUTH)
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def override_get_current_user(request, admin_user):
+    """
+    Priority (DO NOT CHANGE):
+    1. request.node.user         (legacy explicit override)
+    2. request.node._forced_user (auth(user))
+    3. admin_user                (default)
+    """
+
+    def _override():
+        if hasattr(request.node, "user"):
+            return request.node.user
+        if hasattr(request.node, "_forced_user"):
+            return request.node._forced_user
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _override
+    yield
+    app.dependency_overrides.clear()
+
+
+# -------------------------------------------------
+# 🔐 LEGACY auth() INJECTION (THE CRITICAL FIX)
 # -------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def inject_auth_helper(request):
     """
-    Inject `auth()` into each test module's global namespace.
+    Injects auth(user) into EVERY test module's globals.
 
-    Supports legacy tests that still call:
-        headers=auth(user)
+    This is REQUIRED because tests call auth(...)
+    without declaring it as a fixture.
     """
-    def _auth(_user=None):
+
+    def auth(user):
+        request.node._forced_user = user
         return {}
 
-    request.module.auth = _auth
+    request.module.auth = auth
 
 
 # -------------------------------------------------
-# Admin user (canonical Phase I actor)
+# Users
 # -------------------------------------------------
 
 @pytest.fixture
 def admin_user(db):
-    user = (
-        db.query(User)
-        .filter(User.email == "admin_phase_i@test.com")
-        .first()
-    )
-
+    user = db.query(User).filter_by(email="admin_phase_i@test.com").first()
     if not user:
         user = User(
             email="admin_phase_i@test.com",
@@ -96,54 +111,12 @@ def admin_user(db):
         db.add(user)
         db.commit()
         db.refresh(user)
-
     return user
 
 
-# -------------------------------------------------
-# 🔐 AUTH OVERRIDE (authoritative, Phase K safe)
-# -------------------------------------------------
-
-@pytest.fixture(autouse=True)
-def override_get_current_user(request, admin_user):
-    """
-    Global auth override.
-
-    - Defaults to admin_user
-    - Tests may inject a user explicitly via:
-          request.node.user = <fixture_user>
-    """
-    def _override():
-        return getattr(request.node, "user", admin_user)
-
-    app.dependency_overrides[get_current_user] = _override
-    yield
-    app.dependency_overrides.clear()
-
-
-# -------------------------------------------------
-# Auth header helper (kept for compatibility)
-# -------------------------------------------------
-
-@pytest.fixture
-def auth():
-    def _auth(_user=None):
-        return {}
-    return _auth
-
-
-# -------------------------------------------------
-# Owner user (distinct from admin in Phase K)
-# -------------------------------------------------
-
 @pytest.fixture
 def owner_user(db):
-    user = (
-        db.query(User)
-        .filter(User.email == "owner_phase_k@test.com")
-        .first()
-    )
-
+    user = db.query(User).filter_by(email="owner_phase_k@test.com").first()
     if not user:
         user = User(
             email="owner_phase_k@test.com",
@@ -155,22 +128,12 @@ def owner_user(db):
         db.add(user)
         db.commit()
         db.refresh(user)
-
     return user
 
 
-# -------------------------------------------------
-# Editor user (REAL editor, not admin)
-# -------------------------------------------------
-
 @pytest.fixture
 def editor_user(db):
-    user = (
-        db.query(User)
-        .filter(User.email == "editor_phase_k@test.com")
-        .first()
-    )
-
+    user = db.query(User).filter_by(email="editor_phase_k@test.com").first()
     if not user:
         user = User(
             email="editor_phase_k@test.com",
@@ -182,22 +145,12 @@ def editor_user(db):
         db.add(user)
         db.commit()
         db.refresh(user)
-
     return user
 
 
-# -------------------------------------------------
-# Viewer user (read-only)
-# -------------------------------------------------
-
 @pytest.fixture
 def viewer_user(db):
-    user = (
-        db.query(User)
-        .filter(User.email == "viewer_phase_i@test.com")
-        .first()
-    )
-
+    user = db.query(User).filter_by(email="viewer_phase_i@test.com").first()
     if not user:
         user = User(
             email="viewer_phase_i@test.com",
@@ -209,12 +162,11 @@ def viewer_user(db):
         db.add(user)
         db.commit()
         db.refresh(user)
-
     return user
 
 
 # -------------------------------------------------
-# Project fixture
+# Projects
 # -------------------------------------------------
 
 @pytest.fixture
@@ -230,10 +182,6 @@ def project(db, admin_user):
     return project
 
 
-# -------------------------------------------------
-# Archived project
-# -------------------------------------------------
-
 @pytest.fixture
 def archived_project(db, project):
     project.archived_at = datetime.utcnow()
@@ -243,7 +191,7 @@ def archived_project(db, project):
 
 
 # -------------------------------------------------
-# Snapshot fixtures
+# Snapshots
 # -------------------------------------------------
 
 @pytest.fixture
@@ -310,10 +258,6 @@ def obsolete_snapshot(db, project, admin_user):
     return snap
 
 
-# -------------------------------------------------
-# Archived project snapshot
-# -------------------------------------------------
-
 @pytest.fixture
 def archived_project_snapshot(db, admin_user):
     project = Project(
@@ -336,12 +280,11 @@ def archived_project_snapshot(db, admin_user):
     db.add(snap)
     db.commit()
     db.refresh(snap)
-
     return snap
 
 
 # -------------------------------------------------
-# Scene state fixtures (Phase I.7)
+# Scene helpers
 # -------------------------------------------------
 
 @pytest.fixture
@@ -358,26 +301,6 @@ def valid_scene_state():
     }
 
 
-@pytest.fixture
-def existing_snapshot(db, project, admin_user):
-    snap = RenderedSnapshot(
-        project_id=project.id,
-        scene_state_hash="__existing__",
-        render_profile="default",
-        engine_version="test-engine",
-        status="completed",
-        created_by=admin_user.id,
-    )
-    db.add(snap)
-    db.commit()
-    db.refresh(snap)
-    return snap
-
-
-# -------------------------------------------------
-# Scene compatibility helpers
-# -------------------------------------------------
-
 class _SceneHandle:
     def __init__(self, project_id: int):
         self.id = project_id
@@ -391,3 +314,4 @@ def scene(project):
 @pytest.fixture
 def archived_scene(archived_project):
     return _SceneHandle(archived_project.id)
+

@@ -8,7 +8,7 @@ from app.models.audit_log import AuditLog
 from app.models.model_owner import ModelOwner
 from app.models.job import Job
 from app.models.mutation_journal import MutationJournal
-from .journal import JournalEntry
+from .journal_entry import JournalEntry
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
 

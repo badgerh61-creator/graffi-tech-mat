@@ -1,22 +1,13 @@
+# app/api/mutations/public_router.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
-from app.crud import require_project_role
-
-"""
-Public snapshot switching router.
-
-IMPORTANT ARCHITECTURAL RULE:
-- Undo / snapshot switching is a PROJECT concern
-- It must NOT live under /mutations
-- It performs no mutation, only selection of an existing snapshot
-"""
+from app.services.capabilities import require_capability
 
 public_router = APIRouter()
-
 
 @public_router.post("/projects/{project_id}/snapshots/active")
 def set_active_snapshot_public(
@@ -29,11 +20,12 @@ def set_active_snapshot_public(
     if not snapshot_id:
         raise HTTPException(status_code=400, detail="snapshot_id required")
 
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    require_project_role(db, user=user, project=project, min_role="editor")
+    require_capability(
+        db=db,
+        user=user,
+        project_id=project_id,
+        capability="canDecorateExterior",
+    )
 
     snapshot = (
         db.query(RenderedSnapshot)
@@ -47,6 +39,7 @@ def set_active_snapshot_public(
     if not snapshot:
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
+    project = db.get(Project, project_id)
     project.active_snapshot_id = snapshot.id
     db.commit()
 

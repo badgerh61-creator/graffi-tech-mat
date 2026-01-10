@@ -21,6 +21,5 @@ from app.models import (  # noqa: F401
     project,
     rendered_snapshot,
     mutation_journal,
-    journal,
 )
 

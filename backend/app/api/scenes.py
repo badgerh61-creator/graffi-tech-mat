@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
-from app.models.journal import JournalEntry
+from app.models.journal_entry import JournalEntry
 from app.models.user import User
 
 router = APIRouter(prefix="/scenes", tags=["scenes"])

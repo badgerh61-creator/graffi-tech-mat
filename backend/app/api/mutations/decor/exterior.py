@@ -13,6 +13,7 @@ from app.services.decor_exterior import (
     apply_exterior_decal_mutation,
     remove_exterior_decal_mutation,
     set_exterior_material_mutation,
+    swap_exterior_bodykit_mutation,
 )
 
 from app.api.mutations.decor.schemas import (
@@ -181,6 +182,73 @@ def set_material(
         panel=panel,
         material=material,
     )
+
+    db.commit()
+    return {"snapshot_id": snapshot.id}
+
+
+# -------------------------------------------------
+# SWAP BODYKIT (PHASE K.1 — CANONICAL)
+# -------------------------------------------------
+
+@router.post("/swap-bodykit")
+def swap_bodykit(
+    *,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    payload: dict,
+):
+    project_id = payload.get("project_id")
+
+    try:
+        require_capability(
+            db=db,
+            user=user,
+            project_id=project_id,
+            capability="canDecorateExterior",
+        )
+    except Exception:
+        return JSONResponse(
+            status_code=403,
+            content={"error": "decor_capability_required"},
+        )
+
+    base_snapshot = db.get(RenderedSnapshot, payload.get("snapshot_base_id"))
+    if (
+        not base_snapshot
+        or base_snapshot.status != SnapshotStatus.COMPLETED
+        or base_snapshot.is_obsolete
+    ):
+        return JSONResponse(
+            status_code=409,
+            content={"error": "invalid_snapshot_base"},
+        )
+
+    bodykit_id = payload.get("bodykit_id")
+    if not bodykit_id:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "bodykit_not_found"},
+        )
+
+    try:
+        snapshot = swap_exterior_bodykit_mutation(
+            db=db,
+            user_id=user.id,
+            project_id=project_id,
+            base_snapshot=base_snapshot,
+            bodykit_id=bodykit_id,
+        )
+    except KeyError:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "bodykit_not_found"},
+        )
+    except ValueError:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "bodykit_incompatible"},
+        )
 
     db.commit()
     return {"snapshot_id": snapshot.id}

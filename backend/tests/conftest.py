@@ -49,6 +49,16 @@ def db():
 
 
 # -------------------------------------------------
+# 🧹 Test isolation — clear journal entries
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def clear_journal_entries(db):
+    db.execute(text("DELETE FROM journal_entries"))
+    db.commit()
+
+
+# -------------------------------------------------
 # 🔐 AUTH IDENTITY OVERRIDE (SINGLE SOURCE OF TRUTH)
 # -------------------------------------------------
 

@@ -46,6 +46,13 @@ from app.api.mutations.decor.exterior import (
     router as decor_exterior_router,
 )
 
+# ============================================================
+# 🔧 Phase K.2 mutations — Tuning (parameter-only)
+# ============================================================
+from app.api.mutations.tuning.router import (
+    router as tuning_router,
+)
+
 # ===== APP =====
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -94,6 +101,9 @@ app.include_router(phase_i_mutations_router)
 
 # 🎨 Phase K.1 — Decor mutations (exterior)
 app.include_router(decor_exterior_router)
+
+# 🔧 Phase K.2 — Tuning mutations (parameter-only)
+app.include_router(tuning_router)
 
 # 💾 Phase I.7 — Scene save
 app.include_router(scenes_router)

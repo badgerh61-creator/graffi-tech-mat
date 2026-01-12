@@ -158,6 +158,27 @@ def editor_user(db):
     return user
 
 
+# ✅ ADDED — REQUIRED FOR Phase K.2
+@pytest.fixture
+def editor_user_without_tuning_capability(db):
+    """
+    Editor role, but treated as lacking canTune capability
+    for explicit negative-path testing.
+    """
+    user = User(
+        email="editor_no_tune@test.com",
+        hashed_password="__test_hash__",
+        role="editor",
+        is_active=True,
+        is_admin=False,
+        can_tune=False,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 @pytest.fixture
 def viewer_user(db):
     user = db.query(User).filter_by(email="viewer_phase_i@test.com").first()

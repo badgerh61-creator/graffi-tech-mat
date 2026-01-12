@@ -1,15 +1,17 @@
-def test_set_suspension_invalid_snapshot_base(
+def test_set_wheels_invalid_snapshot_base(
     client,
     project,
     failed_snapshot,
     editor_user,
 ):
     response = client.post(
-        "/mutations/tuning/set-suspension",
+        "/mutations/tuning/set-wheels",
         json={
             "project_id": project.id,
             "snapshot_base_id": failed_snapshot.id,
-            "preset_id": "sport_low",
+            "diameter": 18,
+            "width": 8,
+            "offset": 40,
         },
         headers=auth(editor_user),
     )

@@ -1,17 +1,19 @@
-def test_set_suspension_requires_capability(
+def test_viewer_cannot_set_wheels(
     client,
     project,
     completed_snapshot,
-    editor_user_without_tune_cap,
+    viewer_user,
 ):
     response = client.post(
-        "/mutations/tuning/set-suspension",
+        "/mutations/tuning/set-wheels",
         json={
             "project_id": project.id,
             "snapshot_base_id": completed_snapshot.id,
-            "preset_id": "sport_low",
+            "diameter": 19,
+            "width": 9.5,
+            "offset": 35,
         },
-        headers=auth(editor_user_without_tune_cap),
+        headers=auth(viewer_user),
     )
 
     assert response.status_code == 403

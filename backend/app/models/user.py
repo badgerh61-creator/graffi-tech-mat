@@ -25,11 +25,14 @@ class User(Base):
     role = Column(
         String,
         nullable=False,
-        default="viewer",  # viewer | editor | admin
+        default="viewer",  # viewer | editor | owner | admin
     )
 
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+
+    # ✅ Phase K — per-user capability overrides
+    can_tune = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(
         DateTime(timezone=True),

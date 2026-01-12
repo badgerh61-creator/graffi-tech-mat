@@ -1,4 +1,4 @@
-def test_set_suspension_journal_entry_written(
+def test_set_wheels_journal_entry_written(
     client,
     db,
     project,
@@ -6,11 +6,13 @@ def test_set_suspension_journal_entry_written(
     editor_user,
 ):
     response = client.post(
-        "/mutations/tuning/set-suspension",
+        "/mutations/tuning/set-wheels",
         json={
             "project_id": project.id,
             "snapshot_base_id": completed_snapshot.id,
-            "preset_id": "sport_low",
+            "diameter": 19,
+            "width": 9.5,
+            "offset": 35,
         },
         headers=auth(editor_user),
     )
@@ -18,7 +20,7 @@ def test_set_suspension_journal_entry_written(
     assert response.status_code == 200
 
     entries = db.execute(
-        "SELECT * FROM journal_entries WHERE mutation_type = 'tuning.set-suspension'"
+        "SELECT * FROM journal_entries WHERE mutation_type = 'tuning.set-wheels'"
     ).fetchall()
 
     assert len(entries) == 1

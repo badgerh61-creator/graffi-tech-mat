@@ -10,16 +10,24 @@ from app.models import (  # noqa: F401
     user,
     job,
     asset,
-    model,
+    model,                 # ModelRecord
     model_permission,
     model_invite,
     refresh_token,
     audit_log,
+
+    # Organizations
     organization,
     organization_member,
-    patch_registry,
+
+    # Projects & snapshots
     project,
     rendered_snapshot,
+
+    # Mutations / journaling
     mutation_journal,
+
+    # Infra
+    patch_registry,
 )
 

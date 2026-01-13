@@ -32,13 +32,6 @@ def set_wheels_endpoint(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    require_capability(
-        db=db,
-        user=user,
-        project_id=payload.get("project_id"),
-        capability="canTune",
-    )
-
     return set_wheels(db=db, user=user, payload=payload)
 
 

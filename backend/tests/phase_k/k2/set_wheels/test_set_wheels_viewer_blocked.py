@@ -19,3 +19,5 @@ def test_viewer_cannot_set_wheels(
     assert response.status_code == 403
     assert response.json()["error"] == "tuning_capability_required"
 
+
+

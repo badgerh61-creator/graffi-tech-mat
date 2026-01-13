@@ -1,3 +1,5 @@
+# app/services/capabilities.py
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -14,11 +16,6 @@ def require_capability(
 ):
     """
     Canonical write-authorization gate.
-
-    RULES:
-    - DB is source of truth
-    - Roles derive capabilities
-    - Endpoints never inspect roles
     """
 
     project = db.get(Project, project_id)
@@ -26,10 +23,7 @@ def require_capability(
         raise HTTPException(status_code=404, detail="Project not found")
 
     if project.archived_at is not None:
-        raise HTTPException(
-            status_code=403,
-            detail="decor_capability_required",
-        )
+        raise HTTPException(status_code=403, detail="decor_capability_required")
 
     # Admin override
     if user.is_admin:
@@ -37,18 +31,17 @@ def require_capability(
 
     # Viewer is ALWAYS read-only
     if user.role == "viewer":
-        raise HTTPException(
-            status_code=403,
-            detail="decor_capability_required",
-        )
+        raise HTTPException(status_code=403, detail="tuning_capability_required")
 
-    # Capability matrix
+    # ✅ Capability matrix
     if capability == "canDecorateExterior":
         if user.role in {"editor", "owner"}:
             return
 
-    raise HTTPException(
-        status_code=403,
-        detail="decor_capability_required",
-    )
+    # ✅ Phase K.2 — tuning requires owner OR explicit capability
+    if capability == "canTune":
+        if user.role == "owner" or user.can_tune:
+            return
+
+    raise HTTPException(status_code=403, detail="tuning_capability_required")
 

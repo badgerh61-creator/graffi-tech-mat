@@ -24,7 +24,17 @@ class SuspensionPresetNotFound(TuningValidationError):
     status_code = 404
 
 
+class EngineTunePresetNotFound(TuningValidationError):
+    error_code = "engine_tune_preset_not_found"
+    status_code = 404
+
+
 class InvalidWheelParameters(TuningValidationError):
     error_code = "invalid_wheel_parameters"
     status_code = 400
+
+
+class EngineTunePresetNotFound(TuningValidationError):
+    error_code = "engine_tune_preset_not_found"
+    status_code = 404
 

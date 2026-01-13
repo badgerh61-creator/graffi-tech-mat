@@ -35,6 +35,26 @@ ENGINE_TUNE_PRESETS = {
 }
 
 
+# -------------------------------------------------
+# Phase K.2 — Brakes presets (read-only)
+# -------------------------------------------------
+
+_BRAKE_PRESETS = {
+    "stock": {
+        "bias": "balanced",
+        "force": "standard",
+    },
+    "sport": {
+        "bias": "front",
+        "force": "high",
+    },
+    "track": {
+        "bias": "front",
+        "force": "max",
+    },
+}
+
+
 def get_suspension_preset(preset_id: str):
     """
     Phase K.2 — read-only suspension preset lookup.
@@ -48,3 +68,10 @@ def get_engine_tune_preset(preset_id: str):
     """
     return ENGINE_TUNE_PRESETS.get(preset_id)
 
+
+def get_brake_preset(preset_id: str):
+    """
+    Resolve a brakes preset by ID.
+    Phase K.2 — deterministic, read-only.
+    """
+    return _BRAKE_PRESETS.get(preset_id)

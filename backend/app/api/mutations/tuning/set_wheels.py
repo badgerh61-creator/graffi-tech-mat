@@ -1,11 +1,9 @@
 # backend/app/api/mutations/tuning/set_wheels.py
 
 from fastapi.responses import JSONResponse
-from fastapi import HTTPException
 import json
 import hashlib
 
-from app.services.capabilities import require_capability
 from app.models.rendered_snapshot import RenderedSnapshot
 from app.models.journal_entry import JournalEntry
 from app.validation.tuning.errors import (
@@ -60,21 +58,7 @@ def set_wheels(*, db, user, payload: dict):
             content={"error": InvalidWheelParameters.error_code},
         )
 
-    # ✅ STEP 3 — capability gate (NORMALIZED)
-    try:
-        require_capability(
-            db=db,
-            user=user,
-            project_id=project_id,
-            capability="canTune",
-        )
-    except HTTPException:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "tuning_capability_required"},
-        )
-
-    # STEP 4 — tuning state
+    # STEP 3 — tuning state
     tuning_state = {
         "wheels": {
             "diameter": diameter,
@@ -85,6 +69,7 @@ def set_wheels(*, db, user, payload: dict):
 
     scene_state_hash = _hash_scene_and_tuning({}, tuning_state)
 
+    # STEP 4 — create OR reuse snapshot (deterministic)
     existing = (
         db.query(RenderedSnapshot)
         .filter_by(
@@ -112,6 +97,7 @@ def set_wheels(*, db, user, payload: dict):
         db.commit()
         db.refresh(new_snapshot)
 
+    # STEP 5 — journal entry
     entry = JournalEntry(
         project_id=project_id,
         mutation_type="tuning.set-wheels",

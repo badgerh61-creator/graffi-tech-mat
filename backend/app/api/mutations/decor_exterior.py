@@ -1,3 +1,15 @@
+# app/api/mutations/decor_exterior.py
+# -------------------------------------------------
+# DEPRECATED — DO NOT ADD NEW ROUTES
+#
+# This file is kept temporarily for backward compatibility.
+# The CANONICAL decor exterior router lives in:
+#
+#     app/api/mutations/decor/exterior.py
+#
+# Scheduled for removal after Phase M stabilization.
+# -------------------------------------------------
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -19,7 +31,7 @@ from app.api.mutations.decor.schemas import (
 )
 
 # -------------------------------------------------
-# ROUTER (MUST BE DEFINED FIRST)
+# ROUTER (LEGACY — DO NOT EXTEND)
 # -------------------------------------------------
 
 router = APIRouter(
@@ -28,7 +40,7 @@ router = APIRouter(
 )
 
 # -------------------------------------------------
-# APPLY DECAL
+# APPLY DECAL (LEGACY)
 # -------------------------------------------------
 
 @router.post("/apply-decal")
@@ -71,7 +83,7 @@ def apply_decal(
     return {"snapshot_id": snapshot.id}
 
 # -------------------------------------------------
-# REMOVE DECAL (PHASE K.1)
+# REMOVE DECAL (LEGACY — PHASE K.1)
 # -------------------------------------------------
 
 @router.post("/remove-decal")
@@ -81,7 +93,6 @@ def remove_decal(
     user: User = Depends(get_current_user),
     payload: RemoveExteriorDecalPayload,
 ):
-    # ---- Capability gate (viewer must fail here)
     try:
         require_capability(
             db=db,
@@ -102,7 +113,6 @@ def remove_decal(
             content={"error": "base_snapshot_not_found"},
         )
 
-    # ---- Missing decal instance → 404
     decals = (base_snapshot.decor_state or {}).get("decals", [])
     if not any(
         d.get("instance_id") == payload.decal_instance_id

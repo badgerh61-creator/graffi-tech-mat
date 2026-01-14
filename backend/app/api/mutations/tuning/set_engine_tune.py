@@ -1,4 +1,4 @@
-# backend/app/services/set_engine_tune.py
+# backend/app/mutations/tuning/set_engine_tune.py
 
 from fastapi.responses import JSONResponse
 import json
@@ -60,14 +60,7 @@ def set_engine_tune(*, db, user, payload: dict):
             content={"error": EngineTunePresetNotFound.error_code},
         )
 
-    # ✅ STEP 3 — capability gate (EXPLICIT, PHASE K.2 SAFE)
-    if not getattr(user, "can_tune", False):
-        return JSONResponse(
-            status_code=403,
-            content={"error": "tuning_capability_required"},
-        )
-
-    # ✅ STEP 4 — tuning state (Phase K.2 scope)
+    # ✅ STEP 3 — tuning state (Phase K.2 scope)
     tuning_state = {
         "engine": {
             "preset_id": preset_id,
@@ -79,7 +72,7 @@ def set_engine_tune(*, db, user, payload: dict):
         tuning_state=tuning_state,
     )
 
-    # ✅ STEP 5 — create OR reuse snapshot (deterministic)
+    # ✅ STEP 4 — create OR reuse snapshot (deterministic)
     existing = (
         db.query(RenderedSnapshot)
         .filter_by(
@@ -107,10 +100,10 @@ def set_engine_tune(*, db, user, payload: dict):
         db.commit()
         db.refresh(new_snapshot)
 
-    # ✅ STEP 6 — journal entry (schema-complete)
+    # ✅ STEP 5 — journal entry (schema-complete)
     entry = JournalEntry(
         project_id=project_id,
-        mutation_type="tuning.set-engine-tune",  # EXACT string
+        mutation_type="tuning.set-engine-tune",
         snapshot_before=snapshot.id,
         snapshot_after=new_snapshot.id,
         snapshot_id=new_snapshot.id,
@@ -124,4 +117,5 @@ def set_engine_tune(*, db, user, payload: dict):
         "status": "ok",
         "snapshot_id": new_snapshot.id,
     }
+
 

@@ -1,3 +1,5 @@
+# app/api/mutations/decor/exterior.py
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -8,7 +10,6 @@ from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
 
-from app.services.capabilities import require_capability
 from app.services.decor_exterior import (
     apply_exterior_decal_mutation,
     remove_exterior_decal_mutation,
@@ -22,6 +23,7 @@ from app.api.mutations.decor.schemas import (
 )
 
 from app.validation.decor.rules import validate_material
+from app.api.mutations.decor._guards import require_decor_capability
 
 router = APIRouter(
     prefix="/mutations/decor/exterior",
@@ -39,18 +41,9 @@ def apply_decal(
     user: User = Depends(get_current_user),
     payload: ApplyExteriorDecalPayload,
 ):
-    try:
-        require_capability(
-            db=db,
-            user=user,
-            project_id=payload.project_id,
-            capability="canDecorateExterior",
-        )
-    except Exception:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "decor_capability_required"},
-        )
+    error = require_decor_capability(db, user, payload.project_id)
+    if error:
+        return error
 
     base_snapshot = db.get(RenderedSnapshot, payload.snapshot_base_id)
     if not base_snapshot:
@@ -83,18 +76,9 @@ def remove_decal(
     user: User = Depends(get_current_user),
     payload: RemoveExteriorDecalPayload,
 ):
-    try:
-        require_capability(
-            db=db,
-            user=user,
-            project_id=payload.project_id,
-            capability="canDecorateExterior",
-        )
-    except Exception:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "decor_capability_required"},
-        )
+    error = require_decor_capability(db, user, payload.project_id)
+    if error:
+        return error
 
     base_snapshot = db.get(RenderedSnapshot, payload.snapshot_base_id)
     if not base_snapshot:
@@ -135,18 +119,9 @@ def set_material(
 ):
     project_id = payload.get("project_id")
 
-    try:
-        require_capability(
-            db=db,
-            user=user,
-            project_id=project_id,
-            capability="canDecorateExterior",
-        )
-    except Exception:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "decor_capability_required"},
-        )
+    error = require_decor_capability(db, user, project_id)
+    if error:
+        return error
 
     base_snapshot = db.get(RenderedSnapshot, payload.get("snapshot_base_id"))
     if (
@@ -200,18 +175,9 @@ def swap_bodykit(
 ):
     project_id = payload.get("project_id")
 
-    try:
-        require_capability(
-            db=db,
-            user=user,
-            project_id=project_id,
-            capability="canDecorateExterior",
-        )
-    except Exception:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "decor_capability_required"},
-        )
+    error = require_decor_capability(db, user, project_id)
+    if error:
+        return error
 
     base_snapshot = db.get(RenderedSnapshot, payload.get("snapshot_base_id"))
     if (

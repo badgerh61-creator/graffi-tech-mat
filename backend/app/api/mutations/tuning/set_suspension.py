@@ -1,10 +1,7 @@
-# backend/app/api/mutations/tuning/set_suspension.py
-
 from fastapi.responses import JSONResponse
 import json
 import hashlib
 
-from app.services.capabilities import require_capability
 from app.services.tuning_presets import get_suspension_preset
 from app.models.rendered_snapshot import RenderedSnapshot
 from app.models.journal_entry import JournalEntry
@@ -32,9 +29,9 @@ def set_suspension_preset(*, db, user, payload):
     Phase K.2
     STEP 1 — Snapshot base validation
     STEP 2 — Preset resolution
-    STEP 3 — Capability gate
-    STEP 4 — Journal entry
-    STEP 5 — Deterministic snapshot creation
+    STEP 3 — Tuning state
+    STEP 4 — Deterministic snapshot creation
+    STEP 5 — Journal entry
     """
 
     project_id = payload.get("project_id")
@@ -65,15 +62,7 @@ def set_suspension_preset(*, db, user, payload):
             content={"error": SuspensionPresetNotFound.error_code},
         )
 
-    # ✅ STEP 3 — capability gate
-    require_capability(
-        db=db,
-        user=user,
-        project_id=project_id,
-        capability="canTune",
-    )
-
-    # ✅ STEP 4 — tuning state (Phase K.2 scope)
+    # ✅ STEP 3 — tuning state (Phase K.2 scope)
     tuning_state = {
         "suspension": {
             "preset_id": preset_id,
@@ -85,7 +74,7 @@ def set_suspension_preset(*, db, user, payload):
         tuning_state=tuning_state,
     )
 
-    # ✅ STEP 5 — create OR reuse snapshot (deterministic)
+    # ✅ STEP 4 — create OR reuse snapshot (deterministic)
     existing = (
         db.query(RenderedSnapshot)
         .filter_by(
@@ -113,10 +102,10 @@ def set_suspension_preset(*, db, user, payload):
         db.commit()
         db.refresh(new_snapshot)
 
-    # ✅ STEP 6 — journal entry (schema-complete)
+    # ✅ STEP 5 — journal entry (schema-complete)
     entry = JournalEntry(
         project_id=project_id,
-        mutation_type="tuning.set-suspension",  # EXACT string
+        mutation_type="tuning.set-suspension",
         snapshot_before=snapshot.id,
         snapshot_after=new_snapshot.id,
         snapshot_id=new_snapshot.id,

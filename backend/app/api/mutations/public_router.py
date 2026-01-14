@@ -1,13 +1,16 @@
 # app/api/mutations/public_router.py
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
-from app.services.capabilities import require_capability
+
+from app.api.mutations._public_guards import require_public_decor_capability
 
 public_router = APIRouter()
+
 
 @public_router.post("/projects/{project_id}/snapshots/active")
 def set_active_snapshot_public(
@@ -20,12 +23,9 @@ def set_active_snapshot_public(
     if not snapshot_id:
         raise HTTPException(status_code=400, detail="snapshot_id required")
 
-    require_capability(
-        db=db,
-        user=user,
-        project_id=project_id,
-        capability="canDecorateExterior",
-    )
+    error = require_public_decor_capability(db, user, project_id)
+    if error:
+        return error
 
     snapshot = (
         db.query(RenderedSnapshot)

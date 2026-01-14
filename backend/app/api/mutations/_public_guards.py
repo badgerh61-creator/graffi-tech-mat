@@ -1,22 +1,18 @@
-# app/api/mutations/decor/_guards.py
+# app/api/mutations/_public_guards.py
 
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+
 from app.services.capabilities import require_capability
 
 
-def require_decor_capability(db, user, project_id):
+def require_public_decor_capability(db, user, project_id):
     """
-    Canonical decor capability guard.
-    Phase K semantics:
-    - admin / owner / editor are allowed
-    - viewer is blocked
+    Canonical public-router capability guard.
+
+    Used for public snapshot activation and similar
+    non-mutation but state-affecting endpoints.
     """
-
-    # 🔓 Role-based fast-path (Phase K contract)
-    if user.is_admin or user.role in ("owner", "editor"):
-        return None
-
-    # 🔒 Capability fallback (viewer / edge cases)
     try:
         require_capability(
             db=db,
@@ -24,7 +20,7 @@ def require_decor_capability(db, user, project_id):
             project_id=project_id,
             capability="canDecorateExterior",
         )
-    except Exception:
+    except HTTPException:
         return JSONResponse(
             status_code=403,
             content={"error": "decor_capability_required"},

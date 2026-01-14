@@ -1,29 +1,57 @@
 # =========================================
-# SAFE RE-EXPORTS — Phase S1.2
-# DO NOT REMOVE legacy names yet
+# SAFE RE-EXPORTS — Phase S1.x
+# Legacy first, domain overrides last
 # =========================================
 
-# ---- New modular schemas (authoritative) ----
-from app.schemas.users import UserCreate, UserRead
-from app.schemas.auth import Token, TokenPair, RefreshTokenRequest
-
-# ---- Legacy schemas (still defined here for now) ----
+# ---- Legacy schemas (fallback only) ----
 from app.schemas.legacy import (
     AssetBase,
     AssetCreate,
     AssetRead,
+
     ModelBase,
     ModelCreate,
     ModelRead,
+
     PresignResponse,
     OrganizationCreate,
     OrganizationRead,
+
     SnapshotCreate,
     SnapshotRead,
+
     ProjectCreate,
     ProjectRead,
+
     WorkspaceCapabilities,
     WorkspaceRead,
+)
+
+# ---- New modular schemas (AUTHORITATIVE) ----
+
+# Users / Auth
+from app.schemas.users import UserCreate, UserRead
+from app.schemas.auth import Token, TokenPair, RefreshTokenRequest
+
+# Assets
+from app.schemas.assets import AssetCreate, AssetRead
+
+# Models
+from app.schemas.models import ModelBase, ModelCreate, ModelRead
+
+# Projects 
+from app.schemas.projects import ProjectCreate, ProjectRead
+
+# Snapshots
+from app.schemas.snapshots import SnapshotCreate, SnapshotRead
+
+# Workspace
+from app.schemas.workspace import WorkspaceCapabilities, WorkspaceRead
+
+# Organizations
+from app.schemas.organizations import (
+    OrganizationCreate,
+    OrganizationRead,
 )
 
 __all__ = [

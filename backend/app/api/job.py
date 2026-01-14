@@ -6,8 +6,10 @@ from app.api.deps import get_current_user
 from app.models.job import Job
 from app.models.mutation_journal import MutationJournal
 from app.models.model import ModelRecord
-from app.crud import require_model_role
 from app.services.jobs.executor import JobExecutor
+
+# ✅ Phase S3.5 — canonical job guard
+from app.api.jobs._guards import require_job_execution_role
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -34,14 +36,11 @@ def list_jobs(
         .all()
     )
 
-    # -------------------------------------------------
-    # 🔌 ADAPTER — Backend → Frontend contract
-    # -------------------------------------------------
     def adapt(job: Job) -> dict:
         return {
             "id": job.id,
             "type": job.job_type,
-            "status": job.state.lower(),   # CREATED → created
+            "status": job.state.lower(),
             "progress": (
                 0 if job.state == "CREATED"
                 else 50 if job.state == "RUNNING"
@@ -109,9 +108,11 @@ def run_job(
             .first()
         )
     else:
-        model = db.query(ModelRecord).filter(
-            ModelRecord.id == mutation.target_id
-        ).first()
+        model = (
+            db.query(ModelRecord)
+            .filter(ModelRecord.id == mutation.target_id)
+            .first()
+        )
 
     if not model:
         raise HTTPException(
@@ -119,19 +120,10 @@ def run_job(
             detail="Model not found for job",
         )
 
-    # ---- Permission gate (LOCKED) ----
-    try:
-        require_model_role(
-            db,
-            user=user,
-            model=model,
-            min_role="editor",
-        )
-    except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
-        )
+    # ---- Permission gate (Phase S canonical) ----
+    error = require_job_execution_role(db, user, model)
+    if error:
+        return error
 
     # ---- Execute job ----
     try:

@@ -15,33 +15,45 @@ def require_capability(
     capability: str,
 ):
     """
-    Canonical write-authorization gate.
+    Canonical write-authorization gate (Phase S).
+    All mutation-level authorization flows through this function.
     """
 
     project = db.get(Project, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail="project_not_found")
 
+    # 🔒 Archived projects are always read-only
     if project.archived_at is not None:
-        raise HTTPException(status_code=403, detail="decor_capability_required")
+        raise HTTPException(status_code=403, detail="project_archived")
 
-    # Admin override
+    # 🔑 Admin override
     if user.is_admin:
         return
 
-    # Viewer is ALWAYS read-only
+    # 👁 Viewer is always read-only
     if user.role == "viewer":
-        raise HTTPException(status_code=403, detail="tuning_capability_required")
+        raise HTTPException(status_code=403, detail="capability_required")
 
-    # ✅ Capability matrix
+    # =========================
+    # Capability matrix
+    # =========================
+
+    # Phase K.1 — exterior decor
     if capability == "canDecorateExterior":
         if user.role in {"editor", "owner"}:
             return
 
-    # ✅ Phase K.2 — tuning requires owner OR explicit capability
+    # Phase K.2 — tuning
     if capability == "canTune":
-        if user.role == "owner" or user.can_tune:
+        if user.role == "owner" or getattr(user, "can_tune", False):
             return
 
-    raise HTTPException(status_code=403, detail="tuning_capability_required")
+    # Phase K.3 — body transforms (OWNER ONLY)
+    if capability == "body_edit":
+        if user.role == "owner":
+            return
+
+    # ❌ Capability not satisfied
+    raise HTTPException(status_code=403, detail="capability_required")
 

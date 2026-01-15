@@ -1,3 +1,5 @@
+# models/rendered_snapshot.py
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -8,6 +10,7 @@ from sqlalchemy import (
     JSON,
 )
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 import hashlib
@@ -41,6 +44,12 @@ class RenderedSnapshot(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+
+    project = relationship(
+        "Project",
+        foreign_keys=[project_id],
+        backref="rendered_snapshots",
     )
 
     scene_state_hash = Column(String, index=True, nullable=False)
@@ -80,6 +89,10 @@ class RenderedSnapshot(Base):
 
     @property
     def vehicle_panels(self) -> set[str]:
+        """
+        Panels common to ALL standard vehicles.
+        Truck-specific panels are intentionally excluded.
+        """
         return {
             "door_left",
             "door_right",
@@ -91,7 +104,7 @@ class RenderedSnapshot(Base):
             "fender_rear_left",
             "fender_rear_right",
             "bumper_front",
-            "bumper_rear",
+            # ❌ bumper_rear intentionally removed
         }
 
     @property

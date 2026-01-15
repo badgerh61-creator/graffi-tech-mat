@@ -1,3 +1,5 @@
+// frontend/src/engine/preview/UnifiedPreviewMapper.ts
+
 import { mapDecorToPreview } from "./DecorPreviewMapper"
 import { mapTuningToPreview } from "./TuningPreviewMapper"
 
@@ -8,6 +10,7 @@ export function mapSnapshotToUnifiedPreview(snapshot: any) {
       vehicle: {},
       decor: { decals: [], materials: {} },
       tuning: {},
+      body: undefined,
       meta: { deterministic_hash: "" },
     }
   }
@@ -17,11 +20,18 @@ export function mapSnapshotToUnifiedPreview(snapshot: any) {
 
     vehicle: {
       model_id: snapshot.model_id,
-      bodykit: snapshot.bodykit ?? undefined,
     },
 
     decor: mapDecorToPreview(snapshot),
     tuning: mapTuningToPreview(snapshot),
+
+    // ✅ ADD THIS BLOCK
+    body: snapshot.body
+      ? {
+          preset_id: snapshot.body.preset_id,
+          parameters: snapshot.body.parameters ?? {},
+        }
+      : undefined,
 
     meta: {
       deterministic_hash: snapshot.hash,

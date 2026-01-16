@@ -21,4 +21,9 @@ data/
 # Local archives / exports
 # ----------------------------
 *.zip
+backend/graffi.db
+backend/*.db
+backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm
 

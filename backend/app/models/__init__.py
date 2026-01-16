@@ -11,6 +11,7 @@ from app.models.mutation_journal import MutationJournal
 from .journal_entry import JournalEntry
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
+from app.models.export_job import ExportJob
 
 __all__ = [
     "User",
@@ -24,6 +25,7 @@ __all__ = [
     "MutationJournal",
     "JournalEntry",
     "RenderedSnapshot",
+    "ExportJob",
 ]
 
 

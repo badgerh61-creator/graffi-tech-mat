@@ -23,6 +23,9 @@ from app.models import (  # noqa: F401
     # Projects & snapshots
     project,
     rendered_snapshot,
+    
+    # Phase M — exports
+    export_job,
 
     # Mutations / journaling
     mutation_journal,

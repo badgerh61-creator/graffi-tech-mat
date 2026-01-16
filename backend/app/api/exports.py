@@ -12,6 +12,8 @@ from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
 from app.models.journal_entry import JournalEntry
 from app.models.user import User
 
+from app.services.export_requests import on_export_request_accepted
+
 router = APIRouter(
     prefix="/exports",
     tags=["exports"],
@@ -97,6 +99,14 @@ def create_export_request(
     # Create export request (ID only for now)
     # ─────────────────────────────────────────────
     export_request_id = str(uuid4())
+
+    # ─────────────────────────────────────────────
+    # Phase M.6 — enqueue export job (REQUIRED)
+    # ─────────────────────────────────────────────
+    on_export_request_accepted(
+        db=db,
+        export_request_id=export_request_id,
+    )
 
     # ─────────────────────────────────────────────
     # Journal intent (schema-safe)

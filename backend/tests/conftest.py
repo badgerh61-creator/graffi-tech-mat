@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-
+from tests.fixtures.export_job import export_job
 from app.main import app
 from app.db.session import SessionLocal, engine
 from app.db.base import Base

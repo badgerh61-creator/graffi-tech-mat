@@ -1,40 +1,24 @@
-# Python
+node_modules/
+.env
+.venv/
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Environments & secrets
+data/
+*.sqlite3
+# ----------------------------
+# Local environment files
+# ----------------------------
 .env
 .env.*
-backend/.venv/
-.venv/
-.venv-signing/
+!.env.template
+!.env.prod.template
 
-# Databases
-*.db
-*.sqlite
-*.sqlite3
+# ----------------------------
+# Graffi helper / AI artifacts
+# ----------------------------
+.graffi_helper_model/
 
-# Node / frontend
-node_modules/
-dist/
-build/
-
-# Admin build outputs
-frontend/admin/dist/
-backend/frontend/admin/dist/
-
-# ZIP archives
+# ----------------------------
+# Local archives / exports
+# ----------------------------
 *.zip
 
-# OS files
-.DS_Store
-Thumbs.db
-
-
-# Phase H — engine preview experiments
-engine/EngineBridge.ts
-engine/EnginePreview.tsx
-frontend/src/engine/EngineBridge.ts
-frontend/src/engine/EnginePreview.tsx

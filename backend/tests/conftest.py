@@ -1,7 +1,9 @@
 import pytest
 from datetime import datetime
+from dataclasses import dataclass
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+
 from tests.fixtures.export_job import export_job
 from app.main import app
 from app.db.session import SessionLocal, engine
@@ -68,7 +70,7 @@ def override_get_current_user(request, admin_user):
     Priority (DO NOT CHANGE):
     1. request.node.user         (legacy explicit override)
     2. request.node._forced_user (auth(user))
-    3. admin_user                (default)
+    3. admin_user               (default)
     """
 
     def _override():
@@ -158,17 +160,13 @@ def editor_user(db):
     return user
 
 
-# ✅ ADDED — REQUIRED FOR Phase K.2
 @pytest.fixture
 def editor_user_without_tuning_capability(db):
     """
     Editor role, but lacking canTune capability.
     Safe for reuse across multiple tests.
     """
-    user = db.query(User).filter_by(
-        email="editor_no_tune@test.com"
-    ).first()
-
+    user = db.query(User).filter_by(email="editor_no_tune@test.com").first()
     if not user:
         user = User(
             email="editor_no_tune@test.com",
@@ -181,7 +179,6 @@ def editor_user_without_tuning_capability(db):
         db.add(user)
         db.commit()
         db.refresh(user)
-
     return user
 
 
@@ -351,4 +348,41 @@ def scene(project):
 @pytest.fixture
 def archived_scene(archived_project):
     return _SceneHandle(archived_project.id)
+
+
+# -------------------------------------------------
+# 📦 Phase M — Export Artifacts (REQUIRED FOR M.5)
+# -------------------------------------------------
+
+@dataclass
+class DummyExportArtifact:
+    path: str
+    bytes: bytes
+
+
+@pytest.fixture
+def export_artifacts():
+    """
+    Canonical derived artifacts used by Phase M.5 ZIP packaging tests.
+    These are NOT snapshots and MUST remain immutable.
+    """
+    return [
+        DummyExportArtifact("render.png", b"render-bytes"),
+        DummyExportArtifact("print/design.tiff", b"print-bytes"),
+        DummyExportArtifact("vector/decals.svg", b"vector-bytes"),
+        DummyExportArtifact("3d/model.glb", b"3d-bytes"),
+    ]
+
+
+# -------------------------------------------------
+# 🔁 Fixture alias (Phase M.5 contract compatibility)
+# -------------------------------------------------
+
+@pytest.fixture
+def artifacts(export_artifacts):
+    """
+    Alias required by Phase M.5 ZIP packaging tests.
+    Do NOT remove — tests depend on this name.
+    """
+    return export_artifacts
 

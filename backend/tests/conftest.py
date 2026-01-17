@@ -13,6 +13,7 @@ from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
+from app.models.export_artifact import ExportArtifact
 
 
 # -------------------------------------------------
@@ -372,6 +373,40 @@ def export_artifacts():
         DummyExportArtifact("vector/decals.svg", b"vector-bytes"),
         DummyExportArtifact("3d/model.glb", b"3d-bytes"),
     ]
+
+
+# -------------------------------------------------
+# 📦 Phase M — Export Records (REQUIRED FOR Phase N)
+# -------------------------------------------------
+
+@pytest.fixture
+def completed_export(db, export_job, project, completed_snapshot):
+    """
+    Canonical completed export used by Phase N distribution tests.
+    """
+    export_job.project_id = project.id
+    export_job.snapshot_id = completed_snapshot.id
+    export_job.export_type = "image"
+    export_job.status = "completed"
+
+    db.commit()
+    db.refresh(export_job)
+    return export_job
+
+
+@pytest.fixture
+def pending_export(db, export_job, project, completed_snapshot):
+    """
+    Non-distributable export (used to assert rejection paths).
+    """
+    export_job.project_id = project.id
+    export_job.snapshot_id = completed_snapshot.id
+    export_job.export_type = "image"
+    export_job.status = "pending"
+
+    db.commit()
+    db.refresh(export_job)
+    return export_job
 
 
 # -------------------------------------------------

@@ -1,11 +1,12 @@
 def compute_distribution_capabilities(*, user, project):
-    # Archived projects are frozen
-    if project.archived_at is not None:
-        return {
-            "canDistributeExports": False,
-            "canCreatePublicLinks": False,
-            "canRevokeAccess": False,
-        }
+    # Phase N.1: project context may be absent
+    if project is not None:
+        if project.archived_at is not None:
+            return {
+                "canDistributeExports": False,
+                "canCreatePublicLinks": False,
+                "canRevokeAccess": False,
+            }
 
     # Admin
     if user.role == "admin":

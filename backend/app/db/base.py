@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
-# Import ALL model modules so Alembic sees them
+# Import ALL model modules so Alembic / SQLAlchemy sees them
 # IMPORTANT: keep this list explicit and closed
 from app.models import (  # noqa: F401
     user,
@@ -23,10 +23,13 @@ from app.models import (  # noqa: F401
     # Projects & snapshots
     project,
     rendered_snapshot,
-    
+
     # Phase M — exports
     export_job,
 
+    # Phase N — distribution
+    distribution_request,  
+    
     # Mutations / journaling
     mutation_journal,
 

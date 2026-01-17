@@ -23,6 +23,7 @@ from app.api.presign import router as presign_router
 from app.api.admin import router as admin_router
 from app.api.audit import router as audit_router
 from app.api.exports import router as exports_router
+from app.api.distributions import router as distributions_router
 from app.api.organizations import router as organizations_router
 from app.api.scenes import router as scenes_router
 
@@ -122,7 +123,11 @@ app.include_router(upload_router)
 app.include_router(presign_router)
 app.include_router(admin_router)
 app.include_router(audit_router)
+
+# 📦 Phase M / N — Exports & Distribution
 app.include_router(exports_router)
+app.include_router(distributions_router)
+
 app.include_router(organizations_router)
 
 # 🔁 Snapshot query + mutation surface

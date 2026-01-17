@@ -1,3 +1,5 @@
+# backend/app/models/distribution_request.py
+
 from sqlalchemy import Column, String, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -15,7 +17,7 @@ class DistributionRequest(Base):
         default=lambda: str(uuid.uuid4()),
     )
 
-    # 🔗 REQUIRED FK — THIS IS WHAT FIXES THE ERROR
+    # 🔗 REQUIRED FK — authoritative export linkage
     export_id = Column(
         String(36),
         ForeignKey("export_jobs.id", ondelete="CASCADE"),
@@ -28,6 +30,35 @@ class DistributionRequest(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     revoked_at = Column(DateTime, nullable=True)
 
-    # 🔁 Back-reference (optional but clean)
-    export = relationship("ExportJob", back_populates="distribution_requests")
+    # 🔁 Back-references
+    export = relationship(
+        "ExportJob",
+        back_populates="distribution_requests",
+    )
+
+    signed_urls = relationship(
+        "SignedURL",
+        back_populates="distribution_request",
+        cascade="all, delete-orphan",
+    )
+
+    # =========================
+    # PHASE N.3 — REVOCATION
+    # =========================
+
+    def revoke(self):
+        """
+        Revoke this distribution request and all derived access.
+        """
+        if self.revoked_at is not None:
+            raise RuntimeError("Distribution request already revoked")
+
+        self.revoked_at = datetime.utcnow()
+
+        for url in self.signed_urls:
+            url.revoke()
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.revoked_at is not None
 

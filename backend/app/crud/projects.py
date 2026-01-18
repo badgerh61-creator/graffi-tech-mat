@@ -24,5 +24,5 @@ def require_project_role(
     if project.owner_id == user.id:
         return
 
-    raise PermissionError("Insufficient project permissions")
+    raise PermissionError("Insufficient project permissions")        
 

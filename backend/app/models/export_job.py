@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Integer, DateTime
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 
@@ -14,6 +15,14 @@ class ExportJob(Base):
         default=lambda: str(uuid.uuid4()),
     )
 
+    # 🔗 Phase N authority anchor
+    # MUST be nullable to preserve Phase I / M invariants
+    project_id = Column(
+        String(36),
+        ForeignKey("projects.id"),
+        nullable=True,  # ✅ FIX — DO NOT MAKE NON-NULL
+    )
+
     export_request_id = Column(
         String(36),
         nullable=False,
@@ -24,6 +33,15 @@ class ExportJob(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+    # 🔒 Read-only authority links (used in Phase N)
+    project = relationship("Project")
+
+    distribution_requests = relationship(
+        "DistributionRequest",
+        back_populates="export",
+        cascade="all, delete-orphan",
+    )
 
     def mark_running(self):
         self.status = "running"

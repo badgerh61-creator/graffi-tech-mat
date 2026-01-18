@@ -15,6 +15,11 @@ from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
 from app.models.export_artifact import ExportArtifact
 
+from app.services.distribution_revocation import revoke_distribution_request
+from app.services.distribution_capabilities import compute_distribution_capabilities
+
+from app.core.security import oauth2_scheme
+
 
 # -------------------------------------------------
 # HTTP client
@@ -62,16 +67,32 @@ def clear_journal_entries(db):
 
 
 # -------------------------------------------------
+# 🔐 OAUTH2 SCHEME OVERRIDE (TESTS ONLY)
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def override_oauth2_scheme():
+    """
+    Disable OAuth2 header enforcement in tests.
+
+    This allows get_current_user to be controlled via
+    override_get_current_user without requiring
+    Authorization: Bearer headers.
+    """
+    app.dependency_overrides[oauth2_scheme] = lambda: "test-token"
+    yield
+    app.dependency_overrides.pop(oauth2_scheme, None)
+
+
+# -------------------------------------------------
 # 🔐 AUTH IDENTITY OVERRIDE (SINGLE SOURCE OF TRUTH)
 # -------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def override_get_current_user(request, admin_user):
     """
-    Priority (DO NOT CHANGE):
-    1. request.node.user         (legacy explicit override)
-    2. request.node._forced_user (auth(user))
-    3. admin_user               (default)
+    Canonical test-time identity resolver.
+    Bypasses OAuth2 completely.
     """
 
     def _override():
@@ -83,8 +104,8 @@ def override_get_current_user(request, admin_user):
 
     app.dependency_overrides[get_current_user] = _override
     yield
-    app.dependency_overrides.clear()
-
+    app.dependency_overrides.pop(get_current_user, None)
+    
 
 # -------------------------------------------------
 # 🔐 LEGACY auth() INJECTION (THE CRITICAL FIX)
@@ -101,7 +122,7 @@ def inject_auth_helper(request):
 
     def auth(user):
         request.node._forced_user = user
-        return {}
+        return {"Authorization": "Bearer test-token"}
 
     request.module.auth = auth
 
@@ -234,6 +255,26 @@ def completed_snapshot(db, project, admin_user):
     snap = RenderedSnapshot(
         project_id=project.id,
         scene_state_hash="__completed__",
+        render_profile="default",
+        engine_version="test-engine",
+        status="completed",
+        created_by=admin_user.id,
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+@pytest.fixture
+def existing_snapshot(db, project, admin_user):
+    """
+    Existing completed snapshot used to verify that
+    Phase I.7 scene save does NOT mutate prior snapshots.
+    """
+    snap = RenderedSnapshot(
+        project_id=project.id,
+        scene_state_hash="__existing__",
         render_profile="default",
         engine_version="test-engine",
         status="completed",
@@ -420,4 +461,96 @@ def artifacts(export_artifacts):
     Do NOT remove — tests depend on this name.
     """
     return export_artifacts
+
+
+# -------------------------------------------------
+# 🔗 Phase N.2 — Distribution Request Fixtures
+# -------------------------------------------------
+
+from app.models.distribution_request import DistributionRequest
+
+
+@pytest.fixture
+def signed_url_distribution_request(db, completed_export):
+    """
+    Valid Phase N.1 distribution request targeting signed URLs.
+    Used by Phase N.2 signed URL delivery tests.
+    """
+    req = DistributionRequest(
+        export_id=completed_export.id,
+        target="signed_url",
+        options={"expires_in_hours": 24},
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return req
+
+
+@pytest.fixture
+def distribution_request_with_pending_export(db, pending_export):
+    """
+    Distribution request pointing at a non-completed export.
+    Must be rejected by Phase N.2.
+    """
+    req = DistributionRequest(
+        export_id=pending_export.id,
+        target="signed_url",
+        options={"expires_in_hours": 24},
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return req
+
+
+# -------------------------------------------------
+# 🔗 Phase N.3 — Active Distribution Request
+# -------------------------------------------------
+
+@pytest.fixture
+def active_distribution_request(db, completed_export):
+    """
+    A valid, non-revoked distribution request.
+    Used by Phase N.3 revocation tests.
+    """
+    req = DistributionRequest(
+        export_id=completed_export.id,
+        target="direct_download",
+        options={},
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return req
+
+
+@pytest.fixture
+def revoked_distribution_request(db, completed_export, admin_user):
+    """
+    Revoked distribution request created via the real revocation service.
+    This guarantees audit integrity (Phase N.4).
+    """
+    req = DistributionRequest(
+        export_id=completed_export.id,
+        target="signed_url",
+        options={"expires_in_hours": 24},
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+
+    caps = compute_distribution_capabilities(
+        user=admin_user,
+        project=completed_export.project,
+    )
+
+    revoke_distribution_request(
+        db=db,
+        user=admin_user,
+        distribution_request=req,
+        capabilities=caps,
+    )
+
+    return req
 

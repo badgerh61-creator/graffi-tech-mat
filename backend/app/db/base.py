@@ -7,6 +7,7 @@ Base = declarative_base()
 # Import ALL model modules so Alembic / SQLAlchemy sees them
 # IMPORTANT: keep this list explicit and closed
 from app.models import (  # noqa: F401
+    # Core
     user,
     job,
     asset,
@@ -28,8 +29,9 @@ from app.models import (  # noqa: F401
     export_job,
 
     # Phase N — distribution
-    distribution_request,  
-    
+    distribution_request,
+    signed_url,
+
     # Mutations / journaling
     mutation_journal,
 

@@ -1,4 +1,4 @@
-from app.models.journal import JournalEntry
+from app.models.journal_entry import JournalEntry
 from app.models.rendered_snapshot import RenderedSnapshot
 
 def test_scene_save_does_not_mutate_existing_snapshots(

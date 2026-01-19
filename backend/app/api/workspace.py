@@ -26,11 +26,16 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.api.deps import get_current_user
+
 from app.models.project import Project
-from app.models.rendered_snapshot import RenderedSnapshot
-from app.models.asset import Asset
-from app.models.model import ModelRecord
+
 from app.workspaces.normalize import normalize_snapshots
+from app.workspaces.snapshots import get_workspace_snapshots
+from app.workspaces.assets import get_workspace_assets
+
+from app.schemas.snapshots import SnapshotRead
+from app.schemas.assets import AssetRead
+
 
 router = APIRouter(
     prefix="/workspaces",
@@ -74,6 +79,7 @@ def derive_capabilities(user, project):
     # VIEWER / fallback → read-only
     return capabilities
 
+
 @router.get("/{project_id}")
 def read_workspace(
     project_id: int,
@@ -96,31 +102,17 @@ def read_workspace(
     # Phase K.0 — authoritative capabilities
     capabilities = derive_capabilities(user, project)
 
-    # Phase J — snapshot assembly
-    raw_snapshots = (
-        db.query(RenderedSnapshot)
-        .filter(RenderedSnapshot.project_id == project_id)
-        .order_by(RenderedSnapshot.created_at.desc())
-        .all()
+    # Phase J.5 — snapshot assembly (visibility + ordering upstream)
+    raw_snapshots = get_workspace_snapshots(
+        db=db,
+        project_id=project_id,
+        include_failed=(user.role == "admin" or project.owner_id == user.id),
     )
 
-    if user.role == "admin" or project.owner_id == user.id:
-        normalized_snapshots = normalize_snapshots(raw_snapshots)
-    else:
-        normalized_snapshots = {
-            "completed": [],
-            "failed": [],
-            "pending": [],
-        }
+    normalized_snapshots = normalize_snapshots(raw_snapshots)
 
-    # Phase J — asset assembly
-    assets = (
-        db.query(Asset)
-        .join(ModelRecord, Asset.model_id == ModelRecord.id)
-        .filter(ModelRecord.owner_id == user.id)
-        .order_by(Asset.created_at.desc())
-        .all()
-    )
+    # ✅ Phase J.5 — asset assembly (ORDERING ONLY, NO SCOPING)
+    assets = get_workspace_assets(db=db)
 
     return {
         "project": {
@@ -129,8 +121,12 @@ def read_workspace(
             "archived": project.archived_at is not None,
         },
         "capabilities": capabilities,
-        "snapshots": normalized_snapshots,
-        "assets": assets,
+        "snapshots": [
+            SnapshotRead.from_orm(s) for s in normalized_snapshots
+        ],
+        "assets": [
+            AssetRead.from_orm(a) for a in assets
+        ],
         "meta": {
             "snapshot_total": len(raw_snapshots),
             "asset_total": len(assets),

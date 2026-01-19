@@ -108,6 +108,22 @@ def override_get_current_user(request, admin_user):
     
 
 # -------------------------------------------------
+# 📦 Phase M — inject export_snapshot into tests
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def inject_export_snapshot(request):
+    """
+    Injects export_snapshot into EVERY test module's globals.
+
+    Required because Phase M tests call export_snapshot(...)
+    without importing it explicitly.
+    """
+    from app.services import export_snapshot
+    request.module.export_snapshot = export_snapshot
+
+
+# -------------------------------------------------
 # 🔐 LEGACY auth() INJECTION (THE CRITICAL FIX)
 # -------------------------------------------------
 
@@ -553,4 +569,25 @@ def revoked_distribution_request(db, completed_export, admin_user):
     )
 
     return req
+
+
+# -------------------------------------------------
+# 🔁 Phase M fixture aliases (REQUIRED)
+# -------------------------------------------------
+
+@pytest.fixture
+def invalid_snapshot(failed_snapshot):
+    """
+    Alias required by Phase M tests.
+    Invalid geometry == failed snapshot.
+    """
+    return failed_snapshot
+
+
+@pytest.fixture
+def snapshot_that_triggers_export_error(failed_snapshot):
+    """
+    Alias required by Phase M failure-path tests.
+    """
+    return failed_snapshot
 

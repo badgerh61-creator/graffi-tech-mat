@@ -13,15 +13,15 @@ def run_3d_export(*, db, snapshot, options):
 
     payload = (
         f"3D:{snapshot.scene_state_hash}:{fmt}:"
-        f"materials={include_materials}:"
-        f"textures={include_textures}"
+        f"materials={include_materials}:textures={include_textures}"
     ).encode("utf-8")
 
     digest = hashlib.sha256(payload).hexdigest()
 
-    return ExportArtifact(
+    return ExportArtifact.completed(
         bytes=payload,
         hash=digest,
         format=fmt,
+        snapshot_id=snapshot.id,
     )
 

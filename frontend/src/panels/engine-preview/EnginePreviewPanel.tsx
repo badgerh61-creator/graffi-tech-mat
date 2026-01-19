@@ -1,6 +1,6 @@
 // frontend/src/panels/engine-preview/EnginePreviewPanel.tsx
 
-import EnginePreview from "../../engine/EnginePreview";
+import EnginePreview from "../../engine/preview/EnginePreview";
 import { useAssetPreview } from "../asset-browser/useAssetPreview";
 
 export function EnginePreviewPanel() {

@@ -1,4 +1,4 @@
-# app/api/mutations.py
+# app/api/mutations/mutations.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from app.models.mutation_journal import MutationJournal
 
 from app.services.capabilities import require_capability
 from app.services.mutations.rename_asset import RenameAssetAdapter
+
 
 router = APIRouter(prefix="/mutations", tags=["mutations"])
 

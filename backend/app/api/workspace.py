@@ -38,7 +38,6 @@ from app.schemas.assets import AssetRead
 
 
 router = APIRouter(
-    prefix="/workspaces",
     tags=["Workspace"],
 )
 
@@ -80,7 +79,12 @@ def derive_capabilities(user, project):
     return capabilities
 
 
-@router.get("/{project_id}")
+# Phase J compatibility alias.
+# `/workspace/{id}` is frozen by Phase J tests.
+# `/workspaces/{id}` is the canonical path going forward.
+# DO NOT diverge behavior between these routes.
+@router.get("/workspace/{project_id}")
+@router.get("/workspaces/{project_id}")
 def read_workspace(
     project_id: int,
     db: Session = Depends(get_db),
@@ -106,12 +110,14 @@ def read_workspace(
     raw_snapshots = get_workspace_snapshots(
         db=db,
         project_id=project_id,
-        include_failed=(user.role == "admin" or project.owner_id == user.id),
+        include_failed=(
+            user.role == "admin" or project.owner_id == user.id
+        ),
     )
 
     normalized_snapshots = normalize_snapshots(raw_snapshots)
 
-    # ✅ Phase J.5 — asset assembly (ORDERING ONLY, NO SCOPING)
+    # Phase J.5 — asset assembly (ORDERING ONLY, NO SCOPING)
     assets = get_workspace_assets(db=db)
 
     return {
@@ -122,10 +128,12 @@ def read_workspace(
         },
         "capabilities": capabilities,
         "snapshots": [
-            SnapshotRead.from_orm(s) for s in normalized_snapshots
+            SnapshotRead.from_orm(s)
+            for s in normalized_snapshots
         ],
         "assets": [
-            AssetRead.from_orm(a) for a in assets
+            AssetRead.from_orm(a)
+            for a in assets
         ],
         "meta": {
             "snapshot_total": len(raw_snapshots),

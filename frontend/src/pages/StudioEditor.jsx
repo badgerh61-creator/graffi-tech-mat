@@ -12,10 +12,14 @@ export default function StudioEditor() {
   const user = getCurrentUser();
 
   // 🔧 TEMPORARY (Phase J): active project
+  // This will later come from router / workspace context
   const projectId = 1;
 
   const [snapshots, setSnapshots] = useState([]);
 
+  // =====================================================
+  // FETCH SNAPSHOTS (READ-ONLY)
+  // =====================================================
   useEffect(() => {
     if (!projectId) return;
 
@@ -43,17 +47,33 @@ export default function StudioEditor() {
       });
   }, [projectId]);
 
-  const latestSnapshot = snapshots.find(
-    (s) => s.status === "completed"
+  // =====================================================
+  // PHASE 3 — SNAPSHOT SELECTION (MANDATORY)
+  //
+  // RULES:
+  // - Draft snapshot wins
+  // - Completed snapshot is fallback
+  // - No implicit "latest"
+  // =====================================================
+  const draftSnapshot = snapshots.find(
+    (s) => s.status === "draft"
   );
 
-  console.log("Latest snapshot:", latestSnapshot);
+  const activeSnapshot = draftSnapshot ?? snapshots[0];
 
+  const isEditable = activeSnapshot?.status === "draft";
+
+  console.log("Active snapshot:", activeSnapshot);
+  console.log("Is editable:", isEditable);
+
+  // =====================================================
+  // RENDER
+  // =====================================================
   return (
     <CapabilityProvider role={user?.role ?? "viewer"}>
       <EditorShell
         headerRight={
-          <SnapshotPreview snapshot={latestSnapshot} />
+          <SnapshotPreview snapshot={activeSnapshot} />
         }
       >
         <EditorLayoutHost />

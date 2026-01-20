@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
 from app.models.export_artifact import ExportArtifact
+from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
 
 from app.services.distribution_revocation import revoke_distribution_request
 from app.services.distribution_capabilities import compute_distribution_capabilities
@@ -267,6 +268,24 @@ def archived_project(db, project):
 # -------------------------------------------------
 
 @pytest.fixture
+def draft_snapshot(existing_draft_snapshot):
+    """
+    Canonical Phase 4 alias.
+    Tests depend on this exact fixture name.
+    """
+    return existing_draft_snapshot
+
+
+@pytest.fixture
+def non_completed_snapshot(pending_snapshot):
+    """
+    Canonical Phase 4 alias:
+    any snapshot that is NOT completed.
+    """
+    return pending_snapshot
+
+
+@pytest.fixture
 def completed_snapshot(db, project, admin_user):
     snap = RenderedSnapshot(
         project_id=project.id,
@@ -373,6 +392,27 @@ def archived_project_snapshot(db, admin_user):
     db.commit()
     db.refresh(snap)
     return snap
+
+@pytest.fixture
+def existing_draft_snapshot(db, completed_snapshot, editor_user):
+    """
+    Existing draft snapshot for the same project.
+    Used to enforce ONE-draft-per-project invariant.
+    """
+    draft = RenderedSnapshot(
+        project_id=completed_snapshot.project_id,
+        scene_state_hash=completed_snapshot.scene_state_hash,
+        render_profile=completed_snapshot.render_profile,
+        engine_version=completed_snapshot.engine_version,
+        status=SnapshotStatus.DRAFT.value,
+        parent_snapshot_id=completed_snapshot.id,
+        created_by=editor_user.id,
+    )
+
+    db.add(draft)
+    db.commit()
+    db.refresh(draft)
+    return draft
 
 
 # -------------------------------------------------

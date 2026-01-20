@@ -6,7 +6,6 @@ from sqlalchemy import (
     String,
     DateTime,
     ForeignKey,
-    UniqueConstraint,
     JSON,
 )
 from sqlalchemy.sql import func
@@ -15,27 +14,28 @@ from app.db.base import Base
 
 import hashlib
 import json
+from enum import Enum
 
 
-class SnapshotStatus(str):
+# =====================================================
+# Snapshot Lifecycle Status (AUTHORITATIVE)
+# =====================================================
+
+class SnapshotStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    OBSOLETE = "obsolete"
+    DRAFT = "draft"
 
+
+# =====================================================
+# Rendered Snapshot Model
+# =====================================================
 
 class RenderedSnapshot(Base):
     __tablename__ = "rendered_snapshots"
-
-    __table_args__ = (
-        UniqueConstraint(
-            "project_id",
-            "scene_state_hash",
-            "render_profile",
-            "engine_version",
-            name="uq_snapshot_deterministic",
-        ),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -52,21 +52,60 @@ class RenderedSnapshot(Base):
         backref="rendered_snapshots",
     )
 
+    # -------------------------------------------------
+    # Deterministic inputs (render identity)
+    # -------------------------------------------------
+
     scene_state_hash = Column(String, index=True, nullable=False)
     render_profile = Column(String, nullable=False)
     engine_version = Column(String, nullable=False)
+
+    # 🔒 Deterministic uniqueness (COMPLETED ONLY)
+    deterministic_key = Column(
+        String,
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+
+    # -------------------------------------------------
+    # Editable state payloads (DRAFT ONLY)
+    # -------------------------------------------------
 
     decor_state = Column(JSON, nullable=True)
     tuning_state = Column(JSON, nullable=True)
     body_state = Column(JSON, nullable=True)
 
+    # -------------------------------------------------
+    # Render output
+    # -------------------------------------------------
+
     image_url = Column(String, nullable=True)
 
-    status = Column(String, default=SnapshotStatus.PENDING, nullable=False)
+    # -------------------------------------------------
+    # Lifecycle
+    # -------------------------------------------------
+
+    status = Column(
+        String,
+        default=SnapshotStatus.PENDING.value,
+        nullable=False,
+    )
+
+    parent_snapshot_id = Column(
+        Integer,
+        ForeignKey("rendered_snapshots.id"),
+        nullable=True,
+    )
+
     error_message = Column(String, nullable=True)
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # =====================================================
+    # Derived helpers
+    # =====================================================
 
     @property
     def hash(self) -> str:
@@ -80,32 +119,24 @@ class RenderedSnapshot(Base):
         }
 
         return hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
         ).hexdigest()
 
     @property
-    def is_obsolete(self) -> bool:
-        return False
+    def is_draft(self) -> bool:
+        return self.status == SnapshotStatus.DRAFT.value
 
     @property
-    def vehicle_panels(self) -> set[str]:
-        """
-        Panels common to ALL standard vehicles.
-        Truck-specific panels are intentionally excluded.
-        """
-        return {
-            "door_left",
-            "door_right",
-            "hood",
-            "roof",
-            "trunk",
-            "fender_front_left",
-            "fender_front_right",
-            "fender_rear_left",
-            "fender_rear_right",
-            "bumper_front",
-            # ❌ bumper_rear intentionally removed
-        }
+    def is_completed(self) -> bool:
+        return self.status == SnapshotStatus.COMPLETED.value
+
+    @property
+    def is_obsolete(self) -> bool:
+        return self.status == SnapshotStatus.OBSOLETE.value
 
     @property
     def payload(self) -> dict:

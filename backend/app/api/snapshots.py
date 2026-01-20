@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_editor
 from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
 from app.schemas import SnapshotCreate, SnapshotRead
 from app.services.rendering import render_snapshot
@@ -25,13 +25,6 @@ def create_snapshot(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """
-    Phase J / Phase I invariant:
-    - Snapshot creation is deterministic
-    - No implicit project state mutation
-    - Snapshot activation is NOT handled here
-    """
-
     existing = (
         db.query(RenderedSnapshot)
         .filter(
@@ -39,7 +32,7 @@ def create_snapshot(
             RenderedSnapshot.scene_state_hash == snapshot_in.scene_state_hash,
             RenderedSnapshot.render_profile == snapshot_in.render_profile,
             RenderedSnapshot.engine_version == settings.ENGINE_VERSION,
-            RenderedSnapshot.status == SnapshotStatus.COMPLETED,
+            RenderedSnapshot.status == SnapshotStatus.COMPLETED.value,
         )
         .first()
     )
@@ -52,7 +45,7 @@ def create_snapshot(
         scene_state_hash=snapshot_in.scene_state_hash,
         render_profile=snapshot_in.render_profile,
         engine_version=settings.ENGINE_VERSION,
-        status=SnapshotStatus.RUNNING,
+        status=SnapshotStatus.RUNNING.value,
         created_by=user.id,
     )
 
@@ -63,9 +56,15 @@ def create_snapshot(
     try:
         image_url = render_snapshot({}, snapshot.render_profile)
         snapshot.image_url = image_url
-        snapshot.status = SnapshotStatus.COMPLETED
+        snapshot.status = SnapshotStatus.COMPLETED.value
+        snapshot.deterministic_key = (
+            f"{snapshot.project_id}:"
+            f"{snapshot.scene_state_hash}:"
+            f"{snapshot.render_profile}:"
+            f"{snapshot.engine_version}"
+        )
     except Exception as e:
-        snapshot.status = SnapshotStatus.FAILED
+        snapshot.status = SnapshotStatus.FAILED.value
         snapshot.error_message = str(e)
 
     db.commit()
@@ -73,76 +72,88 @@ def create_snapshot(
     return snapshot
 
 
-@router.get("/", response_model=list[SnapshotRead])
-def list_snapshots(
-    project_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    """
-    Phase J invariant:
-    - Read-only
-    - Deterministic ordering
-    """
-    return (
-        db.query(RenderedSnapshot)
-        .filter(RenderedSnapshot.project_id == project_id)
-        .order_by(RenderedSnapshot.created_at.desc())
-        .all()
-    )
-
-
 # -------------------------------------------------
-# Global snapshot mutations (Phase I)
+# Snapshot mutations
 # -------------------------------------------------
 
-mutation_router = APIRouter(
-    tags=["Snapshot Mutations"],
-)
+mutation_router = APIRouter(tags=["Snapshot Mutations"])
 
 
-@mutation_router.post(
-    "/snapshots/{snapshot_id}/mutations/invalidate",
-    status_code=200,
-)
+@mutation_router.post("/snapshots/{snapshot_id}/mutations/invalidate")
 def invalidate_snapshot(
     snapshot_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """
-    Phase I.4 — Snapshot invalidation
+    snapshot = db.query(RenderedSnapshot).filter_by(id=snapshot_id).first()
 
-    Rules:
-    - Only COMPLETED snapshots may be invalidated
-    - No deletion
-    - Status transitions are explicit and irreversible
-    """
+    if not snapshot:
+        raise HTTPException(404, "Snapshot not found")
 
-    snapshot = (
+    if snapshot.status != SnapshotStatus.COMPLETED.value:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot invalidate snapshot with status '{snapshot.status}'",
+        )
+
+    snapshot.status = SnapshotStatus.OBSOLETE.value
+    db.commit()
+    return {"snapshot_id": snapshot.id, "status": snapshot.status}
+
+
+# -------------------------------------------------
+# Phase 4.1 — Draft Snapshot
+# -------------------------------------------------
+
+@mutation_router.post("/snapshots/{snapshot_id}/draft")
+def create_draft_snapshot(
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_editor),
+):
+    snapshot = db.query(RenderedSnapshot).filter_by(id=snapshot_id).first()
+
+    if not snapshot:
+        raise HTTPException(404, "Snapshot not found")
+
+    if snapshot.status != SnapshotStatus.COMPLETED.value:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Only completed snapshots can be drafted",
+        )
+
+    existing_draft = (
         db.query(RenderedSnapshot)
-        .filter(RenderedSnapshot.id == snapshot_id)
+        .filter(
+            RenderedSnapshot.project_id == snapshot.project_id,
+            RenderedSnapshot.status == SnapshotStatus.DRAFT.value,
+        )
         .first()
     )
 
-    if not snapshot:
+    if existing_draft:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Snapshot not found",
+            status.HTTP_409_CONFLICT,
+            "Draft snapshot already exists for this project",
         )
 
-    if snapshot.status != SnapshotStatus.COMPLETED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot invalidate snapshot with status '{snapshot.status}'",
-        )
+    draft = RenderedSnapshot(
+        project_id=snapshot.project_id,
+        scene_state_hash=snapshot.scene_state_hash,
+        render_profile=snapshot.render_profile,
+        engine_version=snapshot.engine_version,
+        status=SnapshotStatus.DRAFT.value,
+        parent_snapshot_id=snapshot.id,
+        created_by=user.id,
+    )
 
-    snapshot.status = "obsolete" 
+    db.add(draft)
     db.commit()
-    db.refresh(snapshot)
+    db.refresh(draft)
 
     return {
-        "snapshot_id": snapshot.id,
-        "status": snapshot.status,
+        "id": draft.id,
+        "status": draft.status,
+        "parent_snapshot_id": snapshot.id,
     }
 

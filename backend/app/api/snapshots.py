@@ -17,6 +17,26 @@ router = APIRouter(
     tags=["Snapshots"],
 )
 
+@router.get("/", response_model=list[SnapshotRead])
+def list_snapshots(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Phase 3 — Read-only snapshot listing
+    - Returns ALL snapshots for project
+    - Frontend decides which is active
+    """
+    snapshots = (
+        db.query(RenderedSnapshot)
+        .filter(RenderedSnapshot.project_id == project_id)
+        .order_by(RenderedSnapshot.created_at.desc())
+        .all()
+    )
+
+    return snapshots
+
 
 @router.post("/", response_model=SnapshotRead)
 def create_snapshot(
@@ -101,6 +121,50 @@ def invalidate_snapshot(
     return {"snapshot_id": snapshot.id, "status": snapshot.status}
 
 
+@mutation_router.post("/snapshots/{snapshot_id}/finalize")
+def finalize_draft_snapshot(
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_editor),
+):
+    draft = (
+        db.query(RenderedSnapshot)
+        .filter_by(id=snapshot_id)
+        .first()
+    )
+
+    if not draft:
+        raise HTTPException(404, "Snapshot not found")
+
+    if draft.status != SnapshotStatus.DRAFT.value:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Only draft snapshots can be finalized",
+        )
+
+    # 🔒 Ensure only one draft existed (invariant)
+    parent = (
+        db.query(RenderedSnapshot)
+        .filter_by(id=draft.parent_snapshot_id)
+        .first()
+    )
+
+    if not parent:
+        raise HTTPException(409, "Parent snapshot missing")
+
+    # Promote draft → completed
+    draft.status = SnapshotStatus.COMPLETED.value
+    draft.parent_snapshot_id = None
+
+    db.commit()
+    db.refresh(draft)
+
+    return {
+        "id": draft.id,
+        "status": draft.status,
+    }
+
+
 # -------------------------------------------------
 # Phase 4.1 — Draft Snapshot
 # -------------------------------------------------
@@ -155,5 +219,52 @@ def create_draft_snapshot(
         "id": draft.id,
         "status": draft.status,
         "parent_snapshot_id": snapshot.id,
+    }
+
+
+# -------------------------------------------------
+# Phase 4.3 — Draft Autosave
+# -------------------------------------------------
+
+@mutation_router.patch("/snapshots/{snapshot_id}/autosave")
+def autosave_draft_snapshot(
+    snapshot_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """
+    Phase 4.3
+    - Autosave overwrites the SAME draft snapshot
+    - No rendering
+    - No status change
+    """
+
+    snapshot = (
+        db.query(RenderedSnapshot)
+        .filter(RenderedSnapshot.id == snapshot_id)
+        .first()
+    )
+
+    if not snapshot:
+        raise HTTPException(404, "Snapshot not found")
+
+    if snapshot.status != SnapshotStatus.DRAFT.value:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Only draft snapshots can be autosaved",
+        )
+
+    if "scene_state_hash" not in payload:
+        raise HTTPException(400, "scene_state_hash is required")
+
+    snapshot.scene_state_hash = payload["scene_state_hash"]
+    db.commit()
+    db.refresh(snapshot)
+
+    return {
+        "id": snapshot.id,
+        "status": snapshot.status,
+        "scene_state_hash": snapshot.scene_state_hash,
     }
 

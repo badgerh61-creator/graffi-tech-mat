@@ -62,11 +62,10 @@ class RenderedSnapshot(Base):
 
     # 🔒 Deterministic uniqueness (COMPLETED ONLY)
     deterministic_key = Column(
-        String,
-        nullable=True,
-        unique=True,
-        index=True,
-    )
+       String,
+       nullable=True,
+       index=True,
+    ) 
 
     # -------------------------------------------------
     # Editable state payloads (DRAFT ONLY)

@@ -27,6 +27,27 @@ SUPPORTED_EXPORT_TYPES = {
     "package",
 }
 
+# =====================================================
+# Canonical export entrypoint (Phase 4.3)
+# Allows POST /exports
+# =====================================================
+
+@router.post("")
+def create_export(
+    payload: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return create_export_request(
+        payload=payload,
+        db=db,
+        user=user,
+    )
+
+
+# =====================================================
+# Internal export request handler
+# =====================================================
 
 @router.post("/requests")
 def create_export_request(
@@ -35,9 +56,30 @@ def create_export_request(
     user: User = Depends(get_current_user),
 ):
     # ─────────────────────────────────────────────
-    # Parse & validate payload
+    # Phase 4.3 — BLOCK EXPORT WHILE DRAFT EXISTS
+    # MUST run before payload validation
     # ─────────────────────────────────────────────
     project_id = payload.get("project_id")
+
+    if project_id is not None:
+        draft_exists = (
+            db.query(RenderedSnapshot)
+            .filter(
+                RenderedSnapshot.project_id == project_id,
+                RenderedSnapshot.status == SnapshotStatus.DRAFT,
+            )
+            .first()
+        )
+
+        if draft_exists:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot export while draft snapshot exists",
+            )
+
+    # ─────────────────────────────────────────────
+    # Parse & validate payload (AFTER draft gate)
+    # ─────────────────────────────────────────────
     snapshot_id = payload.get("snapshot_id")
     export_type = payload.get("export_type")
     options = payload.get("options", {})
@@ -49,7 +91,7 @@ def create_export_request(
         raise HTTPException(status_code=400, detail="Unsupported export type")
 
     # ─────────────────────────────────────────────
-    # Phase M.0 / M.1 capability gates (MUST be first)
+    # Phase M.0 / M.1 capability gates
     # ─────────────────────────────────────────────
     if user.role == "viewer":
         raise HTTPException(
@@ -96,12 +138,12 @@ def create_export_request(
             raise HTTPException(status_code=400, detail="Invalid image options")
 
     # ─────────────────────────────────────────────
-    # Create export request (ID only for now)
+    # Create export request (ID only)
     # ─────────────────────────────────────────────
     export_request_id = str(uuid4())
 
     # ─────────────────────────────────────────────
-    # Phase M.6 — enqueue export job (REQUIRED)
+    # Phase M.6 — enqueue export job
     # ─────────────────────────────────────────────
     on_export_request_accepted(
         db=db,
@@ -109,7 +151,7 @@ def create_export_request(
     )
 
     # ─────────────────────────────────────────────
-    # Journal intent (schema-safe)
+    # Journal intent
     # ─────────────────────────────────────────────
     db.add(
         JournalEntry(
@@ -130,6 +172,10 @@ def create_export_request(
         "status": "accepted",
     }
 
+
+# =====================================================
+# Health
+# =====================================================
 
 @router.get("/health")
 def exports_health(

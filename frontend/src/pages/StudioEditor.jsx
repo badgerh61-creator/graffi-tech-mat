@@ -12,27 +12,27 @@ export default function StudioEditor() {
   const user = getCurrentUser();
 
   // 🔧 TEMPORARY (Phase J): active project
-  // This will later come from router / workspace context
+  // Later comes from router / workspace context
   const projectId = 1;
 
   const [snapshots, setSnapshots] = useState([]);
 
   // =====================================================
-  // FETCH SNAPSHOTS (READ-ONLY)
+  // SNAPSHOT FETCH (REUSABLE)
   // =====================================================
-  useEffect(() => {
-    if (!projectId) return;
-
+  const fetchSnapshots = () => {
     const token = getAccessToken();
-    console.log("Snapshot auth token:", token);
 
-    fetch(`http://127.0.0.1:8000/projects/${projectId}/snapshots/`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then(async (res) => {
+    return fetch(
+      `http://127.0.0.1:8000/projects/${projectId}/snapshots/`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    )
+      .then((res) => {
         if (!res.ok) {
           throw new Error(`Snapshot fetch failed: ${res.status}`);
         }
@@ -41,10 +41,18 @@ export default function StudioEditor() {
       .then((data) => {
         console.log("Snapshots:", data);
         setSnapshots(data);
-      })
-      .catch((err) => {
-        console.error("Snapshot fetch failed", err);
       });
+  };
+
+  // =====================================================
+  // INITIAL LOAD (READ-ONLY)
+  // =====================================================
+  useEffect(() => {
+    if (!projectId) return;
+
+    fetchSnapshots().catch((err) => {
+      console.error("Snapshot fetch failed", err);
+    });
   }, [projectId]);
 
   // =====================================================
@@ -73,7 +81,10 @@ export default function StudioEditor() {
     <CapabilityProvider role={user?.role ?? "viewer"}>
       <EditorShell
         headerRight={
-          <SnapshotPreview snapshot={activeSnapshot} />
+          <SnapshotPreview
+            snapshot={activeSnapshot}
+            onDraftCreated={fetchSnapshots}
+          />
         }
       >
         <EditorLayoutHost />

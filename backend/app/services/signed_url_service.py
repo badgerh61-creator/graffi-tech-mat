@@ -3,6 +3,9 @@ from datetime import datetime, timedelta
 
 from app.models.signed_url import SignedURL
 
+# 🔍 Phase P — observability
+import app.observability.metrics as metrics_module
+
 BASE_DOWNLOAD_URL = "https://download.graffi/internal"
 
 
@@ -19,6 +22,8 @@ def create_signed_url(*, db, distribution_request, expires_in_hours):
     db.add(signed)
     db.commit()
     db.refresh(signed)
+
+    metrics_module.metrics.inc("distribution.signed_url.created.count")
 
     return {
         "url": f"{BASE_DOWNLOAD_URL}/{signed.token}",

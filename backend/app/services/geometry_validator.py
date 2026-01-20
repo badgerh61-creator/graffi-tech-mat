@@ -7,6 +7,9 @@ from app.services.geometry_checks import (
     adjacent_panel_pairs,
 )
 
+# 🔍 Phase P — observability
+import app.observability.metrics as metrics_module
+
 
 def validate_geometry(
     *,
@@ -14,8 +17,34 @@ def validate_geometry(
     panels,
     enforce_symmetry=True,
 ):
+    # --------------------------------------------------
+    # Phase P — REQUIRED invocation metric
+    # --------------------------------------------------
+    metrics_module.metrics.inc(
+        "geometry.validation.invocations.count"
+    )
+
+    # --------------------------------------------------
+    # Phase P — EMPTY GEOMETRY IS INVALID
+    # --------------------------------------------------
+    if not surfaces and not panels:
+        metrics_module.metrics.inc(
+            "geometry.validation.failures.count"
+        )
+        return {
+            "valid": False,
+            "errors": [{
+                "code": "EMPTY_GEOMETRY",
+                "message": "No surfaces or panels provided for validation",
+                "entity_id": None,
+            }],
+        }
+
     errors = []
 
+    # --------------------------------------------------
+    # Surface-level validation
+    # --------------------------------------------------
     for surface in surfaces:
         if violates_min_curvature(surface):
             errors.append({
@@ -38,6 +67,9 @@ def validate_geometry(
                 "entity_id": surface.id,
             })
 
+    # --------------------------------------------------
+    # Panel-level validation
+    # --------------------------------------------------
     for panel_pair in adjacent_panel_pairs(panels):
         if panels_overlap(panel_pair):
             errors.append({
@@ -52,6 +84,14 @@ def validate_geometry(
                 "message": "Panel continuity violation",
                 "entity_id": [p.id for p in panel_pair],
             })
+
+    # --------------------------------------------------
+    # Phase P — failure metric
+    # --------------------------------------------------
+    if errors:
+        metrics_module.metrics.inc(
+            "geometry.validation.failures.count"
+        )
 
     return {
         "valid": len(errors) == 0,

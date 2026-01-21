@@ -1,32 +1,40 @@
 // frontend/src/pages/StudioEditor.jsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
 import { CapabilityProvider } from "../capabilities";
 import { getCurrentUser, getAccessToken } from "../utils/auth";
+
 import SnapshotPreview from "../components/snapshots/SnapshotPreview";
+import DraftStatusBadge from "../components/snapshots/DraftStatusBadge";
+import FinalizeDraftButton from "../components/snapshots/FinalizeDraftButton";
+import { useDraftAutosave } from "../hooks/useDraftAutosave";
 
 export default function StudioEditor() {
   const user = getCurrentUser();
 
-  // 🔧 TEMPORARY (Phase J): active project
-  // Later comes from router / workspace context
+  // 🔧 TEMPORARY (Phase J)
   const projectId = 1;
 
   const [snapshots, setSnapshots] = useState([]);
+  const [sceneStateHash, setSceneStateHash] = useState("__working__");
+
+  // ===============================
+  // DIRTY STATE (EDITOR-LOCAL)
+  // ===============================
+  const [isDirty, setIsDirty] = useState(false);
 
   // =====================================================
-  // SNAPSHOT FETCH (REUSABLE)
+  // SNAPSHOT FETCH (AUTHORITATIVE)
   // =====================================================
-  const fetchSnapshots = () => {
+  const fetchSnapshots = useCallback(() => {
     const token = getAccessToken();
 
     return fetch(
       `http://127.0.0.1:8000/projects/${projectId}/snapshots/`,
       {
-        method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -42,37 +50,36 @@ export default function StudioEditor() {
         console.log("Snapshots:", data);
         setSnapshots(data);
       });
-  };
-
-  // =====================================================
-  // INITIAL LOAD (READ-ONLY)
-  // =====================================================
-  useEffect(() => {
-    if (!projectId) return;
-
-    fetchSnapshots().catch((err) => {
-      console.error("Snapshot fetch failed", err);
-    });
   }, [projectId]);
 
   // =====================================================
-  // PHASE 3 — SNAPSHOT SELECTION (MANDATORY)
-  //
-  // RULES:
-  // - Draft snapshot wins
-  // - Completed snapshot is fallback
-  // - No implicit "latest"
+  // INITIAL LOAD
   // =====================================================
-  const draftSnapshot = snapshots.find(
-    (s) => s.status === "draft"
+  useEffect(() => {
+    if (!projectId) return;
+    fetchSnapshots().catch(console.error);
+  }, [projectId, fetchSnapshots]);
+
+  // =====================================================
+  // PHASE 3 — SNAPSHOT SELECTION (MANDATORY)
+  // =====================================================
+  const draftSnapshot = snapshots.find((s) => s.status === "draft");
+  const completedSnapshot = snapshots.find(
+    (s) => s.status === "completed"
   );
 
-  const activeSnapshot = draftSnapshot ?? snapshots[0];
-
+  const activeSnapshot = draftSnapshot ?? completedSnapshot;
   const isEditable = activeSnapshot?.status === "draft";
 
-  console.log("Active snapshot:", activeSnapshot);
-  console.log("Is editable:", isEditable);
+  // =====================================================
+  // PHASE 4.4 — AUTOSAVE (DRAFT ONLY)
+  // =====================================================
+  useDraftAutosave({
+    snapshot: activeSnapshot,
+    sceneStateHash,
+    isDirty,
+    onSaved: () => setIsDirty(false),
+  });
 
   // =====================================================
   // RENDER
@@ -81,13 +88,47 @@ export default function StudioEditor() {
     <CapabilityProvider role={user?.role ?? "viewer"}>
       <EditorShell
         headerRight={
-          <SnapshotPreview
-            snapshot={activeSnapshot}
-            onDraftCreated={fetchSnapshots}
-          />
+          <>
+            <DraftStatusBadge snapshot={activeSnapshot} />
+
+            {/* ===============================
+                UI INDICATOR (HEADER)
+               =============================== */}
+            {isDirty && (
+              <span
+                style={{
+                  color: "#d33682",
+                  marginLeft: 8,
+                  fontSize: 12,
+                }}
+              >
+                Unsaved changes
+              </span>
+            )}
+
+            <SnapshotPreview
+              snapshot={activeSnapshot}
+              onDraftCreated={fetchSnapshots}
+            />
+
+            <FinalizeDraftButton
+              snapshot={activeSnapshot}
+              onFinalized={fetchSnapshots}
+            />
+          </>
         }
       >
-        <EditorLayoutHost />
+        {/* ===============================
+            SCENE CHANGE SIGNAL
+           =============================== */}
+        <EditorLayoutHost
+          editable={isEditable}
+          onSceneChange={() => {
+            if (!isEditable) return;
+            setSceneStateHash(Date.now().toString());
+            setIsDirty(true);
+          }}
+        />
       </EditorShell>
     </CapabilityProvider>
   );

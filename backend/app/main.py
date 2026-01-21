@@ -28,10 +28,7 @@ from app.api.organizations import router as organizations_router
 from app.api.scenes import router as scenes_router
 from app.api.signed_urls import router as signed_url_router
 
-from app.api.snapshots import (
-    router as snapshots_router,
-    mutation_router as snapshot_mutation_router,
-)
+from app.api.snapshots import router as snapshots_router
 
 from app.api.mutations import (
     router as phase_i_mutations_router,
@@ -99,8 +96,8 @@ app.include_router(distributions_router)
 app.include_router(organizations_router)
 app.include_router(signed_url_router)
 
+# Snapshots (Phase 3 → Phase 4.5 unified)
 app.include_router(snapshots_router)
-app.include_router(snapshot_mutation_router)
 
 @app.get("/health")
 def health():

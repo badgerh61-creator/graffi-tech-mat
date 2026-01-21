@@ -18,6 +18,7 @@ from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
 
 from app.services.distribution_revocation import revoke_distribution_request
 from app.services.distribution_capabilities import compute_distribution_capabilities
+from app.services.snapshot_finalize import finalize_snapshot
 
 from app.core.security import oauth2_scheme
 
@@ -122,6 +123,38 @@ def inject_export_snapshot(request):
     """
     from app.services import export_snapshot
     request.module.export_snapshot = export_snapshot
+
+
+# -------------------------------------------------
+# 📦 Phase 4.5 — inject finalize_snapshot into tests
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def inject_finalize_snapshot(request):
+    """
+    Injects finalize_snapshot into EVERY test module's globals.
+
+    Required because Phase 4.5 tests call finalize_snapshot(...)
+    without importing it explicitly.
+    """
+    from app.services.snapshot_finalize import finalize_snapshot
+    request.module.finalize_snapshot = finalize_snapshot
+
+
+# -------------------------------------------------
+# 📜 Phase 4.5 — inject get_audit_events into tests
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def inject_get_audit_events(request):
+    """
+    Injects get_audit_events into EVERY test module's globals.
+
+    Required because Phase 4.5 audit tests call
+    get_audit_events(...) without importing it.
+    """
+    from app.services.audit import get_audit_events
+    request.module.get_audit_events = get_audit_events
 
 
 # -------------------------------------------------

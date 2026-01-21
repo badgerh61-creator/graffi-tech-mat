@@ -28,7 +28,8 @@ class SnapshotStatus(str, Enum):
     FAILED = "failed"
     OBSOLETE = "obsolete"
     DRAFT = "draft"
-
+    FINALIZED = "finalized" 
+    
 
 # =====================================================
 # Rendered Snapshot Model

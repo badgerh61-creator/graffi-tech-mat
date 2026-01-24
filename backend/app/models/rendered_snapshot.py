@@ -142,20 +142,6 @@ class RenderedSnapshot(Base):
         }
 
     # =====================================================
-    # Phase K — Compatibility Surface (READ-ONLY)
-    # =====================================================
-
-    @property
-    def vehicle_panels(self):
-        body = self.body_state or {}
-        return body.get("panels", [])
-
-    @property
-    def materials(self):
-        body = self.body_state or {}
-        return body.get("materials", {})
-
-    # =====================================================
     # Phase K — Snapshot Cloning (CRITICAL)
     # =====================================================
 
@@ -175,5 +161,46 @@ class RenderedSnapshot(Base):
             status=SnapshotStatus.COMPLETED.value,
             parent_snapshot_id=self.id,
             created_by=created_by,
+        )
+
+    # =====================================================
+    # Phase 5 — Scene Graph Projection (AUTHORITATIVE)
+    # =====================================================
+
+    @property
+    def scene_graph_data(self) -> dict:
+        body = self.body_state or {}
+
+        def normalize(value):
+            """
+            Accept dict or list and always return list.
+            """
+            if isinstance(value, dict):
+                return list(value.values())
+            if isinstance(value, list):
+                return value
+            return []
+
+        return {
+            "nodes": normalize(body.get("nodes")),
+            "panels": normalize(body.get("panels")),
+            "curves": normalize(body.get("curves")),
+            "reference_planes": normalize(body.get("reference_planes")),
+        }
+
+    @property
+    def scene_graph(self):
+        """
+        Lazy scene graph adapter (prevents circular imports)
+        """
+        from app.services.scene_graph import SceneGraphView
+
+        data = self.scene_graph_data
+
+        return SceneGraphView(
+            nodes=data["nodes"],
+            panels=data["panels"],
+            curves=data["curves"],
+            reference_planes=data["reference_planes"],
         )
 

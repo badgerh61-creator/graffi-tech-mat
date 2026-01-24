@@ -11,7 +11,11 @@ from . import (
     admin,
     audit,
     exports,
-    organizations, 
-    projects,  
+    organizations,
+    projects,
+
+    # 🔵 Phase 5.2 — Selection & Target Resolution
+    snapshots_resolve_target,
 )
+
 

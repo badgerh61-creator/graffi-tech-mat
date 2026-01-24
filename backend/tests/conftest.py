@@ -430,8 +430,9 @@ def archived_project_snapshot(db, admin_user):
 def existing_draft_snapshot(db, completed_snapshot, editor_user):
     """
     Existing draft snapshot for the same project.
-    Used to enforce ONE-draft-per-project invariant.
+    Used by Phase 4+ editor mutation & selection tests.
     """
+
     draft = RenderedSnapshot(
         project_id=completed_snapshot.project_id,
         scene_state_hash=completed_snapshot.scene_state_hash,
@@ -440,6 +441,16 @@ def existing_draft_snapshot(db, completed_snapshot, editor_user):
         status=SnapshotStatus.DRAFT.value,
         parent_snapshot_id=completed_snapshot.id,
         created_by=editor_user.id,
+        body_state={
+            "nodes": [
+                {"id": "body.root", "type": "node", "editable": True},
+            ],
+            "panels": [
+                {"id": "door.front.left", "type": "panel", "editable": True},
+            ],
+            "curves": [],
+            "reference_planes": [],
+        },
     )
 
     db.add(draft)

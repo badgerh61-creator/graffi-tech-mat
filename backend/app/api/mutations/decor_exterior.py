@@ -30,6 +30,8 @@ from app.api.mutations.decor.schemas import (
     RemoveExteriorDecalPayload,
 )
 
+from app.services.decor_exterior import set_exterior_material_mutation
+
 # -------------------------------------------------
 # ROUTER (LEGACY — DO NOT EXTEND)
 # -------------------------------------------------
@@ -129,6 +131,52 @@ def remove_decal(
         project_id=payload.project_id,
         base_snapshot=base_snapshot,
         decal_instance_id=payload.decal_instance_id,
+    )
+
+    db.commit()
+    return {"snapshot_id": snapshot.id}
+
+# -------------------------------------------------
+# SET MATERIAL (LEGACY BRIDGE — PHASE K.1)
+# -------------------------------------------------
+
+@router.post("/set-material")
+def set_material(
+    *,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    payload: dict,
+):
+    # 1️⃣ Capability guard (legacy style)
+    try:
+        require_capability(
+            db=db,
+            user=user,
+            project_id=payload.get("project_id"),
+            capability="canDecorateExterior",
+        )
+    except Exception:
+        return JSONResponse(
+            status_code=403,
+            content={"error": "decor_capability_required"},
+        )
+
+    # 2️⃣ Load base snapshot
+    base_snapshot = db.get(RenderedSnapshot, payload.get("snapshot_base_id"))
+    if not base_snapshot:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "base_snapshot_not_found"},
+        )
+
+    # 3️⃣ Delegate to canonical mutation
+    snapshot = set_exterior_material_mutation(
+        db=db,
+        user_id=user.id,
+        project_id=payload["project_id"],
+        base_snapshot=base_snapshot,
+        panel=payload["panel"],
+        material=payload["material"],
     )
 
     db.commit()

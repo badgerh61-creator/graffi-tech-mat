@@ -51,6 +51,26 @@ class SceneGraphView:
         data = self._reference_planes.get(str(ref_id))
         return TargetView(data) if data else None
 
+    # -------------------------------------------------
+    # Generic lookup (Phase 5.3 contract)
+    # -------------------------------------------------
+
+    def get_element_by_id(self, element_id: str) -> Optional["TargetView"]:
+        """
+        Resolve any scene graph element by ID, regardless of type.
+        """
+
+        element_id = str(element_id)
+
+        data = (
+            self._nodes.get(element_id)
+            or self._panels.get(element_id)
+            or self._curves.get(element_id)
+            or self._reference_planes.get(element_id)
+        )
+
+        return TargetView(data) if data else None
+
 
 class TargetView:
     """

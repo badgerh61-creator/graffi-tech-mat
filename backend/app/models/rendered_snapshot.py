@@ -162,6 +162,21 @@ class RenderedSnapshot(Base):
             parent_snapshot_id=self.id,
             created_by=created_by,
         )
+    # =====================================================
+    # Phase K — Legacy Compatibility Accessors (DO NOT REMOVE)
+    # =====================================================
+
+    @property
+    def vehicle_panels(self):
+        return (self.body_state or {}).get("panels", [])
+
+    @property
+    def vehicle_nodes(self):
+        return (self.body_state or {}).get("nodes", [])
+
+    @property
+    def vehicle_curves(self):
+        return (self.body_state or {}).get("curves", [])
 
     # =====================================================
     # Phase 5 — Scene Graph Projection (AUTHORITATIVE)
@@ -203,4 +218,48 @@ class RenderedSnapshot(Base):
             curves=data["curves"],
             reference_planes=data["reference_planes"],
         )
+
+
+# =====================================================
+# Phase 5.3 — Constraint helpers
+# =====================================================
+
+def is_symmetric(self, target_id: str, plane: str, params: dict) -> bool:
+    """
+    Check whether a transform violates symmetry constraints.
+    Returns True if allowed.
+    """
+    graph = self.scene_graph
+
+    # Phase 5.2 — explicit target resolution
+    target = (
+        graph.get_panel(target_id)
+        or graph.get_node(target_id)
+        or graph.get_curve(target_id)
+    )
+
+    # Unknown targets never block
+    if not target:
+        return True
+
+    # Non-symmetric elements are always allowed
+    if getattr(target, "_data", {}).get("symmetric", True) is False:
+        return True
+
+    # Phase 5.3 invariant:
+    # vehicle_centerline == X axis
+    if plane == "vehicle_centerline":
+        dx = params.get("x", 0)
+        if dx != 0:
+            return False
+
+    return True
+
+
+# =====================================================
+# Phase 5.3 — Method binding (NO LOGIC CHANGE)
+# =====================================================
+
+RenderedSnapshot.is_symmetric = is_symmetric
+
 

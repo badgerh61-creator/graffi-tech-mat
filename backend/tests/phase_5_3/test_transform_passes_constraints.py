@@ -1,0 +1,19 @@
+def test_transform_passes_constraints(
+    client,
+    draft_snapshot,
+    editor_user,
+):
+    response = client.post(
+        f"/projects/{draft_snapshot.project_id}/snapshots/{draft_snapshot.id}/validate-transform",
+        json={
+            "target_id": "body.root",
+            "operation": "translate",
+            "params": {"x": 0, "y": 0.1, "z": 0},
+            "constraints": ["locked_axis:z"],
+        },
+        headers=auth(editor_user),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+

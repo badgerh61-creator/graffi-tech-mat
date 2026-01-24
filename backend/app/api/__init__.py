@@ -13,9 +13,13 @@ from . import (
     exports,
     organizations,
     projects,
-
+   
     # 🔵 Phase 5.2 — Selection & Target Resolution
     snapshots_resolve_target,
+    
+    # 🔵 Phase 5.3 — Constraints & Reference Planes
+    snapshots_validate_transform,
 )
+
 
 

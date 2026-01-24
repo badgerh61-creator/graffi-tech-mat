@@ -4,27 +4,23 @@ from app.core.security import hash_password
 
 db = SessionLocal()
 
-def upsert(email, pw, role, is_admin=False):
-    u = db.query(User).filter_by(email=email).first()
-    if not u:
-        u = User(
-            email=email,
-            hashed_password=hash_password(pw),
-            role=role,
-            is_active=True,
-            is_admin=is_admin,
-        )
-        db.add(u)
-    else:
-        u.hashed_password = hash_password(pw)
-        u.role = role
-        u.is_active = True
-        u.is_admin = is_admin
-    db.commit()
+def create_user(email, password, role, is_admin=False):
+    user = User(
+        email=email,
+        hashed_password=hash_password(password),
+        role=role,
+        is_active=True,
+        is_admin=is_admin,
+    )
+    db.add(user)
 
-upsert("admin@test.com", "admin123", "admin", True)
-upsert("editor@test.com", "editor123", "editor")
-upsert("viewer@test.com", "viewer123", "viewer")
+create_user("admin@test.com", "admin123", "admin", True)
+create_user("owner@test.com", "owner123", "owner")
+create_user("editor@test.com", "editor123", "editor")
+create_user("viewer@test.com", "viewer123", "viewer")
 
-print("✅ Dev users ready")
+db.commit()
+db.close()
+
+print("✅ Users recreated with bcrypt hashes")
 

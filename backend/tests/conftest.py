@@ -3,6 +3,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+import app.models.rendered_snapshot  # noqa: F401
 
 from tests.fixtures.export_job import export_job
 from app.main import app

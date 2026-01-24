@@ -221,7 +221,7 @@ class RenderedSnapshot(Base):
 
 
 # =====================================================
-# Phase 5.3 — Constraint helpers
+# Phase 5.3 — Constraint helpers 
 # =====================================================
 
 def is_symmetric(self, target_id: str, plane: str, params: dict) -> bool:
@@ -255,11 +255,29 @@ def is_symmetric(self, target_id: str, plane: str, params: dict) -> bool:
 
     return True
 
-
-# =====================================================
-# Phase 5.3 — Method binding (NO LOGIC CHANGE)
-# =====================================================
-
+# 🔒 CRITICAL: bind EXACT function, no rename, no wrapper
 RenderedSnapshot.is_symmetric = is_symmetric
+
+
+# =====================================================
+# Phase 5.4 — Authoritative Mutation Entry Point
+# =====================================================
+
+def apply_transform(self, *, target_id: str, operation: str, params: dict):
+    """
+    The ONLY legal mutation entry point.
+    """
+
+    from app.services.mutable_scene_graph import MutableSceneGraph
+
+    graph = MutableSceneGraph(body_state=self.body_state)
+
+    graph.apply_transform(
+        target_id=target_id,
+        operation=operation,
+        params=params,
+    )
+
+    self.body_state = graph.serialize()
 
 

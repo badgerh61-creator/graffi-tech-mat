@@ -32,6 +32,7 @@ from app.api.mutations.snapshots import router as snapshot_mutations_router
 from app.api.snapshots_legacy import router as snapshots_legacy_router
 from app.api.snapshots import router as snapshots_router
 from app.api.snapshot_mutations import router as snapshot_mutations_router
+from app.api.mutations.snapshots import router as snapshot_mutations_router
 
 from app.api.snapshots_transform import router as snapshots_transform_router
 
@@ -98,7 +99,6 @@ app.include_router(audit_router)
 
 app.include_router(snapshot_mutations_router)
 app.include_router(snapshots_legacy_router)
-app.include_router(snapshot_mutations_router)
 
 app.include_router(snapshots_transform_router)
 

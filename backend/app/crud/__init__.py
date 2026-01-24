@@ -31,6 +31,9 @@ from app.crud.invites import (
     accept_model_invite,
 )
 
+# Snapshots (Phase 4.x legacy support)
+from app.crud.snapshots import get_snapshot_by_id
+
 __all__ = [
     # Users
     "get_user_by_email",
@@ -44,5 +47,8 @@ __all__ = [
     "resolve_user_role_for_model",
     "get_models_accessible_to_user",
     "get_model_if_accessible",
+
+    # Snapshots
+    "get_snapshot_by_id",
 ]
 

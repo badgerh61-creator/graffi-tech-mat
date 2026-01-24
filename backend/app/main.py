@@ -28,6 +28,8 @@ from app.api.organizations import router as organizations_router
 from app.api.scenes import router as scenes_router
 from app.api.signed_urls import router as signed_url_router
 
+from app.api.mutations.snapshots import router as snapshot_mutations_router
+from app.api.snapshots_legacy import router as snapshots_legacy_router
 from app.api.snapshots import router as snapshots_router
 
 from app.api.mutations import (
@@ -88,6 +90,9 @@ app.include_router(upload_router)
 app.include_router(presign_router)
 app.include_router(admin_router)
 app.include_router(audit_router)
+
+app.include_router(snapshot_mutations_router)
+app.include_router(snapshots_legacy_router)
 
 # 📦 Phase M / N — Exports & Distributions (ONCE)
 app.include_router(exports_router)

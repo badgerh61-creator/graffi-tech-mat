@@ -119,10 +119,12 @@ def set_material(
 ):
     project_id = payload.get("project_id")
 
+    # 1️⃣ Capability check
     error = require_decor_capability(db, user, project_id)
     if error:
         return error
 
+    # 2️⃣ Base snapshot validation
     base_snapshot = db.get(RenderedSnapshot, payload.get("snapshot_base_id"))
     if (
         not base_snapshot
@@ -134,13 +136,15 @@ def set_material(
             content={"error": "invalid_snapshot_base"},
         )
 
+    # 3️⃣ Panel presence (syntax-level)
     panel = payload.get("panel")
-    if panel not in (base_snapshot.vehicle_panels or []):
+    if not isinstance(panel, str):
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_target_panel"},
         )
 
+    # 4️⃣ Material validation (shape first)
     material = payload.get("material", {})
     ok, _ = validate_material(material.get("parameters", {}))
     if not ok:
@@ -149,14 +153,26 @@ def set_material(
             content={"error": "invalid_material_definition"},
         )
 
-    snapshot = set_exterior_material_mutation(
-        db=db,
-        user_id=user.id,
-        project_id=project_id,
-        base_snapshot=base_snapshot,
-        panel=panel,
-        material=material,
-    )
+    # 5️⃣ Domain mutation (STRICT error mapping)
+    try:
+        snapshot = set_exterior_material_mutation(
+            db=db,
+            user_id=user.id,
+            project_id=project_id,
+            base_snapshot=base_snapshot,
+            panel=panel,
+            material=material,
+        )
+    except KeyError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": e.args[0]},   # ✅ NO QUOTES
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": e.args[0]},
+        )
 
     db.commit()
     return {"snapshot_id": snapshot.id}

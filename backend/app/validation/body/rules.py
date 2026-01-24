@@ -25,9 +25,24 @@ def validate_body_preset(preset, *, snapshot):
     if preset is None:
         raise BodyPresetNotFound("Body preset not found")
 
-    # ✅ FIX 3 — enforce panel compatibility
     required_panels = set(preset.get("required_panels", set()))
-    available_panels = snapshot.vehicle_panels
+
+    # ✅ Phase K default body contract
+    available_panels = set(snapshot.vehicle_panels or [])
+
+    if not available_panels:
+        # Default passenger car panels
+        available_panels = {
+            "door_left",
+            "door_right",
+            "hood",
+            "roof",
+            "trunk",
+            "fender_front_left",
+            "fender_front_right",
+            "fender_rear_left",
+            "fender_rear_right",
+        }
 
     if not required_panels.issubset(available_panels):
         raise BodyPresetIncompatible(

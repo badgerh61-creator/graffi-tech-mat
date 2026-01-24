@@ -28,8 +28,8 @@ class SnapshotStatus(str, Enum):
     FAILED = "failed"
     OBSOLETE = "obsolete"
     DRAFT = "draft"
-    FINALIZED = "finalized" 
-    
+    FINALIZED = "finalized"
+
 
 # =====================================================
 # Rendered Snapshot Model
@@ -61,15 +61,10 @@ class RenderedSnapshot(Base):
     render_profile = Column(String, nullable=False)
     engine_version = Column(String, nullable=False)
 
-    # 🔒 Deterministic uniqueness (COMPLETED ONLY)
-    deterministic_key = Column(
-       String,
-       nullable=True,
-       index=True,
-    ) 
+    deterministic_key = Column(String, nullable=True, index=True)
 
     # -------------------------------------------------
-    # Editable state payloads (DRAFT ONLY)
+    # Editable state payloads (DRAFT / MUTATION SOURCE)
     # -------------------------------------------------
 
     decor_state = Column(JSON, nullable=True)
@@ -145,4 +140,40 @@ class RenderedSnapshot(Base):
             "tuning": self.tuning_state or {},
             "body": self.body_state or {},
         }
+
+    # =====================================================
+    # Phase K — Compatibility Surface (READ-ONLY)
+    # =====================================================
+
+    @property
+    def vehicle_panels(self):
+        body = self.body_state or {}
+        return body.get("panels", [])
+
+    @property
+    def materials(self):
+        body = self.body_state or {}
+        return body.get("materials", {})
+
+    # =====================================================
+    # Phase K — Snapshot Cloning (CRITICAL)
+    # =====================================================
+
+    def clone_for_mutation(self, *, created_by: int):
+        """
+        Phase K invariant:
+        All mutations MUST operate on a cloned snapshot.
+        """
+        return RenderedSnapshot(
+            project_id=self.project_id,
+            scene_state_hash=self.scene_state_hash,
+            render_profile=self.render_profile,
+            engine_version=self.engine_version,
+            decor_state=self.decor_state,
+            tuning_state=self.tuning_state,
+            body_state=self.body_state,
+            status=SnapshotStatus.COMPLETED.value,
+            parent_snapshot_id=self.id,
+            created_by=created_by,
+        )
 

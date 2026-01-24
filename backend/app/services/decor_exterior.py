@@ -78,7 +78,7 @@ def remove_exterior_decal_mutation(
 
 
 # -------------------------------------------------
-# SET MATERIAL
+# SET MATERIAL (PHASE K.1 — AUTHORITATIVE)
 # -------------------------------------------------
 
 def set_exterior_material_mutation(
@@ -90,10 +90,61 @@ def set_exterior_material_mutation(
     panel: str,
     material: dict,
 ):
+    # -------------------------------------------------
+    # 1️⃣ VALIDATION — BASE SNAPSHOT
+    # -------------------------------------------------
+    if base_snapshot.status != SnapshotStatus.COMPLETED:
+        raise ValueError("invalid_snapshot_base")
+
+    # -------------------------------------------------
+    # 2️⃣ VALIDATION — MATERIAL SHAPE (FIRST!)
+    # -------------------------------------------------
+    if not isinstance(material, dict):
+        raise ValueError("invalid_material_definition")
+
+    if "material_id" not in material:
+        raise ValueError("invalid_material_definition")
+
+    params = material.get("parameters", {})
+    if not isinstance(params, dict):
+        raise ValueError("invalid_material_definition")
+
+    # -------------------------------------------------
+    # 3️⃣ VALIDATION — PANEL EXISTS
+    # -------------------------------------------------
+    # Phase K default body contract:
+    # If no body_state, assume standard car panels
+    panels = base_snapshot.vehicle_panels
+    if not panels:
+        panels = {
+            "door_left",
+            "door_right",
+            "hood",
+            "roof",
+            "trunk",
+            "fender_front_left",
+            "fender_front_right",
+            "fender_rear_left",
+            "fender_rear_right",
+        }
+
+    if panel not in panels:
+        raise KeyError("invalid_target_panel")
+
+    # -------------------------------------------------
+    # 4️⃣ CLONE SNAPSHOT (PHASE K RULE)
+    # -------------------------------------------------
+    new_snapshot = base_snapshot.clone_for_mutation(
+        created_by=user_id
+    )
+
+    # -------------------------------------------------
+    # 5️⃣ APPLY MUTATION
+    # -------------------------------------------------
     old_decor = base_snapshot.decor_state or {}
     old_materials = old_decor.get("materials", {})
 
-    new_decor_state = {
+    new_snapshot.decor_state = {
         **old_decor,
         "materials": {
             **old_materials,
@@ -101,15 +152,28 @@ def set_exterior_material_mutation(
         },
     }
 
-    return _create_snapshot(
+    # -------------------------------------------------
+    # 6️⃣ FINALIZE SNAPSHOT
+    # -------------------------------------------------
+    new_snapshot.scene_state_hash = new_snapshot.hash
+    new_snapshot.status = SnapshotStatus.COMPLETED.value
+
+    db.add(new_snapshot)
+    db.flush()
+
+    # -------------------------------------------------
+    # 7️⃣ JOURNAL (EXACTLY ONCE)
+    # -------------------------------------------------
+    write_journal_entry(
         db=db,
-        user_id=user_id,
         project_id=project_id,
-        base_snapshot=base_snapshot,
-        decor_state=new_decor_state,
-        body_state=base_snapshot.body_state,
-        intent="decor.exterior.set-material",
+        intent_type="decor.exterior.set-material",
+        before_state={"snapshot_id": base_snapshot.id},
+        after_state={"snapshot_id": new_snapshot.id},
+        issued_by_user_id=user_id,
     )
+
+    return new_snapshot
 
 
 # -------------------------------------------------

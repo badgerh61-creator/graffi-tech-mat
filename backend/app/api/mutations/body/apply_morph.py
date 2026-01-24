@@ -17,12 +17,15 @@ from app.validation.body.rules import (
     validate_body_preset,
     validate_body_parameters,
 )
-from app.validation.body.errors import BodyPresetNotFound
+from app.validation.body.errors import (
+    BodyPresetNotFound,
+    BodyParametersOutOfBounds,
+)
 
 
 def apply_body_morph(*, db, user, payload: BodyMorphApplyPayload):
     # -------------------------------------------------
-    # ✅ STEP 0 — Capability gate (Phase S, REQUIRED)
+    # STEP 0 — Capability gate (REQUIRED)
     # -------------------------------------------------
     require_capability(
         db=db,
@@ -50,7 +53,7 @@ def apply_body_morph(*, db, user, payload: BodyMorphApplyPayload):
     )
 
     # -------------------------------------------------
-    # STEP 3 — Parameter validation
+    # STEP 3 — Parameter validation (MUST be before hashing)
     # -------------------------------------------------
     validate_body_parameters(preset, payload.parameters)
 
@@ -64,7 +67,7 @@ def apply_body_morph(*, db, user, payload: BodyMorphApplyPayload):
     )
 
     # -------------------------------------------------
-    # STEP 5 — Canonical scene state + hash
+    # STEP 5 — Canonical scene state + deterministic hash
     # -------------------------------------------------
     scene_state = {
         "decor": base_snapshot.decor_state,
@@ -82,7 +85,7 @@ def apply_body_morph(*, db, user, payload: BodyMorphApplyPayload):
     ).hexdigest()
 
     # -------------------------------------------------
-    # STEP 6 — Reuse existing snapshot if identical
+    # STEP 6 — Deduplicate identical snapshot
     # -------------------------------------------------
     existing = (
         db.query(RenderedSnapshot)
@@ -131,7 +134,7 @@ def apply_body_morph(*, db, user, payload: BodyMorphApplyPayload):
     db.refresh(new_snapshot)
 
     # -------------------------------------------------
-    # STEP 9 — Journal entry
+    # STEP 9 — Journal entry (REQUIRED)
     # -------------------------------------------------
     journal = JournalEntry(
         project_id=base_snapshot.project_id,

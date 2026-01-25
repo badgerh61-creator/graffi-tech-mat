@@ -52,7 +52,7 @@ class RenderedSnapshot(Base):
         foreign_keys=[project_id],
         backref="rendered_snapshots",
     )
-
+       
     # -------------------------------------------------
     # Deterministic inputs (render identity)
     # -------------------------------------------------
@@ -344,11 +344,15 @@ RenderedSnapshot.apply_solved_parameters_from = apply_solved_parameters_from
 class CurveView:
     """
     Lightweight read-only adapter for curve dicts.
-    Required by Phase J.3 tests.
+    Required by Phase J.3 and Phase K.1 tests.
     """
 
     def __init__(self, data: dict):
         self._data = data
+
+    @property
+    def id(self):
+        return self._data.get("id")
 
     @property
     def parameters(self):
@@ -359,8 +363,7 @@ class CurveView:
         return self._data.get("constraints", [])
 
     def __repr__(self):
-        return f"<CurveView {self._data.get('id')}>"
-
+        return f"<CurveView {self.id}>"
 
 
 # =====================================================

@@ -15,6 +15,9 @@ from app.services.snapshot_navigation import (
 # 🔹 Phase J.3 — constraint solving
 from app.services.constraint_solver import solve_constraints   
 
+# Phase K.1 — surface generation
+from app.services.surface_generation_service import generate_surfaces_for_snapshot
+
 __all__ = [
     "thumbnails",
     "export_snapshot",
@@ -23,6 +26,7 @@ __all__ = [
     "undo_snapshot",
     "redo_snapshot",
     "solve_constraints",
+    "generate_surfaces_for_snapshot",
 ]
 
 

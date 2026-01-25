@@ -10,7 +10,10 @@ from app.services.snapshot_mutations import apply_transform
 from app.services.snapshot_navigation import (
     undo_snapshot,
     redo_snapshot,
-)
+ )
+    
+# 🔹 Phase J.3 — constraint solving
+from app.services.constraint_solver import solve_constraints   
 
 __all__ = [
     "thumbnails",
@@ -19,6 +22,7 @@ __all__ = [
     "apply_transform",
     "undo_snapshot",
     "redo_snapshot",
+    "solve_constraints",
 ]
 
 

@@ -9,7 +9,7 @@ from sqlalchemy import (
     JSON,
 )
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from app.db.base import Base
 
 import hashlib
@@ -92,6 +92,14 @@ class RenderedSnapshot(Base):
         ForeignKey("rendered_snapshots.id"),
         nullable=True,
     )
+    parent_snapshot = relationship(
+        "RenderedSnapshot",
+         remote_side=[id],
+         backref=backref(
+             "child_snapshots",
+             order_by="RenderedSnapshot.created_at",
+         ),
+    ) 
 
     error_message = Column(String, nullable=True)
 
@@ -158,7 +166,7 @@ class RenderedSnapshot(Base):
             decor_state=self.decor_state,
             tuning_state=self.tuning_state,
             body_state=self.body_state,
-            status=SnapshotStatus.COMPLETED.value,
+            status=SnapshotStatus.DRAFT.value,
             parent_snapshot_id=self.id,
             created_by=created_by,
         )
@@ -280,4 +288,23 @@ def apply_transform(self, *, target_id: str, operation: str, params: dict):
 
     self.body_state = graph.serialize()
 
+
+# =====================================================
+# Phase 5.5 — Undo / Redo Snapshot Navigation (BINDING)
+# =====================================================
+
+from app.services.snapshot_navigation import undo_snapshot, redo_snapshot
+
+
+def _undo(self, *, db, user):
+    return undo_snapshot(db=db, snapshot=self, user=user)
+
+
+def _redo(self, *, db, user):
+    return redo_snapshot(db=db, snapshot=self, user=user)
+
+
+# 🔒 CRITICAL: bind EXACT names expected by tests
+RenderedSnapshot.undo = _undo
+RenderedSnapshot.redo = _redo
 

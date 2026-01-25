@@ -47,6 +47,8 @@ from app.api.mutations.decor.exterior import router as decor_exterior_router
 from app.api.mutations.tuning.router import router as tuning_router
 from app.api.mutations.body.router import router as body_router
 
+from app.api.snapshots_undo_redo import router as snapshots_undo_redo_router
+
 # ===== APP =====
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -113,6 +115,8 @@ app.include_router(signed_url_router)
 
 # Snapshots (Phase 3 → Phase 4.5 unified)
 app.include_router(snapshots_router)
+
+app.include_router(snapshots_undo_redo_router)
 
 @app.get("/health")
 def health():

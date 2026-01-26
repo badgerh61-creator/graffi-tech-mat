@@ -1,4 +1,4 @@
-# models/rendered_snapshot.py
+# backend/app/models/rendered_snapshot.py
 
 from sqlalchemy import (
     Column,
@@ -52,7 +52,7 @@ class RenderedSnapshot(Base):
         foreign_keys=[project_id],
         backref="rendered_snapshots",
     )
-       
+
     # -------------------------------------------------
     # Deterministic inputs (render identity)
     # -------------------------------------------------
@@ -60,7 +60,6 @@ class RenderedSnapshot(Base):
     scene_state_hash = Column(String, index=True, nullable=False)
     render_profile = Column(String, nullable=False)
     engine_version = Column(String, nullable=False)
-
     deterministic_key = Column(String, nullable=True, index=True)
 
     # -------------------------------------------------
@@ -94,12 +93,12 @@ class RenderedSnapshot(Base):
     )
     parent_snapshot = relationship(
         "RenderedSnapshot",
-         remote_side=[id],
-         backref=backref(
-             "child_snapshots",
-             order_by="RenderedSnapshot.created_at",
-         ),
-    ) 
+        remote_side=[id],
+        backref=backref(
+            "child_snapshots",
+            order_by="RenderedSnapshot.created_at",
+        ),
+    )
 
     error_message = Column(String, nullable=True)
 
@@ -154,10 +153,6 @@ class RenderedSnapshot(Base):
     # =====================================================
 
     def clone_for_mutation(self, *, created_by: int):
-        """
-        Phase K invariant:
-        All mutations MUST operate on a cloned snapshot.
-        """
         return RenderedSnapshot(
             project_id=self.project_id,
             scene_state_hash=self.scene_state_hash,
@@ -170,6 +165,7 @@ class RenderedSnapshot(Base):
             parent_snapshot_id=self.id,
             created_by=created_by,
         )
+
     # =====================================================
     # Phase K — Legacy Compatibility Accessors (DO NOT REMOVE)
     # =====================================================
@@ -195,9 +191,6 @@ class RenderedSnapshot(Base):
         body = self.body_state or {}
 
         def normalize(value):
-            """
-            Accept dict or list and always return list.
-            """
             if isinstance(value, dict):
                 return list(value.values())
             if isinstance(value, list):
@@ -213,13 +206,8 @@ class RenderedSnapshot(Base):
 
     @property
     def scene_graph(self):
-        """
-        Lazy scene graph adapter (prevents circular imports)
-        """
         from app.services.scene_graph import SceneGraphView
-
         data = self.scene_graph_data
-
         return SceneGraphView(
             nodes=data["nodes"],
             panels=data["panels"],
@@ -229,41 +217,24 @@ class RenderedSnapshot(Base):
 
 
 # =====================================================
-# Phase 5.3 — Constraint helpers 
+# Phase 5.3 — Constraint helpers
 # =====================================================
 
 def is_symmetric(self, target_id: str, plane: str, params: dict) -> bool:
-    """
-    Check whether a transform violates symmetry constraints.
-    Returns True if allowed.
-    """
     graph = self.scene_graph
-
-    # Phase 5.2 — explicit target resolution
     target = (
         graph.get_panel(target_id)
         or graph.get_node(target_id)
         or graph.get_curve(target_id)
     )
-
-    # Unknown targets never block
     if not target:
         return True
-
-    # Non-symmetric elements are always allowed
     if getattr(target, "_data", {}).get("symmetric", True) is False:
         return True
-
-    # Phase 5.3 invariant:
-    # vehicle_centerline == X axis
-    if plane == "vehicle_centerline":
-        dx = params.get("x", 0)
-        if dx != 0:
-            return False
-
+    if plane == "vehicle_centerline" and params.get("x", 0) != 0:
+        return False
     return True
 
-# 🔒 CRITICAL: bind EXACT function, no rename, no wrapper
 RenderedSnapshot.is_symmetric = is_symmetric
 
 
@@ -272,69 +243,34 @@ RenderedSnapshot.is_symmetric = is_symmetric
 # =====================================================
 
 def apply_transform(self, *, target_id: str, operation: str, params: dict):
-    """
-    The ONLY legal mutation entry point.
-    """
-
     from app.services.mutable_scene_graph import MutableSceneGraph
-
     graph = MutableSceneGraph(body_state=self.body_state)
-
     graph.apply_transform(
         target_id=target_id,
         operation=operation,
         params=params,
     )
-
     self.body_state = graph.serialize()
+
+RenderedSnapshot.apply_transform = apply_transform
 
 
 # =====================================================
-# Phase 5.5 — Undo / Redo Snapshot Navigation (BINDING)
+# Phase 5.5 — Undo / Redo Snapshot Navigation
 # =====================================================
 
 from app.services.snapshot_navigation import undo_snapshot, redo_snapshot
 
-
-def _undo(self, *, db, user):
-    return undo_snapshot(db=db, snapshot=self, user=user)
-
-
-def _redo(self, *, db, user):
-    return redo_snapshot(db=db, snapshot=self, user=user)
-
-
-# 🔒 CRITICAL: bind EXACT names expected by tests
-RenderedSnapshot.undo = _undo
-RenderedSnapshot.redo = _redo
+RenderedSnapshot.undo = lambda self, *, db, user: undo_snapshot(db=db, snapshot=self, user=user)
+RenderedSnapshot.redo = lambda self, *, db, user: redo_snapshot(db=db, snapshot=self, user=user)
 
 
 # =====================================================
 # Phase J.3 — Constraint Solving Helpers (STUBS)
 # =====================================================
 
-def check_constraints_satisfiable(self) -> bool:
-    """
-    Phase J.3 invariant:
-    Constraint solving is deterministic and non-destructive.
-    This stub always returns True.
-    """
-    return True
-
-
-def apply_solved_parameters_from(self, other_snapshot):
-    """
-    Phase J.3 invariant:
-    Solving updates parameters, never topology.
-    Stub = no-op.
-    """
-    # Intentionally empty (math comes later)
-    return
-
-
-# 🔒 CRITICAL: bind EXACT names expected by solver/tests
-RenderedSnapshot.check_constraints_satisfiable = check_constraints_satisfiable
-RenderedSnapshot.apply_solved_parameters_from = apply_solved_parameters_from
+RenderedSnapshot.check_constraints_satisfiable = lambda self: True
+RenderedSnapshot.apply_solved_parameters_from = lambda self, other: None
 
 
 # =====================================================
@@ -342,11 +278,6 @@ RenderedSnapshot.apply_solved_parameters_from = apply_solved_parameters_from
 # =====================================================
 
 class CurveView:
-    """
-    Lightweight read-only adapter for curve dicts.
-    Required by Phase J.3 and Phase K.1 tests.
-    """
-
     def __init__(self, data: dict):
         self._data = data
 
@@ -366,75 +297,94 @@ class CurveView:
         return f"<CurveView {self.id}>"
 
 
-# =====================================================
-# Phase J — Compatibility Accessor (AUTHORITATIVE)
-# =====================================================
-
 @property
 def curves(self):
-    """
-    Phase J.3 compatibility accessor.
-    Returns CurveView objects (NOT raw dicts).
-    """
     raw = (self.body_state or {}).get("curves", [])
     return [CurveView(c) for c in raw]
 
-
-# 🔒 CRITICAL: bind EXACT name expected by tests
 RenderedSnapshot.curves = curves
 
 
 # =====================================================
-# Phase K.2 — Panel & Surface Compatibility Accessors
-# (AUTHORITATIVE — SINGLE SOURCE OF TRUTH)
+# Phase K.1 — Surface View Adapter (READ-ONLY) ✅ ADDITIVE
+# =====================================================
+
+class SurfaceView:
+    """
+    Lightweight read-only adapter for surface dicts.
+    Storage remains dict-based.
+    Compatible with Phase K.1, K.2, K.3.
+    """
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    # -------------------------
+    # Attribute-style access (Phase K.1)
+    # -------------------------
+
+    @property
+    def id(self):
+        return self._data.get("id")
+
+    @property
+    def method(self):
+        return self._data.get("method")
+
+    @property
+    def vertices(self):
+        return self._data.get("vertices")
+
+    @property
+    def faces(self):
+        return self._data.get("faces")
+
+    @property
+    def metadata(self):
+        return self._data.get("metadata", {})
+
+    # -------------------------
+    # Dict-style access (Phase K.2 / K.3)
+    # -------------------------
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def __repr__(self):
+        return f"<SurfaceView method={self.method}>"
+
+
+# =====================================================
+# Phase K.2 — Surface Compatibility Accessor (WRAPPED)
 # =====================================================
 
 @property
 def surfaces(self):
-    """
-    Phase K.2 compatibility accessor.
-    Returns surface dicts from body_state.
-    """
-    return (self.body_state or {}).get("surfaces", [])
-
+    raw = (self.body_state or {}).get("surfaces", [])
+    return [SurfaceView(s) for s in raw]
 
 RenderedSnapshot.surfaces = surfaces
 
 
-@property
-def panels(self):
-    """
-    Phase K.2 compatibility accessor (read).
-    Panels are stored inside body_state.
-    """
-    return (self.body_state or {}).get("panels", [])
-
+# =====================================================
+# Phase K.2 — Panels (UNCHANGED)
+# =====================================================
 
 from sqlalchemy.orm.attributes import flag_modified
 
 @property
 def panels(self):
-    """
-    Phase K.2 compatibility accessor (read).
-    Panels are stored inside body_state.
-    """
     return (self.body_state or {}).get("panels", [])
-
 
 @panels.setter
 def panels(self, value):
-    """
-    Phase K.2 compatibility mutator (write).
-    This does NOT change lifecycle rules.
-    """
     if self.body_state is None:
         self.body_state = {}
-
     self.body_state["panels"] = value
-
-    # 🔒 CRITICAL: tell SQLAlchemy JSON changed
     flag_modified(self, "body_state")
-
 
 RenderedSnapshot.panels = panels
 

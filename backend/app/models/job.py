@@ -13,14 +13,30 @@ class Job(Base):
     target_type = Column(String, nullable=False)
     target_id = Column(Integer, nullable=False)
 
+    # 🔒 Canonical lifecycle field
     state = Column(String, nullable=False, default="CREATED")
+
+    # 🧱 Phase S — stability fields
+    retry_count = Column(Integer, nullable=False, default=0)
+    max_retries = Column(Integer, nullable=False, default=3)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
-    DateTime(timezone=True),
-    server_default=func.now(),   # ✅ set on INSERT
-    onupdate=func.now(),         # ✅ update on UPDATE
-    nullable=False,
-)
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
+    # -------------------------
+    # Compatibility layer (DO NOT REMOVE)
+    # -------------------------
+
+    @property
+    def status(self):
+        return self.state
+
+    @status.setter
+    def status(self, value: str):
+        self.state = value
 

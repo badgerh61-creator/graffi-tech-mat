@@ -15,12 +15,21 @@ def finalize_snapshot(*, db, snapshot: RenderedSnapshot, user):
     - History is preserved
     """
 
+    # 🚨 STEP 7 — CORRUPTION GUARD (MUST BE FIRST)
+    if getattr(snapshot, "is_corrupted", False):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Corrupted snapshot cannot be finalized",
+        )
+
+    # ❌ lifecycle guard
     if snapshot.status != SnapshotStatus.DRAFT.value:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Only draft snapshots can be finalized",
         )
 
+    # ❌ structural guard
     if not snapshot.parent_snapshot_id:
         raise HTTPException(
             status.HTTP_409_CONFLICT,

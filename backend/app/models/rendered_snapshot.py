@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
+    Boolean, 
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, backref
@@ -29,7 +30,7 @@ class SnapshotStatus(str, Enum):
     OBSOLETE = "obsolete"
     DRAFT = "draft"
     FINALIZED = "finalized"
-
+    ABANDONED = "abandoned"
 
 # =====================================================
 # Rendered Snapshot Model
@@ -83,6 +84,13 @@ class RenderedSnapshot(Base):
     status = Column(
         String,
         default=SnapshotStatus.PENDING.value,
+        nullable=False,
+    )
+  
+    # Phase S — corruption flag (hard safety gate)
+    is_corrupted = Column(
+        Boolean,
+        default=False,
         nullable=False,
     )
 
@@ -139,6 +147,19 @@ class RenderedSnapshot(Base):
     @property
     def is_obsolete(self) -> bool:
         return self.status == SnapshotStatus.OBSOLETE.value
+
+    # Phase S — finalization gate (AUTHORITATIVE)
+    @property
+    def is_finalizable(self) -> bool:
+        """
+        A snapshot may be finalized ONLY if:
+        - it is a draft
+        - it is not corrupted
+        """
+        return (
+            self.status == SnapshotStatus.DRAFT.value
+            and not self.is_corrupted
+        )
 
     @property
     def payload(self) -> dict:

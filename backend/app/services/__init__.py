@@ -24,6 +24,10 @@ from app.services.panel_segmenter import segment_panels
 # Phase K.3 — panel parameters
 from app.services.panel_parameters import apply_panel_parameters
 
+# 🔹 Phase R — AI Engineering Assistant (NON-AUTHORITATIVE)
+from app.services.ai_assistant import AssistantService
+from app.services.ai_proposals import request_ai_proposal
+
 __all__ = [
     "thumbnails",
     "export_snapshot",
@@ -35,6 +39,10 @@ __all__ = [
     "generate_surfaces_for_snapshot",
     "segment_panels",
     "apply_panel_parameters",
+    
+    # Phase R
+    "AssistantService",
+    "request_ai_proposal",
 ]
 
 

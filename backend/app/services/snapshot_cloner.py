@@ -1,3 +1,5 @@
+# backend/app/models/snapshot.py
+
 from datetime import datetime
 from fastapi import HTTPException
 

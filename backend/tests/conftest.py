@@ -675,4 +675,37 @@ def snapshot_that_triggers_export_error(failed_snapshot):
     Alias required by Phase M failure-path tests.
     """
     return failed_snapshot
+    
+    
+@pytest.fixture
+def surfaced_draft_snapshot(db, project, editor_user):
+    """
+    Phase K.2 canonical fixture.
+
+    Draft snapshot that already contains surfaces.
+    Required for panel segmentation tests.
+    """
+
+    snap = RenderedSnapshot(
+        project_id=project.id,
+        scene_state_hash="__draft_with_surfaces__",
+        render_profile="default",
+        engine_version="test-engine",
+        status=SnapshotStatus.DRAFT.value,
+        created_by=editor_user.id,
+        body_state={
+            "surfaces": [
+                {"id": "surface-1", "type": "loft"},
+                {"id": "surface-2", "type": "loft"},
+            ],
+            "panels": [],
+        },
+    )
+
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+
+    return snap
+
 

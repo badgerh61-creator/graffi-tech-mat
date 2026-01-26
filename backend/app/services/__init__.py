@@ -18,6 +18,12 @@ from app.services.constraint_solver import solve_constraints
 # Phase K.1 — surface generation
 from app.services.surface_generation_service import generate_surfaces_for_snapshot
 
+# Phase K.2 — panel segmentation
+from app.services.panel_segmenter import segment_panels
+
+# Phase K.3 — panel parameters
+from app.services.panel_parameters import apply_panel_parameters
+
 __all__ = [
     "thumbnails",
     "export_snapshot",
@@ -27,6 +33,8 @@ __all__ = [
     "redo_snapshot",
     "solve_constraints",
     "generate_surfaces_for_snapshot",
+    "segment_panels",
+    "apply_panel_parameters",
 ]
 
 

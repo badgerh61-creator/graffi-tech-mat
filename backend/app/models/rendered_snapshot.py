@@ -383,3 +383,58 @@ def curves(self):
 # 🔒 CRITICAL: bind EXACT name expected by tests
 RenderedSnapshot.curves = curves
 
+
+# =====================================================
+# Phase K.2 — Panel & Surface Compatibility Accessors
+# (AUTHORITATIVE — SINGLE SOURCE OF TRUTH)
+# =====================================================
+
+@property
+def surfaces(self):
+    """
+    Phase K.2 compatibility accessor.
+    Returns surface dicts from body_state.
+    """
+    return (self.body_state or {}).get("surfaces", [])
+
+
+RenderedSnapshot.surfaces = surfaces
+
+
+@property
+def panels(self):
+    """
+    Phase K.2 compatibility accessor (read).
+    Panels are stored inside body_state.
+    """
+    return (self.body_state or {}).get("panels", [])
+
+
+from sqlalchemy.orm.attributes import flag_modified
+
+@property
+def panels(self):
+    """
+    Phase K.2 compatibility accessor (read).
+    Panels are stored inside body_state.
+    """
+    return (self.body_state or {}).get("panels", [])
+
+
+@panels.setter
+def panels(self, value):
+    """
+    Phase K.2 compatibility mutator (write).
+    This does NOT change lifecycle rules.
+    """
+    if self.body_state is None:
+        self.body_state = {}
+
+    self.body_state["panels"] = value
+
+    # 🔒 CRITICAL: tell SQLAlchemy JSON changed
+    flag_modified(self, "body_state")
+
+
+RenderedSnapshot.panels = panels
+

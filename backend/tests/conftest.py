@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 import app.models.rendered_snapshot  # noqa: F401
+from app.studio import execute_tool
 
 from tests.fixtures.export_job import export_job
 from app.main import app
@@ -22,7 +23,7 @@ from app.services.distribution_capabilities import compute_distribution_capabili
 from app.services.snapshot_finalize import finalize_snapshot
 
 from app.core.security import oauth2_scheme
-
+from app.services.mode_resolver import resolve_mode
 
 # -------------------------------------------------
 # HTTP client
@@ -707,5 +708,14 @@ def surfaced_draft_snapshot(db, project, editor_user):
     db.refresh(snap)
 
     return snap
+
+
+@pytest.fixture
+def kernel():
+    """
+    Authoritative Studio Kernel execution surface.
+    Single entrypoint for all tool execution.
+    """
+    return execute_tool
 
 

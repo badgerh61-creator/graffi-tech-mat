@@ -12,4 +12,3 @@ def resolve_mode(*, snapshot, user, station):
         return StudioMode.review
 
     return StudioMode.editing
-

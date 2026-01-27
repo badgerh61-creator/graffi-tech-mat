@@ -111,6 +111,23 @@ class RenderedSnapshot(Base):
     error_message = Column(String, nullable=True)
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+        # -------------------------------------------------
+    # Phase U — Multi-user ownership & locking (AUTHORITATIVE)
+    # -------------------------------------------------
+
+    owner_user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+
+    locked_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # =====================================================
@@ -263,7 +280,7 @@ RenderedSnapshot.is_symmetric = is_symmetric
 # Phase 5.4 — Authoritative Mutation Entry Point
 # =====================================================
 
-def apply_transform(self, *, target_id: str, operation: str, params: dict):
+def _apply_transform_internal(self, *, target_id: str, operation: str, params: dict):
     from app.services.mutable_scene_graph import MutableSceneGraph
     graph = MutableSceneGraph(body_state=self.body_state)
     graph.apply_transform(
@@ -272,6 +289,14 @@ def apply_transform(self, *, target_id: str, operation: str, params: dict):
         params=params,
     )
     self.body_state = graph.serialize()
+
+RenderedSnapshot._apply_transform_internal = _apply_transform_internal
+
+def apply_transform(self, *args, **kwargs):
+    raise RuntimeError(
+        "Direct snapshot mutation is forbidden. "
+        "Use snapshot_mutations.apply_transform()."
+    )
 
 RenderedSnapshot.apply_transform = apply_transform
 

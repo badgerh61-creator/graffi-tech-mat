@@ -1,59 +1,29 @@
-from datetime import datetime
+# backend/tests/phase_u_3/test_conflicted_draft_mutation_blocked.py
+
+import pytest
 from fastapi import HTTPException
 
-from app.models.snapshot import Snapshot
-from app.services.audit import log_event
+from app.services.snapshot_fork import fork_snapshot
 
 
-def fork_snapshot(
-    *,
+def test_conflicted_draft_mutation_blocked(
     db,
-    parent_snapshot,
-    user,
-    reason: str,
+    completed_snapshot,
+    editor_user,
 ):
     """
-    Fork a new draft snapshot from an existing snapshot.
+    Phase U.3 invariant:
 
-    Canonical mutation primitive.
-    Used by:
-    - Phase 5 transforms
-    - Phase U conflict resolution
-    - Undo / redo
-    - Rebase
+    A conflicted or non-draft snapshot may NOT be forked.
+    Forking is allowed ONLY from draft snapshots.
     """
 
-    if parent_snapshot.status != "draft":
-        raise HTTPException(
-            status_code=409,
-            detail="Only draft snapshots may be forked",
+    with pytest.raises(HTTPException) as exc:
+        fork_snapshot(
+            db=db,
+            parent_snapshot=completed_snapshot,
+            user=editor_user,
+            reason="conflict-resolution",
         )
 
-    new_snapshot = Snapshot(
-        project_id=parent_snapshot.project_id,
-        parent_snapshot_id=parent_snapshot.id,
-        scene_state_hash=parent_snapshot.scene_state_hash,
-        engine_version=parent_snapshot.engine_version,
-        status="draft",
-        created_by=user.id,
-        created_at=datetime.utcnow(),
-    )
-
-    db.add(new_snapshot)
-    db.commit()
-    db.refresh(new_snapshot)
-
-    log_event(
-        db,
-        action="snapshot.forked",
-        resource_type="snapshot",
-        resource_id=new_snapshot.id,
-        user_id=user.id,
-        extra={
-            "parent_snapshot_id": parent_snapshot.id,
-            "reason": reason,
-        },
-    )
-
-    return new_snapshot
-
+    assert exc.value.status_code == 409

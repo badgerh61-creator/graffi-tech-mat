@@ -16,6 +16,7 @@ from app.models.export_job import ExportJob
 from app.models.signed_url import SignedURL
 from app.models.distribution_audit import DistributionAudit
 from app.models.presence_session import PresenceSession
+from app.models.conflict import SnapshotConflict
 
 __all__ = [
     "User",
@@ -34,5 +35,6 @@ __all__ = [
     "SignedURL",
     "DistributionAudit",
     "PresenceSession",
+    "SnapshotConflict",
 ]
 

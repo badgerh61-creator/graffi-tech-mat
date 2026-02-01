@@ -6,6 +6,7 @@ import pytest
 
 import app.services.presence_service as presence_service
 from app.models.draft_lock import DraftLock
+from app.models.conflict import SnapshotConflict
 from app.services.draft_lock_service import acquire_draft_lock
 from app.services.presence_service import mark_user_present
 
@@ -47,8 +48,8 @@ def target_editor(editor_user):
 # ------------------------------------------------------------
 @pytest.fixture
 def offline_user(viewer_user):
-    # viewer_user is never marked present anywhere
     return viewer_user
+
 
 # ------------------------------------------------------------
 # Non-owner user
@@ -59,10 +60,10 @@ def non_owner_user(viewer_user):
 
 
 # ------------------------------------------------------------
-# Conflicted draft snapshot
+# 🔒 LOCKED (BUT NOT CONFLICTED) DRAFT SNAPSHOT
 # ------------------------------------------------------------
 @pytest.fixture
-def conflicted_draft_snapshot(
+def locked_draft_snapshot(
     db,
     draft_snapshot,
     owner_user,
@@ -72,5 +73,32 @@ def conflicted_draft_snapshot(
         snapshot=draft_snapshot,
         user=owner_user,
     )
+    return draft_snapshot
+
+
+# ------------------------------------------------------------
+# ❗ CONFLICTED draft snapshot (EXPLICIT conflict marker)
+# ------------------------------------------------------------
+@pytest.fixture
+def conflicted_draft_snapshot(
+    db,
+    draft_snapshot,
+    owner_user,
+):
+    # Lock the draft first (handoff requires a lock)
+    acquire_draft_lock(
+        db=db,
+        snapshot=draft_snapshot,
+        user=owner_user,
+    )
+
+    # Inject explicit conflict marker
+    conflict = SnapshotConflict(
+        snapshot_id=draft_snapshot.id,
+        reason="Concurrent modification detected",
+    )
+    db.add(conflict)
+    db.commit()
+
     return draft_snapshot
 

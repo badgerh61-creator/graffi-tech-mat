@@ -4,21 +4,20 @@ from app.services.presence_sessions import start_session
 import pytest
 from fastapi import HTTPException
 
-from app.kernel import handoff_draft_ownership
-
-
-def test_draft_handoff_conflict_blocked(
+def test_tool_blocked_on_conflict(
     db,
     conflicted_draft_snapshot,
     owner_user,
-    editor_user,
 ):
+    acquire_draft_lock(db=db, snapshot=conflicted_draft_snapshot, user=owner_user)
+
     with pytest.raises(HTTPException) as exc:
-        handoff_draft_ownership(
+        execute_tool(
             db=db,
+            user=owner_user,
             snapshot=conflicted_draft_snapshot,
-            from_user=owner_user,
-            to_user=editor_user,
+            tool="scale",
+            params={"factor": 1.2},
         )
 
     assert exc.value.status_code == 409

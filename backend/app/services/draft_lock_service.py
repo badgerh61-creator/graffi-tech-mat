@@ -80,3 +80,21 @@ def get_draft_lock(*, db, snapshot):
         .first()
     )
 
+
+def require_draft_owner(*, db, snapshot, user):
+    """
+    Phase U.2 — Authoritative draft ownership check.
+    Used by the studio kernel guard.
+    """
+
+    lock = (
+        db.query(DraftLock)
+        .filter_by(snapshot_id=snapshot.id)
+        .first()
+    )
+
+    if not lock:
+        raise HTTPException(403, "Draft not locked")
+
+    if lock.user_id != user.id:
+        raise HTTPException(403, "User does not own draft lock")

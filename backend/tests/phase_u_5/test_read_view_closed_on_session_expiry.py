@@ -20,6 +20,7 @@ def test_read_view_closed_on_session_expiry(
         user=viewer_user,
     )
 
+   
     advance_time(seconds=2)
 
     assert not has_active_read_view_fn(

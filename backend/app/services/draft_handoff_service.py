@@ -21,26 +21,22 @@ def handoff_draft_ownership(*, db, snapshot, from_user, to_user):
     if explicit:
         raise HTTPException(409, "Draft is conflicted")
 
-    lock = (
-        db.query(DraftLock)
-        .filter_by(snapshot_id=snapshot.id)
-        .first()
-    )
-    if not lock:
+    # 🔒 Phase U.4 — Snapshot is authoritative
+    if snapshot.owner_user_id is None:
         raise HTTPException(409, "Draft not locked")
 
-    if lock.user_id != from_user.id:
+    if snapshot.owner_user_id != from_user.id:
         raise HTTPException(403, "Not draft owner")
 
     if not is_user_present(to_user):
         raise HTTPException(409, "Target user not present")
 
-    previous_owner_id = lock.user_id
+    previous_owner_id = snapshot.owner_user_id
 
-    lock.user_id = to_user.id
     snapshot.owner_user_id = to_user.id
-
+    db.add(snapshot)
     db.commit()
+    db.refresh(snapshot)
 
     log_event(
         db=db,
@@ -55,5 +51,5 @@ def handoff_draft_ownership(*, db, snapshot, from_user, to_user):
         },
     )
 
-    return lock
+    return snapshot
 

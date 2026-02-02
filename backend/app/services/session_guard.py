@@ -1,25 +1,16 @@
-from fastapi import HTTPException
-from datetime import datetime
+# session_guard.py
 
-from app.models.session import StudioSession
+"""
+Phase U Adapter — Session Guard
 
+This module is intentionally thin.
+It exists only for backward compatibility.
 
-def require_active_session(*, db, user, project_id):
-    now = datetime.utcnow()
+Authoritative session enforcement lives in:
+app.services.presence_sessions
+"""
 
-    session = (
-        db.query(StudioSession)
-        .filter(
-            StudioSession.user_id == user.id,
-            StudioSession.project_id == project_id,
-            StudioSession.expires_at > now,
-        )
-        .order_by(StudioSession.expires_at.desc())
-        .first()
-    )
+from app.services.presence_sessions import require_active_session
 
-    if not session:
-        raise HTTPException(403, "No active studio session")
-
-    return session
+__all__ = ["require_active_session"]
 

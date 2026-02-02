@@ -112,7 +112,7 @@ class RenderedSnapshot(Base):
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-        # -------------------------------------------------
+    # -------------------------------------------------
     # Phase U — Multi-user ownership & locking (AUTHORITATIVE)
     # -------------------------------------------------
 
@@ -433,4 +433,48 @@ def panels(self, value):
     flag_modified(self, "body_state")
 
 RenderedSnapshot.panels = panels
+
+
+# =====================================================
+# Phase U — Legacy Compatibility Accessors (ADAPTERS)
+# =====================================================
+# These are READ-ONLY shims to preserve Phase U.2 / U.4
+# test contracts after ownership authority was moved
+# onto RenderedSnapshot itself.
+#
+# ⚠️ DO NOT add logic here.
+# ⚠️ DO NOT use these in new production code.
+# ⚠️ Safe to remove once legacy tests are retired.
+# =====================================================
+
+@property
+def snapshot_id(self):
+    """
+    Phase U.2 compatibility accessor.
+
+    Legacy Phase U.2 tests expect acquire_draft_lock()
+    to return an object with `.snapshot_id` (DraftLock-like).
+
+    Authority is on RenderedSnapshot, so this aliases to `id`.
+    """
+    return self.id
+
+
+@property
+def user_id(self):
+    """
+    Phase U.4 compatibility accessor.
+
+    Legacy Phase U.4 tests expect handoff_draft_ownership()
+    to return an object with `.user_id` (DraftLock-like).
+
+    Authority is on RenderedSnapshot, so this aliases to
+    `owner_user_id`.
+    """
+    return self.owner_user_id
+
+
+# 🔒 Bind compatibility accessors to model
+RenderedSnapshot.snapshot_id = snapshot_id
+RenderedSnapshot.user_id = user_id
 

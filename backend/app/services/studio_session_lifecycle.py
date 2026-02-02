@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from app.models.studio_session import StudioSession
+from app.services.clock import clock
 
 
 DEFAULT_SESSION_TTL_SECONDS = 900  # 15 minutes
@@ -14,7 +15,7 @@ def start_session(
     snapshot_id: int | None = None,
     ttl_seconds: int = DEFAULT_SESSION_TTL_SECONDS,
 ):
-    expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+    expires_at = clock.now() + timedelta(seconds=ttl_seconds)
 
     session = StudioSession(
         user_id=user.id,

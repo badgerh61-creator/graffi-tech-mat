@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
 from fastapi import HTTPException
 
 from app.models.studio_session import StudioSession
+from app.services.clock import clock
 
 
 def require_active_session(
@@ -26,7 +26,7 @@ def require_active_session(
     if not session:
         raise HTTPException(403, "No active session")
 
-    if session.expires_at < datetime.utcnow():
+    if session.expires_at < clock.now():
         raise HTTPException(403, "Session expired")
 
     if snapshot_id is not None and session.snapshot_id != snapshot_id:

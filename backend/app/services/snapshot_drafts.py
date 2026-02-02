@@ -75,3 +75,60 @@ def autosave_draft(db, *, snapshot, new_state_hash, user):
 
 autosave_draft_snapshot = autosave_draft
 
+
+# ==================================================
+# Phase U kernel primitive (AUTHORITATIVE)
+# ==================================================
+
+def acquire_draft_lock(*, db, snapshot, user):
+    """
+    Phase U kernel primitive.
+
+    Establishes single-writer ownership for a draft snapshot.
+    """
+
+    if snapshot.status != "draft":
+        raise HTTPException(409, "Snapshot is not draft")
+
+    # If already owned by another user → block
+    if snapshot.owner_user_id not in (None, user.id):
+        raise HTTPException(409, "Draft locked by another user")
+
+    snapshot.owner_user_id = user.id
+    snapshot.locked_at = datetime.utcnow()
+
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+
+    return snapshot
+
+
+def release_draft_lock(*, db, snapshot, user):
+    """
+    Releases draft ownership.
+    Idempotent and safe.
+    """
+
+    if snapshot.status != "draft":
+        return snapshot
+
+    if snapshot.owner_user_id != user.id:
+        return snapshot
+
+    snapshot.owner_user_id = None
+    snapshot.locked_at = None
+
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+
+    return snapshot
+
+
+# ==================================================
+# Phase U — Compatibility re-exports (DO NOT REMOVE)
+# ==================================================
+
+from app.services.draft_lock_service import require_draft_owner
+

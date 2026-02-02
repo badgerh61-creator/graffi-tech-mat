@@ -2,7 +2,7 @@ import pytest
 from datetime import timedelta
 from freezegun import freeze_time
 
-from app.services.session_service import start_session
+from app.services.presence_sessions import start_session
 from app.services.read_view_service import open_read_view
 from app.services.read_view_guard import has_active_read_view
 from app.services.draft_lock_service import acquire_draft_lock

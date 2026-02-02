@@ -1,6 +1,12 @@
 from app.models.read_view import ReadView
-from app.services.session_guard import require_active_session
+from app.services.presence_sessions import require_active_session
 from app.services.audit import log_event
+
+# 🔽 ADD THESE IMPORTS
+from app.services.read_view_guard import (
+    has_active_read_view,
+    reject_mutation_from_read_view,
+)
 
 
 def open_read_view(*, db, snapshot, user):
@@ -19,7 +25,7 @@ def open_read_view(*, db, snapshot, user):
     db.add(view)
     db.commit()
 
-    # ✅ FIXED — audit contract compliant
+    # ✅ Audit contract compliant
     log_event(
         db=db,
         action="snapshot.view.opened",
@@ -32,4 +38,12 @@ def open_read_view(*, db, snapshot, user):
     )
 
     return view
+
+
+# 🔽 ADD THIS EXPORT LIST
+__all__ = [
+    "open_read_view",
+    "has_active_read_view",
+    "reject_mutation_from_read_view",
+]
 

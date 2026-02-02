@@ -25,7 +25,7 @@ class ReadView(Base):
 
     session_id = Column(
         Integer,
-        ForeignKey("studio_sessions.id"),
+        ForeignKey("presence_sessions.id"),
         nullable=False,
         index=True,
     )

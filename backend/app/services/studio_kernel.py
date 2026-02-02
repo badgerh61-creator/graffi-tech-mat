@@ -29,9 +29,11 @@ TOOL_REGISTRY = {
 
 
 def execute_tool(*, db, user, snapshot, tool, params):
-    # 🔁 Resolve string → Tool
-    if isinstance(tool, str):
-        tool = TOOL_REGISTRY[tool]
+    # 🔒 CRITICAL: sync snapshot ownership from DB
+    db.refresh(snapshot)
+
+    # 🔁 Resolve string → Tool (LOCAL, AUTHORITATIVE)
+    tool_obj = TOOL_REGISTRY[tool] if isinstance(tool, str) else tool
 
     reject_mutation_from_read_view(
         db=db,
@@ -43,10 +45,10 @@ def execute_tool(*, db, user, snapshot, tool, params):
         db=db,
         user=user,
         snapshot=snapshot,
-        tool=tool,
+        tool=tool_obj,
     )
 
-    return tool.execute(
+    return tool_obj.execute(
         db=db,
         snapshot=snapshot,
         user=user,

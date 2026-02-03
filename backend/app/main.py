@@ -50,6 +50,8 @@ from app.api.mutations.body.router import router as body_router
 from app.api.snapshots_undo_redo import router as snapshots_undo_redo_router
 
 from app.api.studio_state import router as studio_state_router
+from app.api.studio_tools import router as studio_tools_router
+from app.api.studio_flow import router as studio_flow_router
 
 # ===== APP =====
 app = FastAPI(
@@ -124,5 +126,8 @@ app.include_router(snapshots_undo_redo_router)
 def health():
     return {"status": "ok"}
 
-app.include_router(studio_state_router)
+# 🧭 Studio kernel exposure (Phase E)
+app.include_router(studio_state_router)   # E.1
+app.include_router(studio_tools_router)   # E.2
+app.include_router(studio_flow_router)    # E.2
 

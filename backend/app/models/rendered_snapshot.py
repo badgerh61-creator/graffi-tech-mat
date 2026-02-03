@@ -478,3 +478,33 @@ def user_id(self):
 RenderedSnapshot.snapshot_id = snapshot_id
 RenderedSnapshot.user_id = user_id
 
+
+# =====================================================
+# Phase E.1 — Read-only ownership resolution
+# =====================================================
+
+def resolve_ownership(self, user) -> str:
+    """
+    Phase E.1 read-only helper.
+
+    Returns:
+      - owned_by_self
+      - owned_by_other
+      - unowned
+      - not_applicable
+    """
+
+    if not self.is_draft:
+        return "not_applicable"
+
+    if self.owner_user_id is None:
+        return "unowned"
+
+    if self.owner_user_id == user.id:
+        return "owned_by_self"
+
+    return "owned_by_other"
+
+
+RenderedSnapshot.resolve_ownership = resolve_ownership
+

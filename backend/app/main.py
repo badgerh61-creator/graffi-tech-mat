@@ -49,6 +49,8 @@ from app.api.mutations.body.router import router as body_router
 
 from app.api.snapshots_undo_redo import router as snapshots_undo_redo_router
 
+from app.api.studio_state import router as studio_state_router
+
 # ===== APP =====
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -121,4 +123,6 @@ app.include_router(snapshots_undo_redo_router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+app.include_router(studio_state_router)
 

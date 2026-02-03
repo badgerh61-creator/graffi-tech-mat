@@ -56,3 +56,38 @@ class User(Base):
     def is_viewer(self) -> bool:
         return self.role in ("viewer", "editor", "admin")
 
+
+# =====================================================
+# Phase E.1 — Studio Read-Only State (NON-PERSISTENT)
+# =====================================================
+# These are read-only compatibility accessors.
+# They do NOT introduce authority.
+# They do NOT mutate state.
+# They will be overridden by Phase T bindings later.
+# =====================================================
+
+@property
+def current_station(self) -> str:
+    """
+    Phase E.1 read-only accessor.
+
+    Station authority lives in the Studio Kernel (Phase T).
+    Until bound, return a safe, explicit default.
+    """
+    return "unknown"
+
+
+@property
+def current_mode(self) -> str:
+    """
+    Phase E.1 read-only accessor.
+
+    Safe default is read-only.
+    """
+    return "read_only"
+
+
+# 🔒 Bind to User model (non-persistent)
+User.current_station = current_station
+User.current_mode = current_mode
+

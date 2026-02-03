@@ -6,6 +6,7 @@ from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
+from fastapi import Query
 
 class User(Base):
     __tablename__ = "users"

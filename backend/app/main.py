@@ -32,7 +32,6 @@ from app.api.mutations.snapshots import router as snapshot_mutations_router
 from app.api.snapshots_legacy import router as snapshots_legacy_router
 from app.api.snapshots import router as snapshots_router
 from app.api.snapshot_mutations import router as snapshot_mutations_router
-from app.api.mutations.snapshots import router as snapshot_mutations_router
 
 from app.api.snapshots_transform import router as snapshots_transform_router
 from app.api.snapshots_resolve_target import router as resolve_target_router
@@ -52,6 +51,8 @@ from app.api.snapshots_undo_redo import router as snapshots_undo_redo_router
 from app.api.studio_state import router as studio_state_router
 from app.api.studio_tools import router as studio_tools_router
 from app.api.studio_flow import router as studio_flow_router
+from app.api.studio_snapshot_state import router as studio_snapshot_state_router
+from app.api.studio_audit import router as studio_audit_router
 
 # ===== APP =====
 app = FastAPI(
@@ -121,6 +122,7 @@ app.include_router(signed_url_router)
 app.include_router(snapshots_router)
 
 app.include_router(snapshots_undo_redo_router)
+from app.api.studio_audit import router as studio_audit_router
 
 @app.get("/health")
 def health():
@@ -130,4 +132,7 @@ def health():
 app.include_router(studio_state_router)   # E.1
 app.include_router(studio_tools_router)   # E.2
 app.include_router(studio_flow_router)    # E.2
+app.include_router(studio_snapshot_state_router)  # E.3 
+app.include_router(studio_audit_router)  # Phase E.3
+app.include_router(studio_audit_router)  # Phase E.3 — snapshot audit visibility
 

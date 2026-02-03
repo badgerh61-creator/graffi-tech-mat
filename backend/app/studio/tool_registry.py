@@ -35,3 +35,10 @@ TOOL_REGISTRY = {
 def get_tool(tool_name: str) -> ToolDefinition:
     return TOOL_REGISTRY.get(tool_name)
 
+def get_all_tools() -> list[ToolDefinition]:
+    """
+    Phase T.2 — Authoritative enumeration of all studio tools.
+    Read-only. No mutation.
+    """
+    return list(TOOL_REGISTRY.values())
+

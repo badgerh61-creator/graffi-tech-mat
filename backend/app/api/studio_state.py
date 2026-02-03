@@ -13,14 +13,14 @@ router = APIRouter(prefix="/studio", tags=["studio"])
 def get_studio_state(
     project_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
     """
-    Phase E.1 — Read-only studio state.
+    Phase E.1–E.3 — Read-only studio state.
     No mutation. No side effects. Ever.
     """
 
-    # Resolve project (read-only)
+    # Resolve project (read-only fallback)
     if project_id is None:
         project_id = (
             db.query(Snapshot.project_id)
@@ -36,14 +36,21 @@ def get_studio_state(
         .all()
     )
 
-    # 🔒 Phase E.1 rule:
-    # Prefer active DRAFT snapshot for studio context
+    # 🔒 Prefer active DRAFT snapshot
     active = next(
         (s for s in snapshots if s.is_draft),
         snapshots[0] if snapshots else None,
     )
 
-    # 🔒 Phase E.1 — ALWAYS mirror kernel block context (READ-ONLY)
+    # 🔒 Derive mode & station from snapshot state (AUTHORITATIVE)
+    if active and active.status != "draft":
+        mode = "read-only"
+        station = "review"
+    else:
+        mode = "edit"
+        station = "geometry"
+
+    # 🔒 Mirror kernel block context (READ-ONLY)
     blocked = get_blocked_execution_context(
         db=db,
         user=user,
@@ -62,13 +69,14 @@ def get_studio_state(
     return {
         "project_id": project_id,
 
-        # Phase E.1 REQUIRED visibility (derived, not persisted)
-        "station": "geometry",
-        "mode": "edit",
+        # Phase E visibility (derived, authoritative)
+        "station": station,
+        "mode": mode,
 
-        # Snapshot state
+        # Snapshot state (E.3 aligned)
         "active_snapshot_id": active.id if active else None,
         "snapshot_status": active.status if active else None,
+        "status": active.status if active else None,  # compatibility alias
 
         # Ownership resolution (read-only helper)
         "draft_ownership": (
@@ -80,4 +88,16 @@ def get_studio_state(
         # Kernel truth, mirrored
         "block_reason": block_reason,
     }
+
+@router.get("/context")
+def get_studio_context(
+    project_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return get_studio_state(
+        project_id=project_id,
+        db=db,
+        user=user,
+    )
 

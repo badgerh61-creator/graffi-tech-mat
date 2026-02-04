@@ -25,6 +25,8 @@ from app.services.snapshot_finalize import finalize_snapshot
 from app.core.security import oauth2_scheme
 from app.services.mode_resolver import resolve_mode
 
+from datetime import datetime, timedelta
+
 # -------------------------------------------------
 # HTTP client
 # -------------------------------------------------
@@ -157,6 +159,73 @@ def inject_get_audit_events(request):
     """
     from app.services.audit import get_audit_events
     request.module.get_audit_events = get_audit_events
+
+
+# -------------------------------------------------
+# 📦 Phase E — inject count_snapshots helper (FINAL)
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def inject_count_snapshots(request, db):
+    """
+    Injects count_snapshots(x) into EVERY test module.
+
+    Rule:
+    - SQL input → count rows
+    - Domain input → resolve project_id → count snapshots
+    """
+
+    def count_snapshots(x):
+        from app.models.snapshot import Snapshot
+        from app.models.project import Project
+        from sqlalchemy.orm import Query
+        from sqlalchemy.sql import Select
+        from sqlalchemy.engine import Result
+        from sqlalchemy.sql.selectable import Subquery, Alias
+
+        # 🔹 ORM Query
+        if isinstance(x, Query):
+            return x.count()
+
+        # 🔹 SQLAlchemy Core / Result / Subquery / Alias
+        if isinstance(x, (Select, Result, Subquery, Alias)):
+            return len(db.execute(x).all())
+
+        # 🔹 Scalar iterable (Row, ScalarResult, list, tuple)
+        if hasattr(x, "__iter__") and not isinstance(x, (str, bytes, dict)):
+            try:
+                return len(list(x))
+            except TypeError:
+                pass
+
+        project_id = None
+
+        # 🔹 Direct id
+        if isinstance(x, int):
+            project_id = x
+
+        # 🔹 ORM objects
+        elif hasattr(x, "project_id"):
+            project_id = x.project_id
+
+        elif isinstance(x, Project):
+            project_id = x.id
+
+        elif isinstance(x, dict) and "project_id" in x:
+            project_id = x["project_id"]
+
+        if project_id is None:
+            raise TypeError(
+                f"count_snapshots() cannot resolve project_id from {type(x)}"
+            )
+
+        return (
+            db.query(Snapshot)
+            .filter(Snapshot.project_id == project_id)
+            .count()
+        )
+
+    request.module.count_snapshots = count_snapshots
 
 
 # -------------------------------------------------
@@ -718,4 +787,106 @@ def kernel():
     """
     return execute_tool
 
+
+@pytest.fixture
+def project_with_snapshots(db):
+    """
+    Project with multiple snapshots at different times.
+    Used by Warehouse read-only tests.
+    """
+
+    project = Project(
+        name="Warehouse Test Project",
+        owner_id=None,
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+
+    base_time = datetime.utcnow()
+
+    snapshots = [
+        RenderedSnapshot(
+            project_id=project.id,
+            scene_state_hash="__old__",
+            render_profile="default",
+            engine_version="test-engine",
+            status="completed",
+            created_at=base_time - timedelta(days=2),
+        ),
+        RenderedSnapshot(
+            project_id=project.id,
+            scene_state_hash="__draft__",
+            render_profile="default",
+            engine_version="test-engine",
+            status=SnapshotStatus.DRAFT.value,
+            created_at=base_time - timedelta(days=1),
+        ),
+        RenderedSnapshot(
+            project_id=project.id,
+            scene_state_hash="__new__",
+            render_profile="default",
+            engine_version="test-engine",
+            status="completed",
+            created_at=base_time,
+        ),
+    ]
+
+    db.add_all(snapshots)
+    db.commit()
+
+    return project
+
+
+@pytest.fixture
+def project_with_snapshots(db, admin_user):
+    """
+    Project with multiple snapshots at different times.
+    Used by Warehouse read-only tests.
+    """
+
+    project = Project(
+        name="Warehouse Test Project",
+        owner_id=admin_user.id,  # ✅ REQUIRED
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+
+    base_time = datetime.utcnow()
+
+    snapshots = [
+        RenderedSnapshot(
+            project_id=project.id,
+            scene_state_hash="__old__",
+            render_profile="default",
+            engine_version="test-engine",
+            status="completed",
+            created_at=base_time - timedelta(days=2),
+            created_by=admin_user.id,  # ✅ REQUIRED
+        ),
+        RenderedSnapshot(
+            project_id=project.id,
+            scene_state_hash="__draft__",
+            render_profile="default",
+            engine_version="test-engine",
+            status=SnapshotStatus.DRAFT.value,
+            created_at=base_time - timedelta(days=1),
+            created_by=admin_user.id,  # ✅ REQUIRED
+        ),
+        RenderedSnapshot(
+            project_id=project.id,
+            scene_state_hash="__new__",
+            render_profile="default",
+            engine_version="test-engine",
+            status="completed",
+            created_at=base_time,
+            created_by=admin_user.id,  # ✅ REQUIRED
+        ),
+    ]
+
+    db.add_all(snapshots)
+    db.commit()
+
+    return project
 

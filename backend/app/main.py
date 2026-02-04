@@ -56,6 +56,8 @@ from app.api.studio_flow import router as studio_flow_router
 from app.api.studio_snapshot_state import router as studio_snapshot_state_router
 from app.api.studio_audit import router as studio_audit_router
 
+from app.api.warehouse import router as warehouse_router
+
 # ===== APP =====
 app = FastAPI(
     title="Graffi Tech Mat API",
@@ -137,3 +139,4 @@ app.include_router(studio_flow_router)           # E.2
 app.include_router(studio_snapshot_state_router) # E.3
 app.include_router(studio_audit_router)          # E.3
 
+app.include_router(warehouse_router)

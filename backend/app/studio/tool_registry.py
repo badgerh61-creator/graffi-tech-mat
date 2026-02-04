@@ -1,3 +1,5 @@
+# backend/app/studio/tool_registry.py
+
 from app.studio.tools import ToolDefinition
 from app.studio.stations import StudioStation
 

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.api.deps import get_current_user
-from app.models.snapshot import Snapshot
+from app.models.rendered_snapshot import RenderedSnapshot
 from app.services.studio_state_guard import get_blocked_execution_context
 
 router = APIRouter(prefix="/studio", tags=["studio"])
@@ -23,16 +23,16 @@ def get_studio_state(
     # Resolve project (read-only fallback)
     if project_id is None:
         project_id = (
-            db.query(Snapshot.project_id)
-            .order_by(Snapshot.created_at.desc())
+            db.query(RenderedSnapshot.project_id)
+            .order_by(RenderedSnapshot.created_at.desc())
             .limit(1)
             .scalar()
         )
 
     snapshots = (
-        db.query(Snapshot)
-        .filter(Snapshot.project_id == project_id)
-        .order_by(Snapshot.created_at.desc())
+        db.query(RenderedSnapshot)
+        .filter(RenderedSnapshot.project_id == project_id)
+        .order_by(RenderedSnapshot.created_at.desc())
         .all()
     )
 
@@ -42,7 +42,7 @@ def get_studio_state(
         snapshots[0] if snapshots else None,
     )
 
-    # 🔒 Derive mode & station from snapshot state (AUTHORITATIVE)
+    # 🔒 Local derivation of mode & station (Phase E only)
     if active and active.status != "draft":
         mode = "read-only"
         station = "review"
@@ -51,15 +51,24 @@ def get_studio_state(
         station = "geometry"
 
     # 🔒 Mirror kernel block context (READ-ONLY)
-    blocked = get_blocked_execution_context(
-        db=db,
-        user=user,
-        snapshot=active,
-    )
+    blocked = None
+    if active is not None:
+        blocked = get_blocked_execution_context(
+            db=db,
+            user=user,
+            snapshot=active,
+        )
+
+    # Phase E.1 invariant: never silently drop block context
+    if active is not None and blocked is None:
+        blocked = {
+            "code": "snapshot.locked",
+            "reason": "Snapshot is not editable",
+        }
 
     block_reason = (
         {
-            "code": blocked.get("code", "snapshot.locked"),
+            "code": blocked.get("code"),
             "reason": blocked.get("reason"),
         }
         if blocked
@@ -69,25 +78,26 @@ def get_studio_state(
     return {
         "project_id": project_id,
 
-        # Phase E visibility (derived, authoritative)
+        # Phase E visibility
         "station": station,
         "mode": mode,
 
-        # Snapshot state (E.3 aligned)
+        # Snapshot state
         "active_snapshot_id": active.id if active else None,
         "snapshot_status": active.status if active else None,
         "status": active.status if active else None,  # compatibility alias
 
-        # Ownership resolution (read-only helper)
+        # ✅ AUTHORITATIVE ownership
         "draft_ownership": (
             active.resolve_ownership(user)
             if active
             else "not_applicable"
         ),
 
-        # Kernel truth, mirrored
+        # Kernel truth
         "block_reason": block_reason,
     }
+
 
 @router.get("/context")
 def get_studio_context(

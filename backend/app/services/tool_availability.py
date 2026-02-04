@@ -35,15 +35,29 @@ def get_tool_availability(*, user, snapshot=None, station=None):
             )
             continue
 
-        # 🔒 Mode-based blocking
-        if not tool.allowed_in_mode(mode.value):
+        # 🔒 Station mismatch
+        if station and tool.required_station != station:
             tools.append(
                 {
                     "tool_id": tool.name,
                     "availability": "blocked",
                     "reason": {
-                        "code": "MODE_MISMATCH",
-                        "message": "Tool not available in current mode",
+                        "code": "STATION_MISMATCH",
+                        "message": "Tool not available in current station",
+                    },
+                }
+            )
+            continue
+
+        # 🔒 Snapshot status mismatch
+        if snapshot and snapshot.status not in tool.allowed_snapshot_statuses:
+            tools.append(
+                {
+                    "tool_id": tool.name,
+                    "availability": "blocked",
+                    "reason": {
+                        "code": "SNAPSHOT_STATE_MISMATCH",
+                        "message": "Tool not available for current snapshot state",
                     },
                 }
             )

@@ -28,10 +28,11 @@ from app.api.organizations import router as organizations_router
 from app.api.scenes import router as scenes_router
 from app.api.signed_urls import router as signed_url_router
 
+# 🔑 SNAPSHOT ROUTERS (FIXED — NO SHADOWING)
 from app.api.mutations.snapshots import router as snapshot_mutations_router
+from app.api.snapshot_mutations import router as snapshot_mutations_legacy_router
 from app.api.snapshots_legacy import router as snapshots_legacy_router
 from app.api.snapshots import router as snapshots_router
-from app.api.snapshot_mutations import router as snapshot_mutations_router
 
 from app.api.snapshots_transform import router as snapshots_transform_router
 from app.api.snapshots_resolve_target import router as resolve_target_router
@@ -48,6 +49,7 @@ from app.api.mutations.body.router import router as body_router
 
 from app.api.snapshots_undo_redo import router as snapshots_undo_redo_router
 
+# Studio (Phase E)
 from app.api.studio_state import router as studio_state_router
 from app.api.studio_tools import router as studio_tools_router
 from app.api.studio_flow import router as studio_flow_router
@@ -104,35 +106,34 @@ app.include_router(presign_router)
 app.include_router(admin_router)
 app.include_router(audit_router)
 
+# ✅ Snapshot mutation layers (ALL preserved)
 app.include_router(snapshot_mutations_router)
+app.include_router(snapshot_mutations_legacy_router)
 app.include_router(snapshots_legacy_router)
 
 app.include_router(snapshots_transform_router)
 app.include_router(resolve_target_router)
-app.include_router(snapshots_validate_transform_router)  # ✅ PHASE 5.3
+app.include_router(snapshots_validate_transform_router)
 
-# 📦 Phase M / N — Exports & Distributions (ONCE)
+# 📦 Phase M / N
 app.include_router(exports_router)
 app.include_router(distributions_router)
 
 app.include_router(organizations_router)
 app.include_router(signed_url_router)
 
-# Snapshots (Phase 3 → Phase 4.5 unified)
+# Snapshots (Phase 3 → 4.5)
 app.include_router(snapshots_router)
-
 app.include_router(snapshots_undo_redo_router)
-from app.api.studio_audit import router as studio_audit_router
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 # 🧭 Studio kernel exposure (Phase E)
-app.include_router(studio_state_router)   # E.1
-app.include_router(studio_tools_router)   # E.2
-app.include_router(studio_flow_router)    # E.2
-app.include_router(studio_snapshot_state_router)  # E.3 
-app.include_router(studio_audit_router)  # Phase E.3
-app.include_router(studio_audit_router)  # Phase E.3 — snapshot audit visibility
+app.include_router(studio_state_router)          # E.1
+app.include_router(studio_tools_router)          # E.2
+app.include_router(studio_flow_router)           # E.2
+app.include_router(studio_snapshot_state_router) # E.3
+app.include_router(studio_audit_router)          # E.3
 

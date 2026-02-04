@@ -1,3 +1,5 @@
+# backend/app/models/export_job.py
+
 from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -7,6 +9,11 @@ from app.db.base import Base
 
 
 class ExportJob(Base):
+    """
+    Execution record for an export.
+    Created AFTER ExportRecord (intent).
+    """
+
     __tablename__ = "export_jobs"
 
     id = Column(
@@ -16,15 +23,17 @@ class ExportJob(Base):
     )
 
     # 🔗 Phase N authority anchor
-    # MUST be nullable to preserve Phase I / M invariants
+    # MUST remain nullable
     project_id = Column(
         String(36),
         ForeignKey("projects.id"),
-        nullable=True,  # ✅ FIX — DO NOT MAKE NON-NULL
+        nullable=True,  # ❗ DO NOT CHANGE
     )
 
+    # 🔒 Canonical link to export intent
     export_request_id = Column(
-        String(36),
+        Integer,
+        ForeignKey("exports.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -34,7 +43,7 @@ class ExportJob(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
-    # 🔒 Read-only authority links (used in Phase N)
+    # 🔒 Read-only authority links (Phase N)
     project = relationship("Project")
 
     distribution_requests = relationship(
@@ -58,4 +67,3 @@ class ExportJob(Base):
     def cancel(self):
         self.status = "cancelled"
         self.updated_at = datetime.utcnow()
-

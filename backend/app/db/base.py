@@ -11,7 +11,7 @@ from app.models import (  # noqa: F401
     user,
     job,
     asset,
-    model,                 # ModelRecord
+    model,
     model_permission,
     model_invite,
     refresh_token,
@@ -25,7 +25,10 @@ from app.models import (  # noqa: F401
     project,
     rendered_snapshot,
 
-    # Phase M — exports
+    # Phase E / Tier 1.2 — exports (INTENT)
+    export,              # ← ADD THIS
+
+    # Phase M — export execution
     export_job,
 
     # Phase N — distribution

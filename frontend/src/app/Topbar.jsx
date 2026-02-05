@@ -1,5 +1,7 @@
 // frontend/src/app/Topbar.jsx
 
+import React from "react";
+
 export default function Topbar({ rightSlot }) {
   return (
     <header className="editor-topbar">

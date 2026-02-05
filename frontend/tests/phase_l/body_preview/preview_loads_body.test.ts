@@ -1,4 +1,4 @@
-import { BodyPreviewController } from "@/preview/body/BodyPreviewController";
+import { BodyPreviewController } from "@/state/preview/body/BodyPreviewController";
 
 test("body preview loads body_state", () => {
   const controller = new BodyPreviewController();

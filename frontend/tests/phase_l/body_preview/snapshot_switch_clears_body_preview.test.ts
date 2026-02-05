@@ -1,4 +1,4 @@
-import { BodyPreviewController } from "@/preview/body/BodyPreviewController";
+import { BodyPreviewController } from "@/state/preview/body/BodyPreviewController";
 
 test("snapshot switch clears body preview", () => {
   const controller = new BodyPreviewController();

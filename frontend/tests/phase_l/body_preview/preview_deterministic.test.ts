@@ -1,4 +1,4 @@
-import { BodyPreviewController } from "@/preview/body/BodyPreviewController";
+import { BodyPreviewController } from "@/state/preview/body/BodyPreviewController";
 
 test("body preview is deterministic", () => {
   const c1 = new BodyPreviewController();

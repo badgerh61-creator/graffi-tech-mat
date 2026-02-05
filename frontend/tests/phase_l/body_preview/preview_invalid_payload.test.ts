@@ -1,4 +1,4 @@
-import { BodyPreviewController } from "@/preview/body/BodyPreviewController";
+import { BodyPreviewController } from "@/state/preview/body/BodyPreviewController";
 
 test("invalid body payload does not crash", () => {
   const controller = new BodyPreviewController();

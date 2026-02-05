@@ -1,3 +1,4 @@
+// vitest.config.ts
 import { defineConfig } from "vitest/config"
 import path from "path"
 
@@ -8,8 +9,9 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
-    globals: true, // ✅ THIS IS THE FIX
+    environment: "jsdom", // ✅ REQUIRED
+    globals: true,
+    setupFiles: ["./tests/tier_2_1/setup.ts"],
   },
 })
 

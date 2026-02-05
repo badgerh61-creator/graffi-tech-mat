@@ -58,6 +58,7 @@ from app.api.studio_audit import router as studio_audit_router
 
 from app.api.warehouse import router as warehouse_router
 from app.api.exports_images import router as exports_images_router
+from app.api.dashboard import router as dashboard_router
 
 # ===== APP =====
 app = FastAPI(
@@ -142,4 +143,5 @@ app.include_router(studio_audit_router)          # E.3
 
 app.include_router(warehouse_router)
 app.include_router(exports_images_router)
+app.include_router(dashboard_router)
 

@@ -34,6 +34,8 @@ from app.crud.invites import (
 # Snapshots (Phase 4.x legacy support)
 from app.crud.snapshots import get_snapshot_by_id
 
+from app.crud.projects import get_projects_accessible_to_user
+
 __all__ = [
     # Users
     "get_user_by_email",
@@ -50,5 +52,7 @@ __all__ = [
 
     # Snapshots
     "get_snapshot_by_id",
+    
+    "get_projects_accessible_to_user",
 ]
 

@@ -10,8 +10,10 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom", // ✅ REQUIRED
-    globals: true,
-    setupFiles: ["./tests/tier_2_1/setup.ts"],
+    globals: true, 
+    setupFiles:[
+    "./tests/setupTests.ts",  
+    "./tests/tier_2_1/setup.ts"],
   },
 })
 

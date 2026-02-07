@@ -28,6 +28,15 @@ from app.services.mode_resolver import resolve_mode
 from datetime import datetime, timedelta
 
 # -------------------------------------------------
+# 🧱 Legacy test compatibility: backend alias
+# -------------------------------------------------
+import sys
+from app.main import app as fastapi_app
+
+sys.modules["backend"] = fastapi_app
+
+
+# -------------------------------------------------
 # HTTP client
 # -------------------------------------------------
 
@@ -60,6 +69,20 @@ def db():
         yield db
     finally:
         db.close()
+
+
+# -------------------------------------------------
+# 🔧 FORCE FLUSH BEFORE COMMIT (TEST SAFETY)
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def force_flush_before_commit(db):
+    """
+    Ensures parent rows exist before dependent inserts.
+    Prevents FK failures in SQLite.
+    """
+    db.flush()
+    yield
 
 
 # -------------------------------------------------
@@ -512,6 +535,7 @@ def existing_draft_snapshot(db, completed_snapshot, editor_user):
         status=SnapshotStatus.DRAFT.value,
         parent_snapshot_id=completed_snapshot.id,
         created_by=editor_user.id,
+        owner_user_id=editor_user.id,
         body_state={
             "nodes": [
                 {"id": "body.root", "type": "node", "editable": True},
@@ -789,56 +813,6 @@ def kernel():
 
 
 @pytest.fixture
-def project_with_snapshots(db):
-    """
-    Project with multiple snapshots at different times.
-    Used by Warehouse read-only tests.
-    """
-
-    project = Project(
-        name="Warehouse Test Project",
-        owner_id=None,
-    )
-    db.add(project)
-    db.commit()
-    db.refresh(project)
-
-    base_time = datetime.utcnow()
-
-    snapshots = [
-        RenderedSnapshot(
-            project_id=project.id,
-            scene_state_hash="__old__",
-            render_profile="default",
-            engine_version="test-engine",
-            status="completed",
-            created_at=base_time - timedelta(days=2),
-        ),
-        RenderedSnapshot(
-            project_id=project.id,
-            scene_state_hash="__draft__",
-            render_profile="default",
-            engine_version="test-engine",
-            status=SnapshotStatus.DRAFT.value,
-            created_at=base_time - timedelta(days=1),
-        ),
-        RenderedSnapshot(
-            project_id=project.id,
-            scene_state_hash="__new__",
-            render_profile="default",
-            engine_version="test-engine",
-            status="completed",
-            created_at=base_time,
-        ),
-    ]
-
-    db.add_all(snapshots)
-    db.commit()
-
-    return project
-
-
-@pytest.fixture
 def project_with_snapshots(db, admin_user):
     """
     Project with multiple snapshots at different times.
@@ -889,4 +863,18 @@ def project_with_snapshots(db, admin_user):
     db.commit()
 
     return project
+
+
+# -------------------------------------------------
+# 📦 Tier 3.2 — inject apply_decor_change into tests
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def inject_apply_decor_change(request):
+    """
+    Injects apply_decor_change(...) into EVERY test module.
+    Required for Tier 3.2 decor mutation tests.
+    """
+    from app.services.decor_mutation import apply_decor_change
+    request.module.apply_decor_change = apply_decor_change
 

@@ -1,0 +1,1 @@
+- Tier 2 frozen: Guided editing UX (Transforms, Constraints, Undo/Redo)

@@ -60,6 +60,7 @@ from app.api.warehouse import router as warehouse_router
 from app.api.exports_images import router as exports_images_router
 from app.api.dashboard import router as dashboard_router
 from app.api.materials import router as materials_router
+from app.api.decor_presets import router as decor_presets_router
 
 # ===== APP =====
 app = FastAPI(
@@ -146,5 +147,6 @@ app.include_router(warehouse_router)
 app.include_router(exports_images_router)
 app.include_router(dashboard_router)
 app.include_router(materials_router)
+app.include_router(decor_presets_router)
 
 

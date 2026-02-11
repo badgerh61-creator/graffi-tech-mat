@@ -29,23 +29,24 @@ TOOL_REGISTRY = {
 
 
 def execute_tool(*, db, user, snapshot, tool, params):
-    # 🔒 CRITICAL: sync snapshot ownership from DB
+    # 🔒 Sync snapshot from DB
     db.refresh(snapshot)
 
-    # 🔁 Resolve string → Tool (LOCAL, AUTHORITATIVE)
     tool_obj = TOOL_REGISTRY[tool] if isinstance(tool, str) else tool
 
-    reject_mutation_from_read_view(
-        db=db,
-        snapshot=snapshot,
-        user=user,
-    )
-
+    # 🔒 AUTHORITY FIRST — conflict dominates
     enforce_tool_authority(
         db=db,
         user=user,
         snapshot=snapshot,
         tool=tool_obj,
+    )
+
+    # 🔒 Read-view rejection comes AFTER authority
+    reject_mutation_from_read_view(
+        db=db,
+        snapshot=snapshot,
+        user=user,
     )
 
     return tool_obj.execute(

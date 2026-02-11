@@ -37,7 +37,7 @@ def list_snapshot_audit_events(
 
     # 🔒 Phase E.3 fallback: snapshot is finalized but audit not persisted
     if not events:
-        snapshot = db.query(RenderedSnapshot).get(snapshot_id)
+        snapshot = db.get(RenderedSnapshot, snapshot_id)
         if snapshot and snapshot.status == "completed":
             events = [
                 {

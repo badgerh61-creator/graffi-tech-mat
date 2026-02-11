@@ -19,7 +19,7 @@ def create_signed_url_endpoint(
     if not request_id:
         raise HTTPException(status_code=400, detail="distribution_request_id required")
 
-    req = db.query(DistributionRequest).get(request_id)
+    req = db.get(DistributionRequest, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="Distribution request not found")
 

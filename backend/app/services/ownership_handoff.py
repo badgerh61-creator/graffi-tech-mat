@@ -21,8 +21,8 @@ def handoff_draft_ownership(*, db, snapshot, from_user, to_user):
     if snapshot.status != "draft":
         raise HTTPException(409, "Snapshot is not a draft")
 
-    # ✅ FIX — authoritative ownership field
-    if getattr(snapshot, "owner_user_id", None) != from_user.id:
+    # 🔒 Re-check after FOR UPDATE
+    if snapshot.owner_user_id != from_user.id:
         raise HTTPException(403, "Caller does not own draft")
 
     # ✅ FIX — transfer ownership

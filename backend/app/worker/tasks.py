@@ -45,7 +45,7 @@ def process_asset_task(self, asset_id: int):
     db = _get_db()
 
     try:
-        asset = db.query(Asset).get(asset_id)
+        asset = db.get(Asset, asset_id)
 
         if not asset:
             return {"status": "missing", "asset_id": asset_id}
@@ -133,7 +133,7 @@ def process_asset_task(self, asset_id: int):
 
     except Exception as exc:
         try:
-            asset = db.query(Asset).get(asset_id)
+            asset = db.get(Asset, asset_id)
             if asset and asset.status not in (AssetStatus.ready, AssetStatus.failed):
                 transition_asset_status(
                     db,

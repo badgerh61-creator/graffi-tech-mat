@@ -25,7 +25,7 @@ def execute_transform(
     Constraint-aware, immutable transform execution.
     """
 
-    # 🔒 Phase U.1 — session authority
+    # 🔒 SESSION CHECK #1 — entry guard
     require_active_session(
         db=db,
         user=user,
@@ -33,7 +33,7 @@ def execute_transform(
         snapshot_id=snapshot.id,
     )
 
-    # 🔒 Phase 5 — lifecycle enforcement
+    # 🔒 Lifecycle
     if snapshot.status != "draft":
         raise HTTPException(409, "Only draft snapshots may be transformed")
 
@@ -41,7 +41,7 @@ def execute_transform(
     if operation not in ALLOWED_OPERATIONS:
         raise HTTPException(422, "Invalid transform operation")
 
-    # 🔒 Constraint validation (pure)
+    # 🔒 Constraint validation
     violations = validate_transform(
         snapshot=snapshot,
         target=target_id,
@@ -59,26 +59,22 @@ def execute_transform(
             },
         )
 
-    # 🧱 Phase 5.4 — create new draft snapshot (no mutation)
+    # 🧱 Create new snapshot (immutable fork)
     new_snapshot = Snapshot(
         project_id=snapshot.project_id,
         parent_snapshot_id=snapshot.id,
-
-        # 🔒 Phase 5 invariants — MUST be copied
         scene_state_hash=snapshot.scene_state_hash,
         render_profile=snapshot.render_profile,
         engine_version=snapshot.engine_version,
         deterministic_key=snapshot.deterministic_key,
-
         status="draft",
         created_by=user.id,
         created_at=datetime.utcnow(),
     )
 
     db.add(new_snapshot)
-    db.flush()  # obtain ID before command creation
+    db.flush()
 
-    # 🧠 Command graph (authoritative history)
     create_command(
         db=db,
         snapshot=new_snapshot,
@@ -88,15 +84,30 @@ def execute_transform(
         user=user,
     )
 
+    # 🔥 SESSION CHECK #2 — MID-EXECUTION RACE GUARD
+    require_active_session(
+        db=db,
+        user=user,
+        project_id=snapshot.project_id,
+        snapshot_id=snapshot.id,
+    )
+
     db.commit()
     db.refresh(new_snapshot)
 
-    # 🔁 Return the new snapshot (history is the truth)
     return new_snapshot
 
 
-# Phase U compatibility alias
-def apply_transform(*, db, snapshot, user, operation, target_id, params, constraints=None):
+def apply_transform(
+    *,
+    db,
+    snapshot,
+    user,
+    operation,
+    target_id,
+    params,
+    constraints=None,
+):
     return execute_transform(
         db=db,
         snapshot=snapshot,
@@ -106,3 +117,4 @@ def apply_transform(*, db, snapshot, user, operation, target_id, params, constra
         params=params,
         constraints=constraints or [],
     )
+

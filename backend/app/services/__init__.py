@@ -32,6 +32,7 @@ from .draft_lock_service import (
     acquire_draft_lock,
     release_draft_lock,
     get_draft_lock,
+    require_draft_owner,
 )
 
 # Phase U.5 — Read views
@@ -76,6 +77,7 @@ __all__ = [
     "acquire_draft_lock",
     "release_draft_lock",
     "get_draft_lock",
+    "require_draft_owner",
 
     # Phase U.5
     "open_read_view",

@@ -17,11 +17,26 @@ def apply_mutation(
     target_id: str,
     params: dict,
 ):
-    if snapshot is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Snapshot not found")
-    
     # =====================================================
-    # Phase U — OWNERSHIP & CONCURRENCY ENFORCEMENT (FIRST)
+    # 1️⃣ Existence guard
+    # =====================================================
+    if snapshot is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Snapshot not found",
+        )
+
+    # =====================================================
+    # 2️⃣ Lifecycle guard (MUST PRECEDE OWNERSHIP)
+    # =====================================================
+    if snapshot.status != "draft":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Snapshot not editable",
+        )
+
+    # =====================================================
+    # 3️⃣ Ownership guard (drafts only)
     # =====================================================
     require_snapshot_owner(
         db=db,
@@ -30,12 +45,8 @@ def apply_mutation(
     )
 
     # =====================================================
-    # Phase 5 — lifecycle guard
+    # 4️⃣ Operation validation
     # =====================================================
-
-    if snapshot.status != "draft":
-        raise HTTPException(status.HTTP_409_CONFLICT, "Snapshot not editable")
-
     if operation not in ALLOWED_OPERATIONS:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -49,10 +60,8 @@ def apply_mutation(
         )
 
     # =====================================================
-    # Phase U — fork new owned draft
+    # 5️⃣ Fork new draft snapshot (immutability preserved)
     # =====================================================
-
-    # 🔁 Create new draft snapshot
     new_snapshot = RenderedSnapshot(
         project_id=snapshot.project_id,
         scene_state_hash=snapshot.scene_state_hash,
@@ -64,15 +73,13 @@ def apply_mutation(
         owner_user_id=user.id,
         created_at=datetime.utcnow(),
     )
- 
-    # Apply transform using Phase 5.4 logic
+
     new_snapshot._apply_transform_internal(
         target_id=target_id,
         operation=operation,
         params=params,
-    ) 
+    )
 
-    # 🔒 Deterministic placeholder hash
     new_snapshot.scene_state_hash = (
         f"{snapshot.scene_state_hash}|fork|{user.id}|{datetime.utcnow().isoformat()}"
     )
@@ -81,7 +88,9 @@ def apply_mutation(
     db.commit()
     db.refresh(new_snapshot)
 
-    # 🧾 AUDIT (Phase 5.1 contract)
+    # =====================================================
+    # 6️⃣ Audit
+    # =====================================================
     audit.log_event(
         db=db,
         user_id=user.id,
@@ -99,10 +108,9 @@ def apply_mutation(
     return new_snapshot
 
 
-# =====================================
-# 🔁 TEST-COMPATIBILITY ALIAS
-# =====================================
-
+# =====================================================
+# 🔁 TEST-COMPATIBILITY ALIAS (DO NOT REMOVE)
+# =====================================================
 def apply_transform(
     *,
     db,

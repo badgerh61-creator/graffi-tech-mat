@@ -8,7 +8,7 @@ def resolve_active_snapshot_for_boot(db, project_id):
     Read-only. No mutations allowed.
     """
 
-    project = db.query(Project).get(project_id)
+    project = db.get(Project, project_id)
     if not project:
         return None
 

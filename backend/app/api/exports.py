@@ -1,7 +1,5 @@
 # backend/app/api/exports.py
 
-from uuid import uuid4
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -12,7 +10,8 @@ from app.models.rendered_snapshot import RenderedSnapshot, SnapshotStatus
 from app.models.journal_entry import JournalEntry
 from app.models.user import User
 
-from app.services.export_requests import on_export_request_accepted
+from app.services.export_requests import request_export
+
 
 router = APIRouter(
     prefix="/exports",
@@ -29,7 +28,6 @@ SUPPORTED_EXPORT_TYPES = {
 
 # =====================================================
 # Canonical export entrypoint (Phase 4.3)
-# Allows POST /exports
 # =====================================================
 
 @router.post("")
@@ -46,7 +44,7 @@ def create_export(
 
 
 # =====================================================
-# Internal export request handler
+# Internal export request handler (Phase M)
 # =====================================================
 
 @router.post("/requests")
@@ -57,7 +55,6 @@ def create_export_request(
 ):
     # ─────────────────────────────────────────────
     # Phase 4.3 — BLOCK EXPORT WHILE DRAFT EXISTS
-    # MUST run before payload validation
     # ─────────────────────────────────────────────
     project_id = payload.get("project_id")
 
@@ -78,7 +75,7 @@ def create_export_request(
             )
 
     # ─────────────────────────────────────────────
-    # Parse & validate payload (AFTER draft gate)
+    # Parse & validate payload
     # ─────────────────────────────────────────────
     snapshot_id = payload.get("snapshot_id")
     export_type = payload.get("export_type")
@@ -91,7 +88,7 @@ def create_export_request(
         raise HTTPException(status_code=400, detail="Unsupported export type")
 
     # ─────────────────────────────────────────────
-    # Phase M.0 / M.1 capability gates
+    # Capability gates
     # ─────────────────────────────────────────────
     if user.role == "viewer":
         raise HTTPException(
@@ -138,16 +135,14 @@ def create_export_request(
             raise HTTPException(status_code=400, detail="Invalid image options")
 
     # ─────────────────────────────────────────────
-    # Create export request (ID only)
+    # Phase M — CREATE EXPORT REQUEST + JOB (CANONICAL)
     # ─────────────────────────────────────────────
-    export_request_id = str(uuid4())
-
-    # ─────────────────────────────────────────────
-    # Phase M.6 — enqueue export job
-    # ─────────────────────────────────────────────
-    on_export_request_accepted(
+    export_request, job = request_export(
         db=db,
-        export_request_id=export_request_id,
+        snapshot=snapshot,
+        user=user,
+        export_type=export_type,
+        options=options,
     )
 
     # ─────────────────────────────────────────────
@@ -168,8 +163,9 @@ def create_export_request(
     db.commit()
 
     return {
-        "export_request_id": export_request_id,
-        "status": "accepted",
+        "export_request_id": export_request.id,
+        "job_id": job.id,
+        "status": export_request.status,
     }
 
 

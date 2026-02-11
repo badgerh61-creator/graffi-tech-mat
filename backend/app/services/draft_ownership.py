@@ -5,11 +5,12 @@ Phase U kernel facade for draft ownership & locking.
 Stable imports for kernel stress tests.
 """
 
-from app.services.snapshot_drafts import (
+from app.services.draft_lock_service import (
     acquire_draft_lock,
     release_draft_lock,
     require_draft_owner,
 )
+
 from app.services.ownership_handoff import (
     handoff_draft_ownership,
 )

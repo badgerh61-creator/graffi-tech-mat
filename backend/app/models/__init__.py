@@ -12,11 +12,19 @@ from .journal_entry import JournalEntry
 from app.models.project import Project
 from app.models.rendered_snapshot import RenderedSnapshot
 from app.models.curve import Curve
+
+# 🔹 Phase M
+from app.models.export_request import ExportRequest
 from app.models.export_job import ExportJob
+
+# 🔹 Phase N
 from app.models.signed_url import SignedURL
 from app.models.distribution_audit import DistributionAudit
+
+# 🔹 Infra / realtime
 from app.models.presence_session import PresenceSession
 from app.models.conflict import SnapshotConflict
+
 
 __all__ = [
     "User",
@@ -31,9 +39,16 @@ __all__ = [
     "JournalEntry",
     "RenderedSnapshot",
     "Curve",
+
+    # Phase M
+    "ExportRequest",
     "ExportJob",
+
+    # Phase N
     "SignedURL",
     "DistributionAudit",
+
+    # Infra
     "PresenceSession",
     "SnapshotConflict",
 ]

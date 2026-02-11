@@ -1,17 +1,22 @@
-from app.services.image_export import run_image_export
+# backend/app/services/export_job_executor.py
 
-def execute_export_job(db, job, export_request, snapshot):
-    job.mark_running()
+from app.services.image_exporter import _create_image_export_job
 
-    try:
-        artifact = run_image_export(
-            db=db,
-            snapshot=snapshot,
-            options=export_request.options,
-        )
-        job.mark_completed()
-        return artifact
-    except Exception:
-        job.mark_failed()
-        raise
+
+def execute_export_job(*, db, job, snapshot, options):
+    """
+    Phase M.2 canonical execution entrypoint.
+
+    Rules:
+    - Job lifecycle is owned here
+    - Executor is a thin delegator
+    """
+
+    return _create_image_export_job(
+        db=db,
+        job=job,
+        snapshot=snapshot,
+        user=None,
+        options=options,
+    )
 

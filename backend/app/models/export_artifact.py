@@ -1,54 +1,88 @@
 # backend/app/models/export_artifact.py
 
-from dataclasses import dataclass
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
-from uuid import UUID, uuid4
+import uuid
+
+from app.db.base import Base
 
 
-@dataclass(frozen=True)
-class ExportArtifact:
-    id: UUID
-    snapshot_id: UUID
-    bytes: bytes
-    hash: str
-    format: str
-    status: str  # "completed" | "failed"
-    created_at: datetime
+class ExportArtifact(Base):
+    __tablename__ = "export_artifacts"
 
-    def __getitem__(self, key: str):
+    id = Column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    export_job_id = Column(
+        String(36),
+        ForeignKey("export_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    snapshot_id = Column(
+        Integer,
+        nullable=False,
+    )
+
+    bytes = Column(String, nullable=False)
+    hash = Column(String, nullable=False)
+    format = Column(String, nullable=False)
+
+    status = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    export_job = relationship(
+        "ExportJob",
+        back_populates="artifacts",
+    )
+
+    # -------------------------------------------------
+    # Constructors (PHASE M CANONICAL)
+    # -------------------------------------------------
+
+    @staticmethod
+    def completed(*, bytes: bytes, hash: str, format: str, snapshot_id, export_job_id):
+        return ExportArtifact(
+            bytes=bytes,
+            hash=hash,
+            format=format,
+            snapshot_id=snapshot_id,
+            export_job_id=export_job_id,
+            status="completed",
+        )
+
+    @staticmethod
+    def failed(*, format: str, snapshot_id, export_job_id):
+        return ExportArtifact(
+            export_job_id=export_job_id,
+            bytes=b"",
+            hash="",
+            format=format,
+            snapshot_id=snapshot_id,
+            status="failed",
+        )
+
+    # -------------------------------------------------
+    # Phase M legacy compatibility (READ-ONLY)
+    # -------------------------------------------------
+
+    def __getitem__(self, key):
         """
-        Dict-style, read-only access.
+        Phase M compatibility layer.
 
-        This exists ONLY for compatibility with tests and API layers
-        that treat export artifacts as records.
+        Allows legacy tests to access artifacts like:
+            artifact["hash"]
+            artifact["bytes"]
+            artifact["format"]
+            artifact["status"]
 
-        Immutability is preserved.
+        This MUST be removed in Phase N.
         """
         if not hasattr(self, key):
             raise KeyError(key)
         return getattr(self, key)
-
-    @staticmethod
-    def completed(*, bytes: bytes, hash: str, format: str, snapshot_id: UUID):
-        return ExportArtifact(
-            id=uuid4(),
-            snapshot_id=snapshot_id,
-            bytes=bytes,
-            hash=hash,
-            format=format,
-            status="completed",
-            created_at=datetime.utcnow(),
-        )
-
-    @staticmethod
-    def failed(*, format: str, snapshot_id: UUID):
-        return ExportArtifact(
-            id=uuid4(),
-            snapshot_id=snapshot_id,
-            bytes=b"",
-            hash="",
-            format=format,
-            status="failed",
-            created_at=datetime.utcnow(),
-        )
 

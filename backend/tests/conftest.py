@@ -7,6 +7,8 @@ import app.models.rendered_snapshot  # noqa: F401
 from app.studio import execute_tool
 
 from tests.fixtures.export_job import export_job
+from tests.fixtures.export_request import export_request  # noqa: F401
+
 from app.main import app
 from app.db.session import SessionLocal, engine
 from app.db.base import Base

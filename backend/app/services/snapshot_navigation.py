@@ -1,3 +1,5 @@
+# backend/app/services/snapshot_navigation.py
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.rendered_snapshot import RenderedSnapshot
@@ -43,6 +45,6 @@ def redo_snapshot(*, db: Session, snapshot: RenderedSnapshot, user):
 
     if not child:
         raise HTTPException(409, "No child snapshot to redo to")
-
+   
     return child
-
+ 

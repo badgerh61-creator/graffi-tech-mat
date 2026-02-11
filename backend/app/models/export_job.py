@@ -11,7 +11,7 @@ from app.db.base import Base
 class ExportJob(Base):
     """
     Execution record for an export.
-    Created AFTER ExportRecord (intent).
+    Created AFTER ExportRequest (intent).
     """
 
     __tablename__ = "export_jobs"
@@ -23,18 +23,17 @@ class ExportJob(Base):
     )
 
     # 🔗 Phase N authority anchor
-    # MUST remain nullable
     project_id = Column(
         String(36),
         ForeignKey("projects.id"),
-        nullable=True,  # ❗ DO NOT CHANGE
+        nullable=True,
     )
 
-    # 🔒 Canonical link to export intent
+    # 🔒 Canonical link to export intent (FIXED)
     export_request_id = Column(
         Integer,
-        ForeignKey("exports.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("export_requests.id", ondelete="CASCADE"),
+        nullable=True,
     )
 
     status = Column(String, nullable=False, default="requested")
@@ -43,14 +42,32 @@ class ExportJob(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
-    # 🔒 Read-only authority links (Phase N)
+    # -------------------------
+    # Relationships
+    # -------------------------
+
     project = relationship("Project")
+
+    export_request = relationship(
+        "ExportRequest",
+        back_populates="jobs",
+    )
+
+    artifacts = relationship(
+        "ExportArtifact",
+        back_populates="export_job",
+        cascade="all, delete-orphan",
+    )
 
     distribution_requests = relationship(
         "DistributionRequest",
         back_populates="export",
         cascade="all, delete-orphan",
     )
+
+    # -------------------------
+    # Lifecycle helpers
+    # -------------------------
 
     def mark_running(self):
         self.status = "running"
@@ -67,3 +84,13 @@ class ExportJob(Base):
     def cancel(self):
         self.status = "cancelled"
         self.updated_at = datetime.utcnow()
+
+
+    @property
+    def job_id(self):
+        """
+        Phase E compatibility alias.
+        DO NOT REMOVE until Phase E tests are retired.
+        """
+        return self.id
+

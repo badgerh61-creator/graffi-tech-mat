@@ -1,3 +1,5 @@
+# backend/app/services/session_guard.py
+
 # session_guard.py
 
 """
@@ -13,4 +15,3 @@ app.services.presence_sessions
 from app.services.presence_sessions import require_active_session
 
 __all__ = ["require_active_session"]
-

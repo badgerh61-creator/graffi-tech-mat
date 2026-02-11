@@ -148,7 +148,7 @@ def retry_asset_admin(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    asset = db.query(Asset).get(asset_id)
+    asset = db.get(Asset, asset_id)
     if not asset:
         raise HTTPException(404, "Asset not found")
 
@@ -173,7 +173,7 @@ def force_fail_asset_admin(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    asset = db.query(Asset).get(asset_id)
+    asset = db.get(Asset, asset_id)
     if not asset:
         raise HTTPException(404, "Asset not found")
 

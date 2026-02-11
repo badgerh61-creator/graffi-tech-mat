@@ -25,10 +25,10 @@ from app.models import (  # noqa: F401
     project,
     rendered_snapshot,
 
-    # Phase E / Tier 1.2 — exports (INTENT)
-    export,              # ← ADD THIS
+    # Phase E — LEGACY export intent (DISABLED)
+    # export,  # ⛔ DO NOT IMPORT (legacy table only)
 
-    # Phase M — export execution
+    # Phase M — export execution ONLY
     export_job,
 
     # Phase N — distribution

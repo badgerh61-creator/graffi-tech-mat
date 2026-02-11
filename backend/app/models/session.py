@@ -12,5 +12,5 @@ class StudioSession(Base):
     @property
     def is_active(self):
         from datetime import datetime
-        return datetime.utcnow() < self.expires_at
+        return datetime.utcnow() < self.expires_at     
 

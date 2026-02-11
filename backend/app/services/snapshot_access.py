@@ -3,15 +3,20 @@
 
 from fastapi import HTTPException
 from app.services import audit
-from app.db.session import SessionLocal
+
 
 def require_snapshot_owner(*, db, snapshot, user):
-    
+    """
+    Phase U invariant:
+    - Draft ownership is authoritative
+    - Non-owners may NEVER mutate
+    - Violation MUST audit + raise
+    """
+
     if snapshot.owner_user_id is None:
-        return
+        raise HTTPException(403, "Draft has no owner")
 
     if snapshot.owner_user_id != user.id:
-        print(">>> ACCESS DENIED PATH HIT")
         audit.log_event(
             db=db,
             user_id=user.id,
@@ -20,5 +25,7 @@ def require_snapshot_owner(*, db, snapshot, user):
             resource_id=snapshot.id,
         )
         db.flush()
-        raise HTTPException(status_code=403)
+        raise HTTPException(403, "Not draft owner")
+
+    return snapshot
 

@@ -16,7 +16,10 @@ export type Capability =
   | "engine.preview"
 
   // jobs
-  | "jobs.view";
+  | "jobs.view"
+
+  // decor
+  | "decor.exterior.edit";
 
 export type CapabilityMap = Partial<Record<Capability, boolean>>;
 

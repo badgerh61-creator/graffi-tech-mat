@@ -1,21 +1,24 @@
+// src/editor/studio/DecorStudioEditable.jsx
+
 import React from "react";
 import DecorStudio from "./DecorStudio";
-import { DecorTools } from "./DecorTools";
+import { useCapability } from "../../capabilities";
 
-export default function DecorStudioEditable({
-  decor,
-  canEdit,
-}) {
+export default function DecorStudioEditable({ decor = [] }) {
+  const canEdit = useCapability("decor.exterior.edit");
+
   return (
     <section aria-label="Decor Studio Editable">
       <header>
         <h2>Decor Studio</h2>
-
-        {/* Editing controls live OUTSIDE the renderer */}
-        <DecorTools canEdit={canEdit} />
       </header>
 
-      {/* Delegate read-only rendering */}
+      {canEdit && (
+        <div>
+          <button>Apply Material</button>
+        </div>
+      )}
+
       <DecorStudio decor={decor} />
     </section>
   );

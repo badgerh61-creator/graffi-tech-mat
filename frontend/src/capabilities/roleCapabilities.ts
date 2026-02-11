@@ -43,6 +43,10 @@ export const ROLE_CAPABILITIES = Object.freeze<
 
     // jobs
     "jobs.view": true,
+    
+    // decor
+    "decor.exterior.edit": true,
+
   }),
 
   admin: Object.freeze({
@@ -62,6 +66,10 @@ export const ROLE_CAPABILITIES = Object.freeze<
 
     // jobs
     "jobs.view": true,
+    
+    // decor
+    "decor.exterior.edit": true,
+
   }),
 });
 

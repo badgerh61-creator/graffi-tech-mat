@@ -367,6 +367,23 @@ def viewer_user(db):
     return user
 
 
+@pytest.fixture
+def non_owner_user(db):
+    user = db.query(User).filter_by(email="non_owner@test.com").first()
+    if not user:
+        user = User(
+            email="non_owner@test.com",
+            hashed_password="__test_hash__",
+            role="editor",
+            is_active=True,
+            is_admin=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
 # -------------------------------------------------
 # Projects
 # -------------------------------------------------
@@ -806,12 +823,40 @@ def surfaced_draft_snapshot(db, project, editor_user):
 
 
 @pytest.fixture
-def kernel():
+def kernel(db):
     """
     Authoritative Studio Kernel execution surface.
-    Single entrypoint for all tool execution.
+
+    This bypasses the HTTP boundary and exposes
+    pure KernelRejection behavior for Phase T tests.
     """
-    return execute_tool
+
+    from app.services.presence_sessions import start_session
+    from app.studio.kernel_executor import execute_tool as kernel_execute
+
+    def _kernel(*, db, user, snapshot, **kwargs):
+        # Ensure valid session exists
+        start_session(
+            db=db,
+            user=user,
+            project_id=snapshot.project_id,
+            ttl_seconds=3600,
+        )
+
+        # Remove duplicates if passed
+        kwargs.pop("db", None)
+        kwargs.pop("user", None)
+        kwargs.pop("snapshot", None)
+
+        # 🚨 Call KERNEL directly — NOT studio wrapper
+        return kernel_execute(
+            db=db,
+            user=user,
+            snapshot=snapshot,
+            **kwargs,
+        )
+
+    return _kernel
 
 
 @pytest.fixture
@@ -879,4 +924,40 @@ def inject_apply_decor_change(request):
     """
     from app.services.decor_mutation import apply_decor_change
     request.module.apply_decor_change = apply_decor_change
+
+
+@pytest.fixture
+def decor_preset():
+    return {
+        "name": "Sport Red",
+        "version": "1.0.0",
+        "decor": {
+            "color": "red",
+            "finish": "gloss",
+        },
+    }
+
+
+# -------------------------------------------------
+# 📦 Tier 3.5 — inject apply_decor_preset into tests
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def inject_apply_decor_preset(request):
+    """
+    Injects apply_decor_preset(...) into EVERY test module.
+    Required for Tier 3.5 preset application tests.
+    """
+    from app.services.decor_application import apply_decor_preset
+    request.module.apply_decor_preset = apply_decor_preset
+
+
+# -------------------------------------------------
+# 📜 Inject AuditLog into tests (Tier 3.5 support)
+# -------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def inject_auditlog(request):
+    from app.models.audit import AuditLog
+    request.module.AuditLog = AuditLog
 

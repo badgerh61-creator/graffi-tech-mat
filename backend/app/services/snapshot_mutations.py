@@ -1,9 +1,9 @@
 from datetime import datetime
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
 from app.models.rendered_snapshot import RenderedSnapshot
 from app.services import audit
-from app.services.snapshot_access import require_snapshot_owner
 
 ALLOWED_OPERATIONS = {"translate", "rotate", "scale"}
 
@@ -17,36 +17,51 @@ def apply_mutation(
     target_id: str,
     params: dict,
 ):
-    # =====================================================
-    # 1️⃣ Existence guard
-    # =====================================================
-    if snapshot is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            "Snapshot not found",
-        )
 
     # =====================================================
-    # 2️⃣ Lifecycle guard (MUST PRECEDE OWNERSHIP)
+    # Load authoritative row
     # =====================================================
-    if snapshot.status != "draft":
+
+    fresh = (
+        db.query(RenderedSnapshot)
+        .filter(RenderedSnapshot.id == snapshot.id)
+        .one()
+    )
+
+    # =====================================================
+    # Lifecycle
+    # =====================================================
+
+    if fresh.status != "draft":
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Snapshot not editable",
         )
 
     # =====================================================
-    # 3️⃣ Ownership guard (drafts only)
+    # Ownership
     # =====================================================
-    require_snapshot_owner(
-        db=db,
-        snapshot=snapshot,
-        user=user,
-    )
+
+    if fresh.owner_user_id != user.id:
+        audit.log_event(
+            db=db,
+            user_id=user.id,
+            action="snapshot.access_denied",
+            resource_type="snapshot",
+            resource_id=fresh.id,
+            extra={"reason": "not_owner"},
+        )
+        db.flush()
+
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Not draft owner",
+        )
 
     # =====================================================
-    # 4️⃣ Operation validation
+    # Operation validation
     # =====================================================
+
     if operation not in ALLOWED_OPERATIONS:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -60,15 +75,16 @@ def apply_mutation(
         )
 
     # =====================================================
-    # 5️⃣ Fork new draft snapshot (immutability preserved)
+    # Fork immutable draft (SINGLE WRITER GUARANTEE)
     # =====================================================
+
     new_snapshot = RenderedSnapshot(
-        project_id=snapshot.project_id,
-        scene_state_hash=snapshot.scene_state_hash,
-        render_profile=snapshot.render_profile,
-        engine_version=snapshot.engine_version,
+        project_id=fresh.project_id,
+        scene_state_hash=fresh.scene_state_hash,
+        render_profile=fresh.render_profile,
+        engine_version=fresh.engine_version,
         status="draft",
-        parent_snapshot_id=snapshot.id,
+        parent_snapshot_id=fresh.id,
         created_by=user.id,
         owner_user_id=user.id,
         created_at=datetime.utcnow(),
@@ -80,17 +96,22 @@ def apply_mutation(
         params=params,
     )
 
-    new_snapshot.scene_state_hash = (
-        f"{snapshot.scene_state_hash}|fork|{user.id}|{datetime.utcnow().isoformat()}"
-    )
+    try:
+        db.add(new_snapshot)
+        db.commit()
+        db.refresh(new_snapshot)
 
-    db.add(new_snapshot)
-    db.commit()
-    db.refresh(new_snapshot)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Concurrent modification",
+        )
 
     # =====================================================
-    # 6️⃣ Audit
+    # Audit success
     # =====================================================
+
     audit.log_event(
         db=db,
         user_id=user.id,
@@ -101,16 +122,13 @@ def apply_mutation(
             "operation": operation,
             "target_id": target_id,
             "params": params,
-            "parent_snapshot_id": snapshot.id,
+            "parent_snapshot_id": fresh.id,
         },
     )
 
     return new_snapshot
 
 
-# =====================================================
-# 🔁 TEST-COMPATIBILITY ALIAS (DO NOT REMOVE)
-# =====================================================
 def apply_transform(
     *,
     db,

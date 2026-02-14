@@ -6,7 +6,7 @@ from app.services.presence_sessions import start_session
 from app.services.read_view_service import open_read_view
 from app.services.read_view_guard import has_active_read_view
 from app.services.draft_lock_service import acquire_draft_lock
-from app.services.studio_kernel import execute_tool
+from app.studio import execute_tool
 
 
 # --- Service function fixtures ---

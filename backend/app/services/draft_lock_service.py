@@ -87,26 +87,39 @@ def release_draft_lock(*, db, snapshot, user, force=False):
 # Phase U.2 compatibility
 # ==================================================
 
+
 class _DraftLockView:
     def __init__(self, snapshot):
         self.snapshot_id = snapshot.id
         self.user_id = snapshot.owner_user_id
 
 
-def get_draft_lock(*, db=None, snapshot):
-    if snapshot.owner_user_id is None:
+def get_draft_lock(*, db, snapshot):
+    """
+    Authoritative lock read.
+    MUST hit database to avoid stale snapshot state.
+    """
+
+    fresh = (
+        db.query(RenderedSnapshot)
+        .filter(RenderedSnapshot.id == snapshot.id)
+        .one()
+    )
+
+    if fresh.owner_user_id is None or fresh.locked_at is None:
         return None
-    return _DraftLockView(snapshot)
+
+    return _DraftLockView(fresh)
 
 
 def require_draft_owner(*, db, snapshot, user):
     """
-    Phase U — AUTHORITATIVE ownership check
+    AAA AUTHORITATIVE ownership check.
 
     Rules:
     - Snapshot must be draft
-    - Ownership is resolved from DB (not in-memory)
-    - Read views never block the owner
+    - owner_user_id must equal user.id
+    - Enforced under SELECT ... FOR UPDATE
     """
 
     fresh = (
@@ -119,10 +132,17 @@ def require_draft_owner(*, db, snapshot, user):
     if fresh.status != "draft":
         raise HTTPException(409, "Snapshot is not a draft")
 
-    if fresh.owner_user_id is None:
-        raise HTTPException(409, "Draft has no owner")
-
     if fresh.owner_user_id != user.id:
+        log_event(
+            db=db,
+            user_id=user.id,
+            action="authority.violation",
+            resource_type="snapshot",
+            resource_id=fresh.id,
+            extra={"reason": "not_owner"},
+        )
+        db.flush()
+
         raise HTTPException(403, "Not draft owner")
 
     return fresh

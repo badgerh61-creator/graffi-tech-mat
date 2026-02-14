@@ -12,7 +12,7 @@ from app.models.conflict import SnapshotConflict
 
 # Canonical kernel imports
 from app.kernel.t_authority import require_draft_authority
-from app.kernel.execute_tool import execute_tool
+from app.studio import execute_tool
 from app.kernel import handoff_draft_ownership
 
 from app.services.audit import get_audit_events

@@ -39,8 +39,6 @@ from .draft_lock_service import (
 from .read_view_service import open_read_view
 from .read_view_guard import has_active_read_view, reject_mutation_from_read_view
 
-# Phase T — Studio kernel
-from .studio_kernel import execute_tool
 
 __all__ = [
     # Core
@@ -82,10 +80,7 @@ __all__ = [
     # Phase U.5
     "open_read_view",
     "has_active_read_view",
-    "reject_mutation_from_read_view",
-    
-    # Phase T — Studio kernel
-    "execute_tool",
-    
+    "reject_mutation_from_read_view", 
+
 ]
 

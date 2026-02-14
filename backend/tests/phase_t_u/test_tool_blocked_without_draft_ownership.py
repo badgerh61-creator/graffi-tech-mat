@@ -1,8 +1,9 @@
-from app.kernel import acquire_draft_lock, release_draft_lock, handoff_draft_ownership
-from app.services.presence_sessions import start_session
-
 import pytest
 from fastapi import HTTPException
+
+from app.kernel import acquire_draft_lock
+from app.studio import execute_tool
+
 
 def test_tool_blocked_without_draft_ownership(
     db,
@@ -10,7 +11,11 @@ def test_tool_blocked_without_draft_ownership(
     owner_user,
     non_owner_user,
 ):
-    acquire_draft_lock(db=db, snapshot=draft_snapshot, user=owner_user)
+    acquire_draft_lock(
+        db=db,
+        snapshot=draft_snapshot,
+        user=owner_user,
+    )
 
     with pytest.raises(HTTPException) as exc:
         execute_tool(

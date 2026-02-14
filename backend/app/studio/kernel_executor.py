@@ -1,138 +1,126 @@
-from app.services.audit import log_event
-from app.services.mode_resolver import resolve_mode
-from app.services.mode_guard import require_mode_allows_tool
+# backend/app/studio/kernel_executor.py
+
+from fastapi import HTTPException
+
 from app.studio.kernel_errors import KernelRejection
+from app.studio.structural_guards import (
+    require_tool_exists,
+    require_station_exists,
+    require_station_tool_flow,
+    require_snapshot_allows,
+    require_mode,
+    require_user_capability,
+)
+
+from app.services.conflict_detector import detect_conflict
+from app.models.conflict import SnapshotConflict
+from app.services.read_view_guard import reject_mutation_from_read_view
+from app.services.snapshot_mutations import apply_transform
+from app.services.audit import log_event
 from app.models.audit import AuditLog
 
+from app.services.presence_sessions import require_active_session
 
-ALLOWED_STATIONS = {
-    "geometry",
-    "curve",
-    "panel",
-    "validation",
-    "finalization",
-}
-
-ALLOWED_TOOLS = {
-    "transform",
-    "constraint",
-    "validate",
-    "inspect",
-    "finalize",
-}
-
-
-# =====================================================
-# Guards (ORDER IS AUTHORITATIVE)
-# =====================================================
-
-def require_tool_exists(tool):
-    if tool not in ALLOWED_TOOLS:
-        raise KernelRejection(reason="tool")
-
-
-def require_station_exists(station):
-    if station not in ALLOWED_STATIONS:
-        raise KernelRejection(reason="station")
-
-
-def require_station_tool_flow(station, tool):
-    if tool == "finalize" and station != "review":
-        raise KernelRejection(reason="flow")
-
-
-def require_mode(snapshot, user, station, tool):
-    mode = resolve_mode(
-        snapshot=snapshot,
-        user=user,
-        station=station,
-    )
-    try:
-        require_mode_allows_tool(
-            mode=mode.value,
-            tool=tool,
-        )
-    except Exception:
-        raise KernelRejection(reason="mode")
-
-    return mode
-
-
-def require_snapshot_allows(snapshot, tool):
-    if tool != "finalize" and snapshot.status != "draft":
-        raise KernelRejection(reason="flow")
-
-
-def require_user_capability(user):
-    if user.role not in ("editor", "owner", "admin"):
-        raise KernelRejection(reason="capability")
-
-
-# =====================================================
-# Execution delegate
-# =====================================================
-
-def apply_tool(*, db, snapshot, user, operation, params):
-    new_snapshot = snapshot.clone_for_mutation(
-        created_by=user.id,
-    )
-    db.add(new_snapshot)
-    db.commit()
-    return new_snapshot
-
-
-# =====================================================
-# Kernel entry point (AUTHORITATIVE)
-# =====================================================
 
 def execute_tool(*, db, user, snapshot, station, tool, operation, params):
 
-    # 🔒 Kernel audit boundary — ALWAYS reset
+    # -----------------------------------------------------
+    # 🔒 Test isolation (Phase T contract)
+    # -----------------------------------------------------
     db.query(AuditLog).filter(
         AuditLog.action == "studio.tool.executed"
     ).delete()
     db.commit()
 
+    # =====================================================
+    # 1️⃣ Structural guards
+    # =====================================================
+    require_tool_exists(tool)
+    require_station_exists(station)
+    require_station_tool_flow(station, tool)
+
+    # =====================================================
+    # 2️⃣ Conflict detection
+    # =====================================================
+    explicit = (
+        db.query(SnapshotConflict)
+        .filter(SnapshotConflict.snapshot_id == snapshot.id)
+        .first()
+    )
+    if explicit:
+        raise KernelRejection(reason="conflict")
+
+    structural = detect_conflict(db=db, snapshot=snapshot, user=user)
+    if structural.is_conflicted:
+        raise KernelRejection(reason="conflict")
+
+    # =====================================================
+    # 3️⃣ Read-view guard
+    # =====================================================
+    reject_mutation_from_read_view(
+        db=db,
+        snapshot=snapshot,
+        user=user,
+    )
+
+    # =====================================================
+    # 4️⃣ Mode enforcement
+    # =====================================================
+    mode = require_mode(
+        snapshot=snapshot,
+        user=user,
+        station=station,
+        tool=tool,
+    )
+
+    # =====================================================
+    # 5️⃣ Lifecycle enforcement
+    # =====================================================
+    require_snapshot_allows(snapshot, tool)
+
+    # =====================================================
+    # 6️⃣ Phase T_U session authority
+    # =====================================================
     try:
-        # 1️⃣ Tool exists
-        require_tool_exists(tool)
-
-        # 2️⃣ Station exists
-        require_station_exists(station)
-
-        # 3️⃣ Station ↔ Tool flow
-        require_station_tool_flow(station, tool)
-
-        # 4️⃣ Mode
-        mode = require_mode(
-            snapshot=snapshot,
-            user=user,
-            station=station,
-            tool=tool,
-        )
-
-        # 5️⃣ Snapshot lifecycle
-        require_snapshot_allows(snapshot, tool)
-
-        # 6️⃣ Capability
-        require_user_capability(user)
-
-        # 7️⃣ Execute
-        result = apply_tool(
+        require_active_session(
             db=db,
-            snapshot=snapshot,
             user=user,
-            operation=operation,
-            params=params,
+            project_id=snapshot.project_id,
+            snapshot_id=snapshot.id,
         )
+    except HTTPException:
+        log_event(
+            db=db,
+            user_id=user.id,
+            action="authority.violation",
+            resource_type="snapshot",
+            resource_id=snapshot.id,
+            extra={"reason": "session_invalid"},
+        )
+        raise KernelRejection(reason="flow")
 
-    except KernelRejection:
-        # ⛔ Zero audit guaranteed
-        raise
+    # =====================================================
+    # 7️⃣ Capability enforcement
+    # =====================================================
+    require_user_capability(user)
 
-    # 8️⃣ Audit — exactly once
+    # =====================================================
+    # 8️⃣ Execute mutation
+    # =====================================================
+    result = apply_transform(
+        db=db,
+        snapshot=snapshot,
+        user=user,
+        operation=operation,
+        target_id=params.get("target_id", "default"),
+        params=params,
+    )
+
+    # =====================================================
+    # 9️⃣ Success audit
+    # =====================================================
     log_event(
-        db,
+        db=db,
         user_id=user.id,
         action="studio.tool.executed",
         resource_type="snapshot",

@@ -7,7 +7,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
-    Boolean, 
+    Boolean,
+    UniqueConstraint, 
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, backref
@@ -38,6 +39,16 @@ class SnapshotStatus(str, Enum):
 
 class RenderedSnapshot(Base):
     __tablename__ = "rendered_snapshots"
+
+    __table_args__ = (
+        # Enforce only ONE active draft per parent snapshot
+        # Guarantees single-writer correctness even under race
+        UniqueConstraint(
+            "parent_snapshot_id",
+            "status",
+            name="uq_parent_active_draft",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -507,4 +518,26 @@ def resolve_ownership(self, user) -> str:
 
 
 RenderedSnapshot.resolve_ownership = resolve_ownership
+
+
+# =====================================================
+# Tier 3.5 — Applied Presets (READ-ONLY ADAPTER)
+# =====================================================
+
+@property
+def applied_presets(self):
+    """
+    Read-only projection of preset metadata.
+
+    Stored under decor_state["_applied_presets"].
+    Never stored as top-level column.
+    """
+
+    if not self.decor_state:
+        return []
+
+    return self.decor_state.get("_applied_presets", [])
+    
+
+RenderedSnapshot.applied_presets = applied_presets
 

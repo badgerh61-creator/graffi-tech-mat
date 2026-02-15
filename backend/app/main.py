@@ -48,6 +48,7 @@ from app.api.mutations.tuning.router import router as tuning_router
 from app.api.mutations.body.router import router as body_router
 
 from app.api.snapshots_undo_redo import router as snapshots_undo_redo_router
+from app.api.snapshots_assistant import router as snapshots_assistant_router
 
 # Studio (Phase E)
 from app.api.studio_state import router as studio_state_router
@@ -151,6 +152,4 @@ app.include_router(dashboard_router)
 app.include_router(materials_router)
 app.include_router(decor_presets_router)
 app.include_router(tuning_read_router)
-
-
-
+app.include_router(snapshots_assistant_router)

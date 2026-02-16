@@ -11,16 +11,35 @@ from fastapi import HTTPException
 
 from app.services.transform_executor import apply_transform
 
+# ✅ NEW: tuning executors
+from app.services.tuning_mutation import (
+    update_engine_config,
+    update_suspension_config,
+)
+
 
 class Tool:
-    def __init__(self, *, name, is_mutating: bool):
+    def __init__(self, *, name, is_mutating: bool, executor=None):
         self.name = name
         self.is_mutating = is_mutating
+        self.executor = executor  # ✅ optional custom executor
 
     def execute(self, *, db, snapshot, user, params):
         """
-        All tools adapt to the canonical transform executor.
+        Default behavior: transform executor.
+        Extended behavior: custom executor if provided.
         """
+
+        # ✅ Custom executor support (NON-BREAKING)
+        if self.executor:
+            return self.executor(
+                db=db,
+                snapshot=snapshot,
+                user=user,
+                params=params,
+            )
+
+        # 🔒 Existing behavior preserved
         return apply_transform(
             db=db,
             snapshot=snapshot,
@@ -32,6 +51,10 @@ class Tool:
 
 
 TOOLS = {
+    # --------------------------
+    # Existing Phase Tools
+    # --------------------------
+
     "scale": Tool(
         name="scale",
         is_mutating=True,
@@ -43,6 +66,22 @@ TOOLS = {
     "rotate": Tool(
         name="rotate",
         is_mutating=True,
+    ),
+
+    # --------------------------
+    # Tier 4.3 — Tuning Tools
+    # --------------------------
+
+    "UPDATE_ENGINE_CONFIG": Tool(
+        name="UPDATE_ENGINE_CONFIG",
+        is_mutating=True,
+        executor=update_engine_config,  # ✅ custom
+    ),
+
+    "UPDATE_SUSPENSION_CONFIG": Tool(
+        name="UPDATE_SUSPENSION_CONFIG",
+        is_mutating=True,
+        executor=update_suspension_config,  # ✅ custom
     ),
 }
 

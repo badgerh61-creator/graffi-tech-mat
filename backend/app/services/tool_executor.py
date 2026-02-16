@@ -31,6 +31,9 @@ def execute_tool(*, db, user, snapshot, tool, params):
     )
 
     # 3️⃣ Execute (mutation boundary)
+    
+    # ✅ Internal flag for layered enforcement compatibility
+    setattr(snapshot, "_validated_by_executor", True)
     new_snapshot = tool_obj.execute(
         db=db,
         snapshot=snapshot,

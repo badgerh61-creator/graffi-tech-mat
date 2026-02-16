@@ -1,3 +1,4 @@
+# backend/app/api/studio_state.py
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -20,14 +21,27 @@ def get_studio_state(
     No mutation. No side effects. Ever.
     """
 
-    # Resolve project (read-only fallback)
+    # -------------------------------------------------
+    # Resolve project (read-only fallback) ✅ AAA-grade
+    # -------------------------------------------------
     if project_id is None:
+        # ✅ Prefer the most recent project the current user touched
         project_id = (
             db.query(RenderedSnapshot.project_id)
+            .filter(RenderedSnapshot.created_by == user.id)
             .order_by(RenderedSnapshot.created_at.desc())
             .limit(1)
             .scalar()
         )
+
+        # Fallback: global latest (legacy safety)
+        if project_id is None:
+            project_id = (
+                db.query(RenderedSnapshot.project_id)
+                .order_by(RenderedSnapshot.created_at.desc())
+                .limit(1)
+                .scalar()
+            )
 
     snapshots = (
         db.query(RenderedSnapshot)

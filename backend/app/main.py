@@ -63,7 +63,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.materials import router as materials_router
 from app.api.decor_presets import router as decor_presets_router
 from app.api.tuning_read import router as tuning_read_router
-
+from app.api.snapshot_metrics import router as snapshot_metrics_router
 
 # ===== APP =====
 app = FastAPI(
@@ -153,3 +153,4 @@ app.include_router(materials_router)
 app.include_router(decor_presets_router)
 app.include_router(tuning_read_router)
 app.include_router(snapshots_assistant_router)
+app.include_router(snapshot_metrics_router)

@@ -11,8 +11,42 @@ from app.services.tool_registry import get_tool
 from app.services.studio_kernel_executor import evaluate_tool_invocation
 from app.services.draft_lock_service import require_draft_owner  # ✅ canonical in your tree
 
+from app.crud.assistant_proposals import get_proposal
+from app.services.proposal_hashing import compute_payload_hash
+
 
 _TRANSFORM_OPS = {"translate", "rotate", "scale"}
+
+
+def require_payload_hash_match(
+    *,
+    db: Session,
+    proposal_id: str,
+    snapshot_id: int,
+    payload_hash: str,
+):
+    """
+    Tier 4.6 — Apply-time payload hash enforcement.
+
+    Ensures the proposal payload being applied is exactly what was previewed.
+    """
+    proposal = get_proposal(db, proposal_id)
+    if not proposal:
+        raise HTTPException(404, "Proposal not found")
+
+    if int(proposal.snapshot_id) != int(snapshot_id):
+        raise HTTPException(409, "Proposal snapshot mismatch")
+
+    expected = compute_payload_hash(
+        snapshot_id=int(proposal.snapshot_id),
+        tool=str(proposal.tool),
+        payload=proposal.payload or {},
+    )
+
+    if str(payload_hash) != expected:
+        raise HTTPException(409, "Proposal payload hash mismatch")
+
+    return proposal
 
 
 def _kernel_tool_for(tool_name: str) -> str:
@@ -32,6 +66,18 @@ def apply_assistant_proposal(
     payload: Dict[str, Any],
     confirm: bool,
 ):
+    """
+    Tier 4.5 — executes a proposal ONLY through:
+    - confirm gate
+    - draft-only gate
+    - U.2 lock enforcement
+    - tool registry enforcement
+    - Phase T kernel evaluation
+    - audited execution
+
+    Tier 4.6 hash enforcement happens before this is called (API layer),
+    to avoid changing Tier 4.5 semantics.
+    """
     if confirm is not True:
         raise HTTPException(409, "confirm=true required")
 
@@ -39,7 +85,6 @@ def apply_assistant_proposal(
         raise HTTPException(409, "Snapshot must be draft")
 
     # ✅ U.2 ownership/locking enforcement (canonical)
-    # (returns fresh locked row or raises 403/409)
     snapshot = require_draft_owner(db=db, snapshot=snapshot, user=user)
 
     # ✅ Tool registry enforcement FIRST (tests expect 422 if unknown)
@@ -53,7 +98,7 @@ def apply_assistant_proposal(
         user=user,
         snapshot=snapshot,
         station=station,
-        tool=kernel_tool,   # <-- important
+        tool=kernel_tool,
         payload=payload,
     )
     if not decision.allowed:

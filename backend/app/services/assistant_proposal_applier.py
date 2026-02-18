@@ -17,6 +17,13 @@ from app.services.proposal_hashing import compute_payload_hash
 
 _TRANSFORM_OPS = {"translate", "rotate", "scale"}
 
+# ✅ ADD (Tier 4.6 tuning preview/apply leaf tools map to kernel category "tuning")
+_TUNING_OPS = {
+    "UPDATE_ENGINE_CONFIG",
+    "UPDATE_SUSPENSION_CONFIG",
+    "UPDATE_WHEEL_SETUP",
+}
+
 
 def require_payload_hash_match(
     *,
@@ -53,6 +60,12 @@ def _kernel_tool_for(tool_name: str) -> str:
     # Phase T kernel tools are categories, not leaf operations
     if tool_name in _TRANSFORM_OPS:
         return "transform"
+    return tool_name
+
+    # ✅ ADD: tuning leaf tools map to tuning category
+    if tool_name in _TUNING_OPS:
+        return "tuning"
+
     return tool_name
 
 

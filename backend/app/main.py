@@ -15,6 +15,9 @@ from app.core.logging_config import configure_json_logging
 configure_json_logging()
 validate_required_env()
 
+from app.core.env_modes import validate_production_requirements
+validate_production_requirements()
+
 
 # ===== ROUTER IMPORTS =====
 from app.api.auth import router as auth_router
@@ -80,6 +83,9 @@ app = FastAPI(
     title="Graffi Tech Mat API",
     version="1.0.0",
 )
+
+from app.middleware.security_headers import SecurityHeadersMiddleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ===== CORS =====
 app.add_middleware(

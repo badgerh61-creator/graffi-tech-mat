@@ -9,6 +9,11 @@ services:
     depends_on:
       - redis
       - minio
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   worker:
     build: ./backend
@@ -18,10 +23,23 @@ services:
       - redis
       - minio
 
+  scheduler:
+    build: ./backend
+    command: ["celery", "-A", "app.worker.tasks.celery_app", "beat", "--loglevel=info"]
+    env_file: .env
+    depends_on:
+      - redis
+      - minio
+
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   minio:
     image: quay.io/minio/minio:latest
@@ -35,6 +53,11 @@ services:
     volumes:
       - minio_data:/data
       - ./init_minio.sh:/init_minio.sh
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
 volumes:
   minio_data:

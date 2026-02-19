@@ -9,6 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import validate_settings
 from app.db.base import Base
 from app.db.session import engine
+from app.core.env import validate_required_env
+from app.core.logging_config import configure_json_logging
+
+configure_json_logging()
+validate_required_env()
+
 
 # ===== ROUTER IMPORTS =====
 from app.api.auth import router as auth_router
@@ -65,6 +71,8 @@ from app.api.decor_presets import router as decor_presets_router
 from app.api.tuning_read import router as tuning_read_router
 from app.api.snapshot_metrics import router as snapshot_metrics_router
 from app.api.assistant_proposals import router as assistant_proposals_router
+
+from app.api.health import router as health_router
 
 
 # ===== APP =====
@@ -158,3 +166,4 @@ app.include_router(snapshots_assistant_router)
 app.include_router(snapshot_metrics_router)
 app.include_router(assistant_proposals_router)
 
+app.include_router(health_router)

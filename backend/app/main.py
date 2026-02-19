@@ -78,98 +78,117 @@ from app.api.assistant_proposals import router as assistant_proposals_router
 from app.api.health import router as health_router
 
 
-# ===== APP =====
-app = FastAPI(
-    title="Graffi Tech Mat API",
-    version="1.0.0",
-)
+# ===== APP FACTORY =====
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="Graffi Tech Mat API",
+        version="1.0.0",
+    )
 
-from app.middleware.security_headers import SecurityHeadersMiddleware
-app.add_middleware(SecurityHeadersMiddleware)
+    # --- Security hardening (H.4) ---
+    from app.core.security_settings import SecuritySettings
+    from app.middleware.security_headers import SecurityHeadersMiddleware
+    from app.middleware.login_rate_limit import LoginRateLimitMiddleware
 
-# ===== CORS =====
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    settings = SecuritySettings.from_env()
 
-# ===== STARTUP =====
-@app.on_event("startup")
-def startup():
-    validate_settings()
-    Base.metadata.create_all(bind=engine)
+    # Security headers: keep default behavior ON
+    if settings.enable_security_headers:
+        app.add_middleware(SecurityHeadersMiddleware)
 
-# ===== ROUTERS (ORDER MATTERS) =====
+    # /login rate limit: OFF by default (env enables)
+    if settings.enable_login_rate_limit:
+        app.add_middleware(LoginRateLimitMiddleware, settings=settings)
 
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(projects_router)
-app.include_router(workspace_router)
+    # ===== CORS =====
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-app.include_router(public_router)
+    # ===== STARTUP =====
+    @app.on_event("startup")
+    def startup():
+        validate_settings()
+        Base.metadata.create_all(bind=engine)
 
-app.include_router(jobs_router)
-app.include_router(models_router)
-app.include_router(assets_router)
+    # ===== ROUTERS (ORDER MATTERS) =====
+    app.include_router(auth_router)
+    app.include_router(users_router)
+    app.include_router(projects_router)
+    app.include_router(workspace_router)
 
-app.include_router(phase_i_mutations_router)
+    app.include_router(public_router)
 
-app.include_router(decor_exterior_router)
-app.include_router(tuning_router)
-app.include_router(body_router)
+    app.include_router(jobs_router)
+    app.include_router(models_router)
+    app.include_router(assets_router)
 
-app.include_router(scenes_router)
+    app.include_router(phase_i_mutations_router)
 
-app.include_router(upload_router)
-app.include_router(presign_router)
-app.include_router(admin_router)
-app.include_router(audit_router)
+    app.include_router(decor_exterior_router)
+    app.include_router(tuning_router)
+    app.include_router(body_router)
 
-# ✅ Snapshot mutation layers (ALL preserved)
-app.include_router(snapshot_mutations_router)
-app.include_router(snapshot_mutations_legacy_router)
-app.include_router(snapshots_legacy_router)
+    app.include_router(scenes_router)
 
-app.include_router(snapshots_transform_router)
-app.include_router(resolve_target_router)
-app.include_router(snapshots_validate_transform_router)
+    app.include_router(upload_router)
+    app.include_router(presign_router)
+    app.include_router(admin_router)
+    app.include_router(audit_router)
 
-# 📦 Phase M / N
-app.include_router(exports_router)
-app.include_router(distributions_router)
+    # ✅ Snapshot mutation layers (ALL preserved)
+    app.include_router(snapshot_mutations_router)
+    app.include_router(snapshot_mutations_legacy_router)
+    app.include_router(snapshots_legacy_router)
 
-app.include_router(organizations_router)
-app.include_router(signed_url_router)
+    app.include_router(snapshots_transform_router)
+    app.include_router(resolve_target_router)
+    app.include_router(snapshots_validate_transform_router)
 
-# Snapshots (Phase 3 → 4.5)
-app.include_router(snapshots_router)
-app.include_router(snapshots_undo_redo_router)
+    # 📦 Phase M / N
+    app.include_router(exports_router)
+    app.include_router(distributions_router)
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+    app.include_router(organizations_router)
+    app.include_router(signed_url_router)
 
-# 🧭 Studio kernel exposure (Phase E)
-app.include_router(studio_state_router)          # E.1
-app.include_router(studio_tools_router)          # E.2
-app.include_router(studio_flow_router)           # E.2
-app.include_router(studio_snapshot_state_router) # E.3
-app.include_router(studio_audit_router)          # E.3
+    # Snapshots (Phase 3 → 4.5)
+    app.include_router(snapshots_router)
+    app.include_router(snapshots_undo_redo_router)
 
-app.include_router(warehouse_router)
-app.include_router(exports_images_router)
-app.include_router(dashboard_router)
-app.include_router(materials_router)
-app.include_router(decor_presets_router)
-app.include_router(tuning_read_router)
-app.include_router(snapshots_assistant_router)
-app.include_router(snapshot_metrics_router)
-app.include_router(assistant_proposals_router)
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
 
-app.include_router(health_router)
+    # 🧭 Studio kernel exposure (Phase E)
+    app.include_router(studio_state_router)          # E.1
+    app.include_router(studio_tools_router)          # E.2
+    app.include_router(studio_flow_router)           # E.2
+    app.include_router(studio_snapshot_state_router) # E.3
+    app.include_router(studio_audit_router)          # E.3
+
+    app.include_router(warehouse_router)
+    app.include_router(exports_images_router)
+    app.include_router(dashboard_router)
+    app.include_router(materials_router)
+    app.include_router(decor_presets_router)
+    app.include_router(tuning_read_router)
+    app.include_router(snapshots_assistant_router)
+    app.include_router(snapshot_metrics_router)
+    app.include_router(assistant_proposals_router)
+
+    app.include_router(health_router)
+
+    return app
+
+
+# ===== APP (backwards compatible) =====
+app = create_app()
+

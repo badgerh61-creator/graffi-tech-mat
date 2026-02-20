@@ -89,6 +89,53 @@ def get_studio_state(
         else None
     )
 
+    # ✅ AUTHORITATIVE ownership
+    ownership = (
+        active.resolve_ownership(user)
+        if active
+        else "not_applicable"
+    )
+
+    # ✅ MINIMAL ADD: If resolve_ownership() reports "unowned" for a DRAFT,
+    # fall back to draft_locks table to detect owned_by_other vs owned_by_me.
+    # This is READ-ONLY and does NOT change any existing phase logic.
+    if (
+        active is not None
+        and getattr(active, "is_draft", False)
+        and ownership == "unowned"
+    ):
+        try:
+            from app.models.draft_lock import DraftLock  # local import to avoid load-order issues
+
+            # Resolve column names safely across schema variants
+            snapshot_fk_col = None
+            for cand in ("snapshot_id", "rendered_snapshot_id", "draft_snapshot_id"):
+                if hasattr(DraftLock, cand):
+                    snapshot_fk_col = getattr(DraftLock, cand)
+                    break
+
+            user_fk_col = None
+            for cand in ("user_id", "owner_id", "locked_by"):
+                if hasattr(DraftLock, cand):
+                    user_fk_col = getattr(DraftLock, cand)
+                    break
+
+            if snapshot_fk_col is not None and user_fk_col is not None:
+                lock = (
+                    db.query(DraftLock)
+                    .filter(snapshot_fk_col == active.id)
+                    .first()
+                )
+                if lock is not None:
+                    lock_user_id = getattr(lock, user_fk_col.key, None)
+                    if lock_user_id == user.id:
+                        ownership = "owned_by_me"
+                    else:
+                        ownership = "owned_by_other"
+        except Exception:
+            # Keep existing behavior if DraftLock model/table isn't available
+            pass
+
     return {
         "project_id": project_id,
 
@@ -102,11 +149,7 @@ def get_studio_state(
         "status": active.status if active else None,  # compatibility alias
 
         # ✅ AUTHORITATIVE ownership
-        "draft_ownership": (
-            active.resolve_ownership(user)
-            if active
-            else "not_applicable"
-        ),
+        "draft_ownership": ownership,
 
         # Kernel truth
         "block_reason": block_reason,

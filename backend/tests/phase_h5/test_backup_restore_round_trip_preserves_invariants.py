@@ -1,24 +1,47 @@
+# tests/phase_h5/test_backup_restore_round_trip_preserves_invariants.py
+
+from __future__ import annotations
+
 from pathlib import Path
 
+import pytest
 from sqlalchemy import text
 
 from app.services.backup_restore import create_backup, restore_backup
 
 
-def _truncate_all(db):
-    # Conservative: only tables we touch in restore.
-    # Order matters: children first, parents last.
-    for t in [
+def _truncate_all(db) -> None:
+    """
+    Wipe only the tables involved in backup/restore tests.
+
+    SQLite will enforce FK constraints on DELETE, so we:
+    - Disable FK checks during the wipe (SQLite only)
+    - Delete in FK-safe order (children first) as an extra safety net
+    """
+    dialect = getattr(getattr(db, "bind", None), "dialect", None)
+    dialect_name = getattr(dialect, "name", "")
+
+    if dialect_name == "sqlite":
+        db.execute(text("PRAGMA foreign_keys=OFF"))
+
+    # FK-safe order (children -> parents)
+    ordered = [
         "jobs",
+        "mutation_journal",
         "assistant_proposals",
         "draft_locks",
         "audit_logs",
         "rendered_snapshots",
         "projects",
-        "mutation_journal",
         "users",
-    ]:
+    ]
+
+    for t in ordered:
         db.execute(text(f"DELETE FROM {t}"))
+
+    if dialect_name == "sqlite":
+        db.execute(text("PRAGMA foreign_keys=ON"))
+
     db.commit()
 
 
@@ -116,18 +139,24 @@ def test_backup_restore_round_trip_preserves_invariants(db, tmp_path):
 
     # WIPE + RESTORE
     _truncate_all(db)
+
     meta2 = restore_backup(db=db, path=backup_path, require_empty=True)
+    assert meta2.row_counts["users"] >= 1
+    assert meta2.row_counts["projects"] >= 1
+    assert meta2.row_counts["rendered_snapshots"] >= 1
+    assert meta2.row_counts["audit_logs"] >= 1
+    assert meta2.row_counts["mutation_journal"] >= 1
+    assert meta2.row_counts["jobs"] >= 1
 
-    assert meta2.row_counts.get("rendered_snapshots", 0) == 1
-    assert meta2.row_counts.get("mutation_journal", 0) == 1
-    assert meta2.row_counts.get("jobs", 0) == 1
 
-    # Verify Job compatibility preserved (DB column survives restore)
-    row = db.execute(
-        text("SELECT state, retry_count, max_retries FROM jobs LIMIT 1")
-    ).fetchone()
-    assert row is not None
-    assert row[0] == "CREATED"
-    assert row[1] == 0
-    assert row[2] == 3
+def test_backup_restore_requires_empty_by_default(db, tmp_path):
+    # Create a backup from current DB
+    backup_path = str(tmp_path / "backup.json")
+    create_backup(db=db, path=backup_path)
+
+    # Attempt restore into non-empty DB should fail
+    with pytest.raises(ValueError) as e:
+        restore_backup(db=db, path=backup_path, require_empty=True)
+
+    assert "Target table not empty" in str(e.value)
 

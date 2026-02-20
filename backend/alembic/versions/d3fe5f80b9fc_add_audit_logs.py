@@ -1,5 +1,6 @@
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 revision = "d3fe5f80b9fc"
@@ -9,6 +10,12 @@ depends_on = None
 
 
 def upgrade():
+    # ✅ SAFETY: do nothing if the table already exists
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "audit_logs" in inspector.get_table_names():
+        return
+
     op.create_table(
         "audit_logs",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -32,5 +39,11 @@ def upgrade():
 
 
 def downgrade():
+    # ✅ SAFETY: only drop if it exists
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "audit_logs" not in inspector.get_table_names():
+        return
+
     op.drop_table("audit_logs")
 

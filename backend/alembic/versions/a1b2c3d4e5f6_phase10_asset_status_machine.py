@@ -11,6 +11,11 @@ depends_on = None
 def upgrade():
     bind = op.get_bind()
     inspector = inspect(bind)
+
+    # ✅ MINIMAL ADD: if assets table doesn't exist in this DB, skip safely
+    if not inspector.has_table("assets"):
+        return
+
     columns = [c["name"] for c in inspector.get_columns("assets")]
 
     # ENUM (safe)
@@ -61,6 +66,11 @@ def upgrade():
 def downgrade():
     bind = op.get_bind()
     inspector = inspect(bind)
+
+    # ✅ MINIMAL ADD: skip safely if assets table doesn't exist
+    if not inspector.has_table("assets"):
+        return
+
     columns = [c["name"] for c in inspector.get_columns("assets")]
 
     if "status_updated_at" in columns:

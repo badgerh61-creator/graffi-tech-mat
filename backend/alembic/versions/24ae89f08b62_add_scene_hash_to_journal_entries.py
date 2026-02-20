@@ -6,6 +6,7 @@ Create Date: 2026-01-07 13:37:09.086725
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect  # ✅ minimal add
 
 
 # revision identifiers, used by Alembic.
@@ -16,6 +17,16 @@ depends_on = None
 
 
 def upgrade():
+    # ✅ minimal add: guard if table missing / column exists
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if not inspector.has_table("journal_entries"):
+        return
+
+    cols = {c["name"] for c in inspector.get_columns("journal_entries")}
+    if "scene_hash" in cols:
+        return
+
     # 1️⃣ Add column as nullable (SQLite-safe)
     op.add_column(
         "journal_entries",
@@ -32,5 +43,14 @@ def upgrade():
 
 
 def downgrade():
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if not inspector.has_table("journal_entries"):
+        return
+
+    cols = {c["name"] for c in inspector.get_columns("journal_entries")}
+    if "scene_hash" not in cols:
+        return
+
     op.drop_column("journal_entries", "scene_hash")
 

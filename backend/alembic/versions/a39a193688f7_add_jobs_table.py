@@ -7,6 +7,7 @@ Create Date: 2026-01-03 23:53:13.660594
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect  # ✅ minimal add
 
 
 # revision identifiers, used by Alembic.
@@ -17,6 +18,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # ✅ minimal add: idempotent
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if inspector.has_table("jobs"):
+        return
+
     op.create_table(
         "jobs",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -53,13 +60,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Drop table first
-    op.drop_table("jobs")
+    bind = op.get_bind()
+    inspector = inspect(bind)
+
+    # ✅ minimal add: safe drop
+    if inspector.has_table("jobs"):
+        op.drop_table("jobs")
 
     # IMPORTANT:
     # SQLite does NOT support DROP TYPE.
     # Only drop enum explicitly on databases that support it.
-    bind = op.get_bind()
     if bind.dialect.name != "sqlite":
         op.execute("DROP TYPE job_state")
 

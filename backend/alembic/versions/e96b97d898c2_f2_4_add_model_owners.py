@@ -15,6 +15,7 @@ Design goals:
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect  # ✅ minimal add
 
 
 # Alembic revision identifiers
@@ -25,6 +26,22 @@ depends_on = None
 
 
 def upgrade():
+    # ✅ minimal add: idempotent + guard prerequisite tables
+    bind = op.get_bind()
+    inspector = inspect(bind)
+
+    # If the bridge table already exists, skip safely
+    if inspector.has_table("model_owners"):
+        return
+
+    # If core prereqs aren't present yet, skip (prevents "no such table" issues)
+    if not inspector.has_table("models"):
+        return
+    if not inspector.has_table("users"):
+        return
+    if not inspector.has_table("organizations"):
+        return
+
     # ------------------------------------------------------------------
     # model_owners table
     # ------------------------------------------------------------------
@@ -77,5 +94,11 @@ def upgrade():
 
 
 def downgrade():
+    # ✅ minimal add: safe drop
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if not inspector.has_table("model_owners"):
+        return
+
     op.drop_table("model_owners")
 

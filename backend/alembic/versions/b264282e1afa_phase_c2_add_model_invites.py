@@ -2,6 +2,7 @@
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect  # ✅ minimal add
 
 revision = "b264282e1afa"
 down_revision = "phase11_add_asset_metadata"
@@ -10,6 +11,17 @@ depends_on = None
 
 
 def upgrade():
+    # ✅ minimal add: idempotent + prereq guards
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if inspector.has_table("model_invites"):
+        return
+
+    if not inspector.has_table("models"):
+        return
+    if not inspector.has_table("users"):
+        return
+
     op.create_table(
         "model_invites",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -24,5 +36,10 @@ def upgrade():
 
 
 def downgrade():
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if not inspector.has_table("model_invites"):
+        return
+
     op.drop_table("model_invites")
 

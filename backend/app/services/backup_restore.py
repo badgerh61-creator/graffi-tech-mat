@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 
@@ -111,8 +112,20 @@ def restore_backup(
     # Safety: require empty tables (prevents accidental overwrite)
     if require_empty:
         for t in tables:
-            res = db.execute(text(f"SELECT COUNT(*) FROM {t}"))
-            count = int(res.scalar() or 0)
+            try:
+                res = db.execute(text(f"SELECT COUNT(*) FROM {t}"))
+                count = int(res.scalar() or 0)
+            except OperationalError as e:
+                msg = str(e).lower()
+                if "no such table" in msg:
+                    raise ValueError(
+                        f"Target database is missing table '{t}'. "
+                        f"Your Alembic history appears to assume a pre-existing schema "
+                        f"(baseline is a NO-OP). Restore must run against a DB that already "
+                        f"has the base tables (users/projects/...)."
+                    ) from e
+                raise
+
             if count != 0:
                 raise ValueError(f"Target table not empty: {t} ({count} rows)")
 

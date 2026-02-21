@@ -163,9 +163,32 @@ def create_app() -> FastAPI:
     app.include_router(snapshots_router)
     app.include_router(snapshots_undo_redo_router)
 
+    # ✅ Phase H.8 (inline, additive, stable)
     @app.get("/health")
     def health():
-        return {"status": "ok"}
+        # Liveness: must never touch DB
+        return {"status": "ok", "service": "api"}
+
+    @app.get("/ready")
+    def ready():
+        """
+        Readiness: may touch DB (read-only).
+        IMPORTANT: reference ops_checks dynamically so monkeypatch works.
+        """
+        from app.db.session import SessionLocal
+        from app.services import ops_checks
+
+        db = SessionLocal()
+        try:
+            result = ops_checks.compute_readiness(db=db)
+        finally:
+            db.close()
+
+        if not result.ready:
+            # Keep status_code=200 to match your current tests
+            return {"ready": False, "checks": result.checks}
+
+        return {"ready": True, "checks": result.checks}
 
     # 🧭 Studio kernel exposure (Phase E)
     app.include_router(studio_state_router)          # E.1
@@ -191,4 +214,3 @@ def create_app() -> FastAPI:
 
 # ===== APP (backwards compatible) =====
 app = create_app()
-

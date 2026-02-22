@@ -76,6 +76,7 @@ from app.api.snapshot_metrics import router as snapshot_metrics_router
 from app.api.assistant_proposals import router as assistant_proposals_router
 
 from app.api.testing_scenarios import router as testing_scenarios_router
+from app.api.testing_results import router as testing_results_router
 
 from app.api.health import router as health_router
 
@@ -210,6 +211,7 @@ def create_app() -> FastAPI:
     app.include_router(assistant_proposals_router)
     
     app.include_router(testing_scenarios_router)
+    app.include_router(testing_results_router)
 
     app.include_router(health_router)
     

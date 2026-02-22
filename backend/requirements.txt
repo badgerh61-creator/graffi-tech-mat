@@ -18,3 +18,8 @@ aiofiles==23.1.0
 # 🔵 Phase C3 — Email delivery
 sendgrid==6.11.0
 
+# MinIO client (required by app.services.storage)
+minio==7.2.20
+
+# Worker deps (seen missing in docker logs earlier)
+trimesh==4.0.5

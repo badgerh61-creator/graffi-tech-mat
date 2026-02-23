@@ -82,6 +82,27 @@ from app.api.testing_compare import router as testing_compare_router
 from app.api.health import router as health_router
 
 
+def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
+    """
+    Additive-only safety: detect duplicate (method, path) pairs.
+    Returns list of duplicates; empty means clean.
+    """
+    seen = set()
+    dupes = []
+    for r in app.routes:
+        path = getattr(r, "path", None)
+        methods = getattr(r, "methods", None) or []
+        if not path:
+            continue
+        for m in methods:
+            key = (m, path)
+            if key in seen:
+                dupes.append(key)
+            else:
+                seen.add(key)
+    return dupes
+
+
 # ===== APP FACTORY =====
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -121,6 +142,16 @@ def create_app() -> FastAPI:
     def startup():
         validate_settings()
         Base.metadata.create_all(bind=engine)
+
+        # ✅ additive-only safety signal (no behavior change)
+        dupes = _detect_duplicate_routes(app)
+        if dupes:
+            # Don’t crash prod by default; just log.
+            # If you want strict mode later, you can gate this via env.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Duplicate routes detected: %s", dupes
+            )
 
     # ===== ROUTERS (ORDER MATTERS) =====
     app.include_router(auth_router)
@@ -189,10 +220,9 @@ def create_app() -> FastAPI:
             db.close()
 
         if not result.ready:
-            # Keep status_code=200 to match your current tests
-            return {"ready": False, "checks": result.checks}
+            return {"status": "not_ready", "ready": False, "checks": result.checks}
 
-        return {"ready": True, "checks": result.checks}
+        return {"status": "ready", "ready": True, "checks": result.checks}
 
     # 🧭 Studio kernel exposure (Phase E)
     app.include_router(studio_state_router)          # E.1
@@ -210,13 +240,13 @@ def create_app() -> FastAPI:
     app.include_router(snapshots_assistant_router)
     app.include_router(snapshot_metrics_router)
     app.include_router(assistant_proposals_router)
-    
+
     app.include_router(testing_scenarios_router)
     app.include_router(testing_results_router)
     app.include_router(testing_compare_router)
 
     app.include_router(health_router)
-    
+
     return app
 
 

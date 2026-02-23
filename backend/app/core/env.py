@@ -20,6 +20,7 @@ BASE_REQUIRED_ENV_VARS: List[str] = [
     "ENV",
     "DATABASE_URL",
     "SECRET_KEY",
+    "MINIO_ENDPOINT",  # ✅ ADDITIVE FIX
 ]
 
 # ===== AUTH DEFAULTS (safe for dev) =====

@@ -1,3 +1,4 @@
+# backend/app/api/health.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -19,4 +20,3 @@ def ready(db: Session = Depends(get_db)):
     except Exception:
         raise HTTPException(status_code=503, detail="DB not ready")
     return {"status": "ready"}
-

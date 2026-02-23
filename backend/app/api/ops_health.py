@@ -1,3 +1,4 @@
+# backend/app/api/ops_health.py
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -24,5 +25,5 @@ def ready(db: Session = Depends(get_db)):
     result = compute_readiness(db=db)
     if not result.ready:
         # 503 indicates not ready for traffic
-        return {"ready": False, "checks": result.checks, "status_code": 503}
-    return {"ready": True, "checks": result.checks}
+        return {"status": "not_ready", "ready": False, "checks": result.checks, "status_code": 503}
+    return {"status": "ready", "ready": True, "checks": result.checks}

@@ -20,21 +20,25 @@ export default function TransformToolbar({
     if (!activeSnapshot?.id) return;
     if (!selectedId) return;
 
+    // tool params (existing)
+    const baseParams =
+      tool === "TRANSLATE"
+        ? { x: 10, y: 0, z: 0 }
+        : tool === "ROTATE"
+        ? { axis: "y", degrees: 5 }
+        : { factor: 1.05 };
+
+    // ✅ IMPORTANT:
+    // Your backend schema only preserves payload.target_id + payload.params.
+    // So snapping fields MUST live inside params.
     const payload = {
       target_id: selectedId,
-
-      // existing params (unchanged)
-      params:
-        tool === "TRANSLATE"
-          ? { x: 10, y: 0, z: 0 }
-          : tool === "ROTATE"
-          ? { axis: "y", degrees: 5 }
-          : { factor: 1.05 },
-
-      // ✅ Tier 7.3 additions (top-level in payload)
-      snap: snapEnabled,
-      snap_step: snapStep,
-      frame_id: frameId,
+      params: {
+        ...baseParams,
+        snap: snapEnabled,
+        snap_step: snapStep,
+        frame_id: frameId,
+      },
     };
 
     const result = await execute({

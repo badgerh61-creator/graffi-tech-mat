@@ -22,6 +22,13 @@ import ReferenceFramesPanel from "../editor/referenceFrames/ReferenceFramesPanel
 // ✅ Tier 7.8 ADD (gizmo commits via assistant proposals evaluate/apply)
 import GizmoCommitController from "../editor/gizmo/GizmoCommitController";
 
+/* ✅ Tier 7.9 ADD (canonical selection store + resolver + overlay)
+   - Alias import names to avoid clashing with Tier 7.1 useSelection().
+*/
+import SelectionOverlay from "../editor/selection/SelectionOverlay";
+import { useSelection as useSelectionStore } from "../editor/selection/selectionStore";
+import { resolveSelectedTarget } from "../editor/selection/resolveSelectedTarget";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -38,6 +45,9 @@ export default function StudioEditor() {
 
   // ✅ Tier 7.1 ADD (selection store)
   const sel = useSelection();
+
+  // ✅ Tier 7.9 ADD (canonical selection state)
+  const { selectedId } = useSelectionStore();
 
   // =====================================================
   // SNAPSHOT FETCH (AUTHORITATIVE)
@@ -79,10 +89,15 @@ export default function StudioEditor() {
   const activeSnapshot = draftSnapshot ?? completedSnapshot;
   const isEditable = activeSnapshot?.status === "draft";
 
+  // ✅ Tier 7.9 ADD (resolve active target deterministically)
+  const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
+
   // =====================================================
   // TIER 7.8 — GIZMO GATE (TEMP stubs for lock/station)
   // =====================================================
-  const activeTargetId = sel.selectedId || null; // uses Tier 7.1 selection
+  // ✅ Prefer Tier 7.9 resolved target; fallback to Tier 7.1 selection if still used by old UI.
+  const activeTargetId = resolvedTargetId ?? sel.selectedId ?? null;
+
   const hasDraftLock = true; // TODO: replace with real lock state from Phase U UI
   const station = "geometry"; // TODO: replace when station state is visible in UI
 
@@ -146,6 +161,11 @@ export default function StudioEditor() {
           </>
         }
       >
+        {/* ✅ Tier 7.9 ADD (Selection overlay; additive, does not remove Tier 7.1 button) */}
+        <div style={{ padding: 12 }}>
+          <SelectionOverlay />
+        </div>
+
         {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) */}
         <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
           <button onClick={() => sel.select("panel-1")}>Select panel-1</button>

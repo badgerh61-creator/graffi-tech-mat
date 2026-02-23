@@ -1,3 +1,5 @@
+# tests/conftest.py
+
 import pytest
 from datetime import datetime
 from dataclasses import dataclass
@@ -333,6 +335,7 @@ def editor_user_without_tuning_capability(db):
     """
     Editor role, but lacking canTune capability.
     Safe for reuse across multiple tests.
+    MUST enforce can_tune=False even if user already exists.
     """
     user = db.query(User).filter_by(email="editor_no_tune@test.com").first()
     if not user:
@@ -347,8 +350,16 @@ def editor_user_without_tuning_capability(db):
         db.add(user)
         db.commit()
         db.refresh(user)
-    return user
+        return user
 
+    # ✅ ENFORCE invariant even if row already existed
+    user.role = "editor"
+    user.is_admin = False
+    user.can_tune = False
+    db.commit()
+    db.refresh(user)
+    return user
+    
 
 @pytest.fixture
 def viewer_user(db):
@@ -961,3 +972,26 @@ def inject_auditlog(request):
     from app.models.audit import AuditLog
     request.module.AuditLog = AuditLog
 
+
+@pytest.fixture(autouse=True)
+def _reset_dependency_overrides():
+    """
+    Prevent cross-test auth/capability contamination WITHOUT breaking
+    the canonical auth overrides used by the entire suite.
+    """
+    from app.main import app
+
+    # Preserve core overrides if already installed
+    core = {}
+    if oauth2_scheme in app.dependency_overrides:
+        core[oauth2_scheme] = app.dependency_overrides[oauth2_scheme]
+    if get_current_user in app.dependency_overrides:
+        core[get_current_user] = app.dependency_overrides[get_current_user]
+
+    # Clear everything else
+    app.dependency_overrides = dict(core)
+
+    yield
+
+    # Clear again but keep core
+    app.dependency_overrides = dict(core)

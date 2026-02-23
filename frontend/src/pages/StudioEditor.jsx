@@ -22,12 +22,14 @@ import ReferenceFramesPanel from "../editor/referenceFrames/ReferenceFramesPanel
 // ✅ Tier 7.8 ADD (gizmo commits via assistant proposals evaluate/apply)
 import GizmoCommitController from "../editor/gizmo/GizmoCommitController";
 
-/* ✅ Tier 7.9 ADD (canonical selection store + resolver + overlay)
+/* ✅ Tier 7.9 ADD (canonical selection store + resolver)
    - Alias import names to avoid clashing with Tier 7.1 useSelection().
 */
-import SelectionOverlay from "../editor/selection/SelectionOverlay";
 import { useSelection as useSelectionStore } from "../editor/selection/selectionStore";
 import { resolveSelectedTarget } from "../editor/selection/resolveSelectedTarget";
+
+// ✅ Tier 7.10 ADD (viewport picking stub)
+import ViewportSurface from "../editor/viewport/ViewportSurface";
 
 export default function StudioEditor() {
   const user = getCurrentUser();
@@ -43,7 +45,7 @@ export default function StudioEditor() {
   // ===============================
   const [isDirty, setIsDirty] = useState(false);
 
-  // ✅ Tier 7.1 ADD (selection store)
+  // ✅ Tier 7.1 ADD (legacy selection store)
   const sel = useSelection();
 
   // ✅ Tier 7.9 ADD (canonical selection state)
@@ -90,7 +92,10 @@ export default function StudioEditor() {
   const isEditable = activeSnapshot?.status === "draft";
 
   // ✅ Tier 7.9 ADD (resolve active target deterministically)
-  const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
+  const { targetId: resolvedTargetId } = resolveSelectedTarget(
+    activeSnapshot,
+    selectedId
+  );
 
   // =====================================================
   // TIER 7.8 — GIZMO GATE (TEMP stubs for lock/station)
@@ -161,61 +166,66 @@ export default function StudioEditor() {
           </>
         }
       >
-        {/* ✅ Tier 7.9 ADD (Selection overlay; additive, does not remove Tier 7.1 button) */}
-        <div style={{ padding: 12 }}>
-          <SelectionOverlay />
+        {/* ✅ Tier 7.10 layout: left tools, right viewport + editor host */}
+        <div className="grid grid-cols-[360px_1fr] gap-3 p-3">
+          {/* LEFT: tool controls */}
+          <div className="space-y-3">
+            {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) — kept additive-safe */}
+            <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
+              <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
+
+              <TransformToolbar
+                activeSnapshot={activeSnapshot}
+                isEditable={isEditable}
+                selectedId={sel.selectedId}
+                onNewSnapshot={(newId) => {
+                  console.log("New snapshot:", newId);
+                  fetchSnapshots().catch(console.error);
+                }}
+              />
+            </div>
+
+            {/* ✅ Tier 7.8 ADD (gizmo commit wiring via /assistant/proposals/*) */}
+            <div style={{ padding: 12 }}>
+              <GizmoCommitController
+                activeSnapshot={activeSnapshot}
+                activeTargetId={activeTargetId}
+                enabled={gizmoEnabled}
+                reasonDisabled={gizmoReason}
+                enablePreview={false} // set true only if /assistant/proposals/preview exists
+                onApplied={(newId) => {
+                  console.log("Applied new snapshot:", newId);
+                  fetchSnapshots().catch(console.error);
+                }}
+              />
+            </div>
+
+            {/* ✅ Tier 7.2 ADD (read-only reference frames) */}
+            <div style={{ padding: 12 }}>
+              <ReferenceFramesPanel
+                activeSnapshotId={activeSnapshot?.id}
+                disabled={!isEditable}
+              />
+            </div>
+          </div>
+
+          {/* RIGHT: viewport picking + editor host */}
+          <div className="space-y-3">
+            <ViewportSurface disabled={!activeSnapshot} />
+
+            {/* ===============================
+                SCENE CHANGE SIGNAL
+               =============================== */}
+            <EditorLayoutHost
+              editable={isEditable}
+              onSceneChange={() => {
+                if (!isEditable) return;
+                setSceneStateHash(Date.now().toString());
+                setIsDirty(true);
+              }}
+            />
+          </div>
         </div>
-
-        {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) */}
-        <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
-          <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
-
-          <TransformToolbar
-            activeSnapshot={activeSnapshot}
-            isEditable={isEditable}
-            selectedId={sel.selectedId}
-            onNewSnapshot={(newId) => {
-              console.log("New snapshot:", newId);
-              fetchSnapshots().catch(console.error);
-            }}
-          />
-        </div>
-
-        {/* ✅ Tier 7.8 ADD (gizmo commit wiring via /assistant/proposals/*) */}
-        <div style={{ padding: 12 }}>
-          <GizmoCommitController
-            activeSnapshot={activeSnapshot}
-            activeTargetId={activeTargetId}
-            enabled={gizmoEnabled}
-            reasonDisabled={gizmoReason}
-            enablePreview={false} // set true only if /assistant/proposals/preview exists
-            onApplied={(newId) => {
-              console.log("Applied new snapshot:", newId);
-              // refresh list so UI sees the new draft snapshot
-              fetchSnapshots().catch(console.error);
-            }}
-          />
-        </div>
-
-        {/* ✅ Tier 7.2 ADD (read-only reference frames) */}
-        <div style={{ padding: 12 }}>
-          <ReferenceFramesPanel
-            activeSnapshotId={activeSnapshot?.id}
-            disabled={!isEditable}
-          />
-        </div>
-
-        {/* ===============================
-            SCENE CHANGE SIGNAL
-           =============================== */}
-        <EditorLayoutHost
-          editable={isEditable}
-          onSceneChange={() => {
-            if (!isEditable) return;
-            setSceneStateHash(Date.now().toString());
-            setIsDirty(true);
-          }}
-        />
       </EditorShell>
     </CapabilityProvider>
   );

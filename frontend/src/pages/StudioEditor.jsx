@@ -12,6 +12,10 @@ import DraftStatusBadge from "../components/snapshots/DraftStatusBadge";
 import FinalizeDraftButton from "../components/snapshots/FinalizeDraftButton";
 import { useDraftAutosave } from "../hooks/useDraftAutosave";
 
+// ✅ Tier 7.1 ADD (selection + transform toolbar)
+import { useSelection } from "../editor/selection/useSelection";
+import TransformToolbar from "../editor/tools/TransformToolbar";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -26,20 +30,20 @@ export default function StudioEditor() {
   // ===============================
   const [isDirty, setIsDirty] = useState(false);
 
+  // ✅ Tier 7.1 ADD (selection store)
+  const sel = useSelection();
+
   // =====================================================
   // SNAPSHOT FETCH (AUTHORITATIVE)
   // =====================================================
   const fetchSnapshots = useCallback(() => {
     const token = getAccessToken();
 
-    return fetch(
-      `http://127.0.0.1:8000/projects/${projectId}/snapshots/`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    )
+    return fetch(`http://127.0.0.1:8000/projects/${projectId}/snapshots/`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
       .then((res) => {
         if (!res.ok) {
           throw new Error(`Snapshot fetch failed: ${res.status}`);
@@ -64,9 +68,7 @@ export default function StudioEditor() {
   // PHASE 3 — SNAPSHOT SELECTION (MANDATORY)
   // =====================================================
   const draftSnapshot = snapshots.find((s) => s.status === "draft");
-  const completedSnapshot = snapshots.find(
-    (s) => s.status === "completed"
-  );
+  const completedSnapshot = snapshots.find((s) => s.status === "completed");
 
   const activeSnapshot = draftSnapshot ?? completedSnapshot;
   const isEditable = activeSnapshot?.status === "draft";
@@ -106,18 +108,28 @@ export default function StudioEditor() {
               </span>
             )}
 
-            <SnapshotPreview
-              snapshot={activeSnapshot}
-              onDraftCreated={fetchSnapshots}
-            />
+            <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
 
-            <FinalizeDraftButton
-              snapshot={activeSnapshot}
-              onFinalized={fetchSnapshots}
-            />
+            <FinalizeDraftButton snapshot={activeSnapshot} onFinalized={fetchSnapshots} />
           </>
         }
       >
+        {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) */}
+        <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
+          <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
+
+          <TransformToolbar
+            activeSnapshot={activeSnapshot}
+            isEditable={isEditable}
+            selectedId={sel.selectedId}
+            onNewSnapshot={(newId) => {
+              console.log("New snapshot:", newId);
+              // optional: refresh list so UI sees the new draft
+              fetchSnapshots().catch(console.error);
+            }}
+          />
+        </div>
+
         {/* ===============================
             SCENE CHANGE SIGNAL
            =============================== */}
@@ -133,4 +145,3 @@ export default function StudioEditor() {
     </CapabilityProvider>
   );
 }
-

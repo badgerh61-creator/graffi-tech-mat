@@ -15,7 +15,7 @@ def _require_draft_lock_if_available(*, db: Session, snapshot_id: int, user_id: 
     If it doesn't exist yet in some deployments, we fail closed with 403.
     """
     try:
-        from app.services.draft_lock_service import require_draft_owner  # Phase U
+        from app.services.draft_lock_service import require_draft_owner
     except Exception:
         raise HTTPException(403, "Draft lock service unavailable")
 
@@ -31,30 +31,33 @@ def _audit_if_available(
     station: str,
     tool: str,
     target_id: str,
-    payload: Dict[str, Any] | None = None,  # ✅ Tier 7.3 additive
+    payload: Dict[str, Any] | None = None,
 ) -> None:
+    """
+    Tier 7.3 + 7.4 audit enrichment.
+    """
     try:
         from app.services.audit import log_event
     except Exception:
         return
 
     p = payload or {}
-    snap = bool(p.get("snap", False))
-    frame_id = p.get("frame_id")
-    snap_step = p.get("snap_step")
 
     extra = {
         "parent_snapshot_id": parent_snapshot_id,
         "station": station,
         "tool": tool,
         "target_id": target_id,
-        "snap": snap,  # ✅ Tier 7.3
+        "snap": bool(p.get("snap", False)),
+        "axis_lock": p.get("axis_lock", "xyz"),
+        "drag_source": p.get("drag_source"),
     }
 
-    if frame_id is not None:
-        extra["frame_id"] = frame_id
-    if snap_step is not None:
-        extra["snap_step"] = snap_step
+    if p.get("frame_id") is not None:
+        extra["frame_id"] = p.get("frame_id")
+
+    if p.get("snap_step") is not None:
+        extra["snap_step"] = p.get("snap_step")
 
     log_event(
         db=db,
@@ -92,7 +95,7 @@ def execute_transform_tool(
     payload: Dict[str, Any],
 ):
     """
-    Tier 7.1 governed transform execution.
+    Tier 7.x governed transform execution.
 
     HARD RULES:
     - draft-only
@@ -100,6 +103,7 @@ def execute_transform_tool(
     - new child draft snapshot (no mutation)
     - audit event emitted
     """
+
     tool = (tool or "").upper().strip()
     if tool not in ALLOWED_TOOLS:
         raise HTTPException(422, "Invalid tool")
@@ -111,25 +115,38 @@ def execute_transform_tool(
     if not user_id:
         raise HTTPException(401, "Not authenticated")
 
-    _require_draft_lock_if_available(db=db, snapshot_id=snapshot.id, user_id=user_id)
+    _require_draft_lock_if_available(
+        db=db,
+        snapshot_id=snapshot.id,
+        user_id=user_id,
+    )
 
-    target_id = payload.get("target_id") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "Invalid payload")
+
+    target_id = payload.get("target_id")
     if not target_id or not isinstance(target_id, str):
         raise HTTPException(422, "payload.target_id required")
 
-    # ✅ Tier 7.3: merge payload.params upward (because schema only preserves target_id + params)
-    params = payload.get("params") if isinstance(payload, dict) else None
+    # -------------------------------------------------
+    # Tier 7.3: merge payload.params upward
+    # -------------------------------------------------
+    params = payload.get("params")
     if isinstance(params, dict):
         payload = {**payload, **params}
 
-    # ✅ Tier 7.3: normalize/validate snapping + frame_id (pure, no DB writes)
-    from app.services.transform_with_snapping import normalize_transform_payload_with_snapping
+    # -------------------------------------------------
+    # Tier 7.3 + 7.4: normalize (snapping + axis locks)
+    # -------------------------------------------------
+    from app.services.transform_payload_normalizer import normalize_transform_payload
 
-    payload = normalize_transform_payload_with_snapping(payload=payload)
+    payload = normalize_transform_payload(payload=payload)
 
     SnapshotModel = snapshot.__class__
 
-    # Create new child draft snapshot (immutable history)
+    # -------------------------------------------------
+    # Immutable clone (new child draft)
+    # -------------------------------------------------
     new_snapshot = SnapshotModel(
         project_id=getattr(snapshot, "project_id"),
         scene_state_hash=getattr(snapshot, "scene_state_hash"),
@@ -143,25 +160,28 @@ def execute_transform_tool(
     # Parent linkage (if field exists)
     _set_if_present(new_snapshot, "parent_snapshot_id", snapshot.id)
 
-    # Required author fields in your schema
-    # - created_by is NOT NULL in your rendered_snapshots table
+    # Required author fields
     if hasattr(new_snapshot, "created_by"):
         _set_if_present(new_snapshot, "created_by", user_id)
+
     if hasattr(new_snapshot, "owner_user_id"):
         _set_if_present(new_snapshot, "owner_user_id", user_id)
 
-    # If your model uses different naming, copy from parent (safe, additive)
+    # Safe field propagation
     _copy_if_present(new_snapshot, snapshot, "deterministic_key")
     _copy_if_present(new_snapshot, snapshot, "is_corrupted")
     _copy_if_present(new_snapshot, snapshot, "locked_at")
 
-    # Optional: store tool metadata if your model supports it
+    # Optional metadata
     _set_if_present(new_snapshot, "last_tool", tool)
 
     db.add(new_snapshot)
     db.commit()
     db.refresh(new_snapshot)
 
+    # -------------------------------------------------
+    # Audit
+    # -------------------------------------------------
     _audit_if_available(
         db=db,
         user_id=user_id,
@@ -170,7 +190,7 @@ def execute_transform_tool(
         station=station,
         tool=tool,
         target_id=target_id,
-        payload=payload,  # ✅ Tier 7.3 additive
+        payload=payload,
     )
 
     return new_snapshot

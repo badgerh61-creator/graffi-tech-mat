@@ -31,11 +31,30 @@ def _audit_if_available(
     station: str,
     tool: str,
     target_id: str,
+    payload: Dict[str, Any] | None = None,  # ✅ Tier 7.3 additive
 ) -> None:
     try:
         from app.services.audit import log_event
     except Exception:
         return
+
+    p = payload or {}
+    snap = bool(p.get("snap", False))
+    frame_id = p.get("frame_id")
+    snap_step = p.get("snap_step")
+
+    extra = {
+        "parent_snapshot_id": parent_snapshot_id,
+        "station": station,
+        "tool": tool,
+        "target_id": target_id,
+        "snap": snap,  # ✅ Tier 7.3
+    }
+
+    if frame_id is not None:
+        extra["frame_id"] = frame_id
+    if snap_step is not None:
+        extra["snap_step"] = snap_step
 
     log_event(
         db=db,
@@ -43,12 +62,7 @@ def _audit_if_available(
         action="snapshot.transform",
         resource_type="snapshot",
         resource_id=new_snapshot_id,
-        extra={
-            "parent_snapshot_id": parent_snapshot_id,
-            "station": station,
-            "tool": tool,
-            "target_id": target_id,
-        },
+        extra=extra,
     )
 
 
@@ -103,6 +117,16 @@ def execute_transform_tool(
     if not target_id or not isinstance(target_id, str):
         raise HTTPException(422, "payload.target_id required")
 
+    # ✅ Tier 7.3: merge payload.params upward (because schema only preserves target_id + params)
+    params = payload.get("params") if isinstance(payload, dict) else None
+    if isinstance(params, dict):
+        payload = {**payload, **params}
+
+    # ✅ Tier 7.3: normalize/validate snapping + frame_id (pure, no DB writes)
+    from app.services.transform_with_snapping import normalize_transform_payload_with_snapping
+
+    payload = normalize_transform_payload_with_snapping(payload=payload)
+
     SnapshotModel = snapshot.__class__
 
     # Create new child draft snapshot (immutable history)
@@ -121,7 +145,6 @@ def execute_transform_tool(
 
     # Required author fields in your schema
     # - created_by is NOT NULL in your rendered_snapshots table
-    # Prefer "created_by" if present, else fall back to "owner_user_id"
     if hasattr(new_snapshot, "created_by"):
         _set_if_present(new_snapshot, "created_by", user_id)
     if hasattr(new_snapshot, "owner_user_id"):
@@ -147,6 +170,7 @@ def execute_transform_tool(
         station=station,
         tool=tool,
         target_id=target_id,
+        payload=payload,  # ✅ Tier 7.3 additive
     )
 
     return new_snapshot

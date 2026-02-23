@@ -16,6 +16,9 @@ import { useDraftAutosave } from "../hooks/useDraftAutosave";
 import { useSelection } from "../editor/selection/useSelection";
 import TransformToolbar from "../editor/tools/TransformToolbar";
 
+// ✅ Tier 7.2 ADD (reference frames panel)
+import ReferenceFramesPanel from "../editor/referenceFrames/ReferenceFramesPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -127,6 +130,14 @@ export default function StudioEditor() {
               // optional: refresh list so UI sees the new draft
               fetchSnapshots().catch(console.error);
             }}
+          />
+        </div>
+
+        {/* ✅ Tier 7.2 ADD (read-only reference frames) */}
+        <div style={{ padding: 12 }}>
+          <ReferenceFramesPanel
+            activeSnapshotId={activeSnapshot?.id}
+            disabled={!isEditable}
           />
         </div>
 

@@ -81,6 +81,7 @@ from app.api.testing_compare import router as testing_compare_router
 
 from app.api.health import router as health_router
 from app.api.tools import router as tools_router
+from app.api.reference_frames import router as reference_frames_router
 
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
     """
@@ -247,6 +248,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(tools_router)
+    app.include_router(reference_frames_router)
 
     return app
 

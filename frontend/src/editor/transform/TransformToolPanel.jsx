@@ -1,18 +1,20 @@
 import React, { useMemo, useState } from "react";
-import { useSelection } from "../selection/selectionStore";
 import { executeTool } from "../../services/studio/toolExecutionAdapter";
+import { useSelection } from "../selection/selectionStore";
+import { toolPreflightGuard } from "../tools/toolPreflightGuard";
 
 /**
- * Tier 7.11 + 7.12
- * - target_id binds from selectionStore.selectedId
- * - tool execution goes through the canonical adapter (no direct fetch)
+ * Tier 7.14
+ * - Uses selectionStore (v2 primary) + preflight guard
+ * - Blocks execution with normalized reasons (no_selection/no_snapshot/ui_disabled)
+ * - Executes only via canonical adapter (Tier 7.12)
  */
 export default function TransformToolPanel({
   activeSnapshot,
   disabled = false,
   onExecuted,
 }) {
-  const { selectedId } = useSelection();
+  const selection = useSelection();
 
   const [operation, setOperation] = useState("translate");
   const [x, setX] = useState(0);
@@ -24,22 +26,30 @@ export default function TransformToolPanel({
   const [busy, setBusy] = useState(false);
   const [lastError, setLastError] = useState(null);
 
-  const canSubmit = useMemo(() => {
-    if (disabled) return false;
-    if (!activeSnapshot?.id) return false;
-    if (!selectedId) return false;
-    return true;
-  }, [disabled, activeSnapshot, selectedId]);
+  const preflight = useMemo(
+    () =>
+      toolPreflightGuard({
+        selection,
+        uiDisabled: disabled,
+        activeSnapshotId: activeSnapshot?.id,
+      }),
+    [selection, disabled, activeSnapshot?.id]
+  );
 
-  const reasonDisabled = useMemo(() => {
-    if (disabled) return "disabled";
-    if (!activeSnapshot?.id) return "no active snapshot";
-    if (!selectedId) return "select a target";
-    return null;
-  }, [disabled, activeSnapshot, selectedId]);
+  const reasonText = useMemo(() => {
+    if (preflight.ok) return null;
+    if (preflight.reason === "no_selection") return "select a target";
+    if (preflight.reason === "no_snapshot") return "no active snapshot";
+    if (preflight.reason === "ui_disabled") return "disabled";
+    return "blocked";
+  }, [preflight]);
+
+  const canSubmit = useMemo(() => {
+    return preflight.ok && !busy;
+  }, [preflight, busy]);
 
   async function execute() {
-    if (!canSubmit) return;
+    if (!preflight.ok || busy) return;
 
     setBusy(true);
     setLastError(null);
@@ -53,10 +63,15 @@ export default function TransformToolPanel({
 
     const payload =
       operation === "scale"
-        ? { target_id: selectedId, factor: Number(factor) }
+        ? { target_id: preflight.target_id, factor: Number(factor) }
         : operation === "rotate"
-        ? { target_id: selectedId, degrees: Number(degrees), axis: "y" } // axis stub
-        : { target_id: selectedId, x: Number(x), y: Number(y), z: Number(z) };
+        ? { target_id: preflight.target_id, degrees: Number(degrees), axis: "y" } // axis stub
+        : {
+            target_id: preflight.target_id,
+            x: Number(x),
+            y: Number(y),
+            z: Number(z),
+          };
 
     try {
       const res = await executeTool({
@@ -64,12 +79,14 @@ export default function TransformToolPanel({
         station: "geometry",
         tool,
         payload,
-        mode: "proposals",      // ✅ canonical governed path
-        enablePreview: false,   // set true only if /assistant/proposals/preview exists
+        mode: "proposals", // ✅ canonical governed path
+        enablePreview: false,
       });
 
       if (!res.ok) {
-        throw new Error(res.error?.detail || `Tool rejected (${res.error?.kind || "error"})`);
+        throw new Error(
+          res.error?.detail || `Tool rejected (${res.error?.kind || "error"})`
+        );
       }
 
       onExecuted?.(res.data);
@@ -83,9 +100,9 @@ export default function TransformToolPanel({
   return (
     <div className="border rounded p-3 space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">Transform (Tier 7.11)</div>
+        <div className="text-sm font-semibold">Transform (Tier 7.14)</div>
         <div className="text-xs opacity-75">
-          Target: {selectedId ?? "none"}
+          Target: {preflight.ok ? preflight.target_id : "none"}
         </div>
       </div>
 
@@ -123,7 +140,12 @@ export default function TransformToolPanel({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-2">
-          <Field label="Factor" value={factor} setValue={setFactor} disabled={disabled || busy} />
+          <Field
+            label="Factor"
+            value={factor}
+            setValue={setFactor}
+            disabled={disabled || busy}
+          />
         </div>
       )}
 
@@ -135,16 +157,17 @@ export default function TransformToolPanel({
       ) : null}
 
       <button
+        data-testid="transform-execute"
         className="border rounded px-3 py-2 text-sm"
         onClick={execute}
-        disabled={!canSubmit || busy}
-        title={reasonDisabled ?? ""}
+        disabled={!canSubmit}
+        title={reasonText ?? ""}
       >
-        {busy ? "Executing..." : canSubmit ? "Execute" : `Blocked: ${reasonDisabled}`}
+        {busy ? "Executing..." : canSubmit ? "Execute" : `Blocked: ${reasonText}`}
       </button>
 
       <div className="text-xs opacity-70">
-        This panel only constructs payloads (target_id from selection). The kernel decides.
+        Preflight blocks missing selection/snapshot/disabled state before hitting the kernel.
       </div>
     </div>
   );

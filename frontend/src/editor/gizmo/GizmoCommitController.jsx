@@ -1,25 +1,23 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import TransformGizmo from "./TransformGizmo";
-import { newProposalId } from "../../services/studio/proposalId";
-import {
-  evaluateProposal,
-  previewProposal,
-  applyProposal,
-} from "../../services/studio/assistantProposalsApi";
-import { getAccessToken } from "../../utils/auth";
+
+// Tier 7.15: use typed selection + preflight + adapter
+import { useSelection as useSelectionStore } from "../selection/selectionStore";
+import { toolPreflightGuard } from "../tools/toolPreflightGuard";
+import { executeTool } from "../../services/studio/toolExecutionAdapter";
 
 /**
  * Props:
  * - activeSnapshot: object (must include id, status)
- * - activeTargetId: string|null
- * - enabled: boolean
+ * - activeTargetId: string|null   (legacy prop; kept additive-safe)
+ * - enabled: boolean              (already gated by parent: draft/lock/role/station)
  * - reasonDisabled: string|null
  * - onApplied(newSnapshotId): callback
- * - enablePreview: boolean (safe default false if preview not present)
+ * - enablePreview: boolean (optional; adapter handles non-blocking preview)
  */
 export default function GizmoCommitController({
   activeSnapshot,
-  activeTargetId,
+  activeTargetId, // legacy; kept, but typed selection is canonical now
   enabled,
   reasonDisabled,
   onApplied,
@@ -29,81 +27,86 @@ export default function GizmoCommitController({
   const [lastDecision, setLastDecision] = useState(null);
   const [lastError, setLastError] = useState(null);
 
-  const effectiveEnabled = enabled && !busy;
+  // Canonical selection (Tier 7.13)
+  const selection = useSelectionStore();
+
+  // Preflight (Tier 7.14) — do not execute unless ok
+  const preflight = toolPreflightGuard({
+    selection,
+    uiDisabled: !enabled, // parent already computed eligibility
+    activeSnapshotId: activeSnapshot?.id,
+  });
+
+  const activeTargetIdResolved = preflight.ok ? preflight.target_id : null;
+
+  const reasonText = !preflight.ok
+    ? preflight.reason === "no_selection"
+      ? "select a target"
+      : preflight.reason === "no_snapshot"
+      ? "no active snapshot"
+      : "disabled"
+    : null;
+
+  const effectiveEnabled = enabled && !busy && preflight.ok;
 
   const statusLine = useMemo(() => {
     if (busy) return "Executing...";
+    if (!preflight.ok) return `Blocked: ${reasonText || "blocked"}`;
     if (lastError) return `Error: ${lastError}`;
-    if (lastDecision?.allowed === false) return `Blocked: ${lastDecision.reason || "rejected"}`;
+    if (lastDecision?.allowed === false)
+      return `Blocked: ${lastDecision.reason || "rejected"}`;
     return null;
-  }, [busy, lastError, lastDecision]);
+  }, [busy, preflight.ok, reasonText, lastError, lastDecision]);
 
   const handleCommit = async (toolInvocation) => {
     setLastError(null);
     setLastDecision(null);
 
-    const snapshotId = activeSnapshot?.id;
-    if (!snapshotId) {
-      setLastError("No active snapshot");
-      return;
-    }
-    if (!activeTargetId) {
-      setLastError("No active target");
+    // Preflight first: never call backend if blocked
+    if (!preflight.ok) {
+      setLastError(reasonText || "blocked");
       return;
     }
 
-    // proposal shape expected by backend
-    const proposal = {
-      station: toolInvocation.station,
-      tool: toolInvocation.tool,
-      payload: toolInvocation.payload,
-    };
+    const snapshotId = activeSnapshot?.id;
+    if (!snapshotId) {
+      setLastError("no active snapshot");
+      return;
+    }
 
     setBusy(true);
     try {
-      // 1) Evaluate (kernel gate, read-only)
-      const decision = await evaluateProposal({
+      // Force canonical target_id from typed selection primary
+      const payload = {
+        ...(toolInvocation?.payload || {}),
+        target_id: preflight.target_id,
+      };
+
+      const res = await executeTool({
         snapshotId,
-        proposal,
-        getAccessToken,
+        station: toolInvocation.station,
+        tool: toolInvocation.tool,
+        payload,
+        mode: "proposals",        // ✅ canonical execution path
+        enablePreview: !!enablePreview,
       });
-      setLastDecision(decision);
 
-      if (!decision.allowed) return;
-
-      // 2) Preview (optional, non-blocking)
-      let payloadHash = undefined;
-      if (enablePreview) {
-        try {
-          const preview = await previewProposal({
-            snapshotId,
-            proposal,
-            getAccessToken,
-          });
-          payloadHash = preview.payload_hash || preview.payloadHash;
-        } catch (e) {
-          // preview is optional
-          console.warn("preview failed (non-blocking):", e);
-        }
+      if (!res.ok) {
+        // Keep decision if adapter surfaced it (optional)
+        setLastDecision(res.data?.decision || null);
+        throw new Error(res.error?.detail || res.error?.kind || "rejected");
       }
 
-      // 3) Apply (authoritative execution)
-      const proposalId = newProposalId();
-      const applied = await applyProposal({
-        proposalId,
-        snapshotId,
-        payloadHash,
-        getAccessToken,
-      });
-
+      const applied = res.data || {};
       const newSnapshotId =
         applied.new_snapshot_id || applied.newSnapshotId || applied.snapshot_id;
 
-      if (!newSnapshotId) throw new Error("apply succeeded but no new snapshot id returned");
+      if (!newSnapshotId)
+        throw new Error("apply succeeded but no new snapshot id returned");
 
       onApplied?.(newSnapshotId);
     } catch (e) {
-      setLastError(e?.message || String(e));
+      setLastError(String(e?.message || e));
     } finally {
       setBusy(false);
     }
@@ -113,8 +116,12 @@ export default function GizmoCommitController({
     <div className="space-y-2">
       <TransformGizmo
         enabled={effectiveEnabled}
-        reasonDisabled={reasonDisabled}
-        activeTargetId={activeTargetId}
+        reasonDisabled={
+          !preflight.ok
+            ? reasonText
+            : reasonDisabled || (activeTargetId || activeTargetIdResolved ? null : "select a target")
+        }
+        activeTargetId={activeTargetIdResolved || activeTargetId || null}
         onCommit={handleCommit}
       />
 

@@ -4,15 +4,17 @@ import { executeTool } from "../../services/studio/toolExecutionAdapter";
 import { useSelection } from "../selection/selectionStore";
 import { toolPreflightGuard } from "../tools/toolPreflightGuard";
 import { buildSelectedTargetIds } from "../selection/buildSelectedTargetIds";
+import { computeSelectionBboxStub } from "../selection/computeSelectionBboxStub"; // ✅ Tier 7.21
 import PivotControls from "./PivotControls";
 
 /**
- * Tier 7.14 + Tier 7.19 + Tier 7.20
+ * Tier 7.14 + Tier 7.19 + Tier 7.20 + Tier 7.21
  * - Uses unified selectionStore (v2 primary/secondary) + preflight guard
  * - Blocks execution with normalized reasons (no_selection/no_snapshot/ui_disabled)
  * - Executes only via canonical adapter (Tier 7.12)
  * - Tier 7.19: adds selected_target_ids when multi-select
  * - Tier 7.20: adds pivot UI + pivot_mode/pivot binding when multi-select
+ * - Tier 7.21: adds selection_bbox metadata when multi-select (deterministic stub)
  */
 export default function TransformToolPanel({
   activeSnapshot,
@@ -49,6 +51,12 @@ export default function TransformToolPanel({
   const isMulti = preflight.ok && selectedIds.length > 1;
   const showPivot = isMulti;
 
+  // ✅ Tier 7.21 selection bbox metadata (deterministic stub)
+  const selectionBbox = useMemo(
+    () => (isMulti ? computeSelectionBboxStub(selectedIds) : null),
+    [isMulti, selectedIds]
+  );
+
   const reasonText = useMemo(() => {
     if (preflight.ok) return null;
     if (preflight.reason === "no_selection") return "select a target";
@@ -83,6 +91,9 @@ export default function TransformToolPanel({
       // ✅ Tier 7.20 pivot fields
       pivot_mode: isMulti ? pivotMode : undefined,
       pivot: isMulti && pivotMode === "custom" ? customPivot : undefined,
+
+      // ✅ Tier 7.21 bbox metadata (optional, validated by Tier 7.5 normalizer)
+      selection_bbox: isMulti && selectionBbox ? selectionBbox : undefined,
 
       // optional metadata (useful for audit/telemetry)
       drag_source: "nudge",
@@ -127,7 +138,9 @@ export default function TransformToolPanel({
   return (
     <div className="border rounded p-3 space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">Transform (Tier 7.14 + 7.19 + 7.20)</div>
+        <div className="text-sm font-semibold">
+          Transform (Tier 7.14 + 7.19 + 7.20 + 7.21)
+        </div>
         <div className="text-xs opacity-75">
           Target: {preflight.ok ? preflight.target_id : "none"}{" "}
           {preflight.ok ? `(selected ${selectedIds.length})` : ""}
@@ -163,7 +176,8 @@ export default function TransformToolPanel({
             disabled={disabled || busy}
           />
           <div className="text-xs opacity-70">
-            Axis is stubbed to "y" for now; Tier 7.7+7.4 axis locks/gizmo handles will drive this.
+            Axis is stubbed to "y" for now; Tier 7.7+7.4 axis locks/gizmo handles will drive
+            this.
           </div>
         </div>
       ) : (
@@ -207,7 +221,7 @@ export default function TransformToolPanel({
 
       <div className="text-xs opacity-70">
         Preflight blocks missing selection/snapshot/disabled state before hitting the kernel.
-        {isMulti ? " Multi-select payload + pivot enabled." : ""}
+        {isMulti ? " Multi-select payload + pivot + bbox metadata enabled." : ""}
       </div>
     </div>
   );

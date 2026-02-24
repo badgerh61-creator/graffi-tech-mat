@@ -1,13 +1,16 @@
+// frontend/src/editor/transform/TransformToolPanel.jsx
 import React, { useMemo, useState } from "react";
 import { executeTool } from "../../services/studio/toolExecutionAdapter";
 import { useSelection } from "../selection/selectionStore";
 import { toolPreflightGuard } from "../tools/toolPreflightGuard";
+import { buildSelectedTargetIds } from "../selection/buildSelectedTargetIds";
 
 /**
- * Tier 7.14
- * - Uses selectionStore (v2 primary) + preflight guard
+ * Tier 7.14 + Tier 7.19
+ * - Uses unified selectionStore (v2 primary/secondary) + preflight guard
  * - Blocks execution with normalized reasons (no_selection/no_snapshot/ui_disabled)
  * - Executes only via canonical adapter (Tier 7.12)
+ * - Tier 7.19: adds selected_target_ids + pivot_mode when multi-select
  */
 export default function TransformToolPanel({
   activeSnapshot,
@@ -36,6 +39,9 @@ export default function TransformToolPanel({
     [selection, disabled, activeSnapshot?.id]
   );
 
+  const selectedIds = useMemo(() => buildSelectedTargetIds(selection), [selection]);
+  const isMulti = preflight.ok && selectedIds.length > 1;
+
   const reasonText = useMemo(() => {
     if (preflight.ok) return null;
     if (preflight.reason === "no_selection") return "select a target";
@@ -61,13 +67,24 @@ export default function TransformToolPanel({
         ? "ROTATE"
         : "SCALE";
 
+    const base = {
+      target_id: preflight.target_id,
+
+      // ✅ Tier 7.19 → Tier 7.5 multiselect fields
+      selected_target_ids: isMulti ? selectedIds : undefined,
+      pivot_mode: isMulti ? "bbox_center" : undefined,
+
+      // optional metadata (useful for audit/telemetry)
+      drag_source: "nudge",
+    };
+
     const payload =
       operation === "scale"
-        ? { target_id: preflight.target_id, factor: Number(factor) }
+        ? { ...base, factor: Number(factor) }
         : operation === "rotate"
-        ? { target_id: preflight.target_id, degrees: Number(degrees), axis: "y" } // axis stub
+        ? { ...base, degrees: Number(degrees), axis: "y" } // axis stub
         : {
-            target_id: preflight.target_id,
+            ...base,
             x: Number(x),
             y: Number(y),
             z: Number(z),
@@ -100,9 +117,10 @@ export default function TransformToolPanel({
   return (
     <div className="border rounded p-3 space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">Transform (Tier 7.14)</div>
+        <div className="text-sm font-semibold">Transform (Tier 7.14 + 7.19)</div>
         <div className="text-xs opacity-75">
-          Target: {preflight.ok ? preflight.target_id : "none"}
+          Target: {preflight.ok ? preflight.target_id : "none"}{" "}
+          {preflight.ok ? `(selected ${selectedIds.length})` : ""}
         </div>
       </div>
 
@@ -168,6 +186,7 @@ export default function TransformToolPanel({
 
       <div className="text-xs opacity-70">
         Preflight blocks missing selection/snapshot/disabled state before hitting the kernel.
+        {isMulti ? " Multi-select payload enabled." : ""}
       </div>
     </div>
   );

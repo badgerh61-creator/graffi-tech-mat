@@ -1,3 +1,4 @@
+// frontend/src/editor/selection/selectionStore.js
 import { useSyncExternalStore } from "react";
 
 /**
@@ -95,6 +96,40 @@ export function clearTypedSelection() {
   state.selectedId = null;
 
   emit();
+}
+
+/**
+ * Tier 7.18 — Apply backend /selection/resolve output into this unified store.
+ *
+ * resolved shape:
+ * {
+ *   selected_target_ids: string[],
+ *   active_target_id: string|null,
+ *   winner: string|null
+ * }
+ *
+ * kind is still stubbed to "panel" in this tier.
+ */
+export function applyResolvedSelectionToStore(resolved) {
+  const ids = resolved?.selected_target_ids ?? [];
+  const active = resolved?.active_target_id ?? null;
+
+  if (!ids.length || !active) {
+    clearSelection(); // clears both v1 + v2
+    return;
+  }
+
+  // reset then rebuild deterministically
+  clearSelection();
+
+  // primary = active (bridges selectedId automatically)
+  setPrimarySelection({ kind: "panel", id: active });
+
+  // secondary = all others
+  for (const id of ids) {
+    if (id === active) continue;
+    toggleSecondarySelection({ kind: "panel", id });
+  }
 }
 
 export function useSelection() {

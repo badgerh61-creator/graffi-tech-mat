@@ -1,31 +1,64 @@
+// frontend/src/editor/viewport/ViewportSurface.jsx
 import React from "react";
-import { useSelection, setPrimarySelection, clearSelection } from "../selection/selectionStore";
+import {
+  useSelection,
+  clearSelection,
+  applyResolvedSelectionToStore,
+} from "../selection/selectionStore";
+import { resolveSelectionRemote } from "../selection/resolveSelectionClient";
 
 /**
  * Engine-independent picking surface.
  * Clickable "proxy objects" are DOM nodes with data-target-id.
  *
- * Tier 7.16 (unified store version):
- * - uses setPrimarySelection (typed) as canonical
- * - legacy selectedId stays bridged automatically inside selectionStore.js
+ * Tier 7.18:
+ * - click behavior resolved deterministically via backend /selection/resolve (Tier 7.6)
+ * - supports Shift (toggle) and Ctrl (add)
+ * - store remains unified (legacy selectedId + typed primary/secondary bridged)
  */
 export default function ViewportSurface({ disabled = false }) {
-  const { selectedId, primary } = useSelection();
+  const { selectedId, primary, secondary } = useSelection();
   const typedId = primary?.id ?? null;
 
-  function onClick(e) {
+  async function onClick(e) {
     if (disabled) return;
 
     const el = e.target.closest("[data-target-id]");
     const tid = el?.getAttribute("data-target-id");
 
-    if (!tid) {
-      clearSelection(); // your clearSelection already clears typed+legacy
-      return;
-    }
+    const hitCandidates = tid
+      ? [{ target_id: tid, kind: "panel", depth: 0.1, priority: 0 }]
+      : [];
 
-    // typed-first (canonical); selectionStore bridges selectedId automatically
-    setPrimarySelection({ kind: "panel", id: tid });
+    const modifiers = {
+      shift: !!e.shiftKey,
+      ctrl: !!e.ctrlKey,
+    };
+
+    const previousSelection = {
+      selected_target_ids: [
+        ...(primary?.id ? [primary.id] : []),
+        ...(secondary?.map((s) => s.id) ?? []),
+      ].sort(),
+      active_target_id: primary?.id ?? null,
+    };
+
+    try {
+      const resolved = await resolveSelectionRemote({
+        hitCandidates,
+        modifiers,
+        previousSelection,
+      });
+
+      applyResolvedSelectionToStore(resolved);
+    } catch (err) {
+      console.warn("selection resolve failed:", err);
+
+      // deterministic fallback: empty click clears if no modifiers
+      if (!tid && !modifiers.shift && !modifiers.ctrl) {
+        clearSelection();
+      }
+    }
   }
 
   const proxies = [
@@ -51,6 +84,7 @@ export default function ViewportSurface({ disabled = false }) {
       >
         <div className="text-xs opacity-70 mb-2">
           Click any proxy object to select it. Click empty space to clear.
+          <span className="ml-2 opacity-70">(Shift=toggle, Ctrl=add)</span>
         </div>
 
         <div className="grid grid-cols-3 gap-2">

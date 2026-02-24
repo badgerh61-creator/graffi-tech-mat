@@ -1,15 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { useSelection } from "../selection/selectionStore";
-import { getAccessToken } from "../../utils/auth";
+import { executeTool } from "../../services/studio/toolExecutionAdapter";
 
 /**
- * Tier 7.11
- * Transform UI binds target_id from selectionStore.selectedId.
- * Uses governed execution endpoint (NO direct mutation).
- *
- * NOTE:
- * If your repo prefers assistant proposals execution, we can adapt in Tier 7.12,
- * but Tier 7.11 keeps the tool payload binding clear and testable.
+ * Tier 7.11 + 7.12
+ * - target_id binds from selectionStore.selectedId
+ * - tool execution goes through the canonical adapter (no direct fetch)
  */
 export default function TransformToolPanel({
   activeSnapshot,
@@ -48,8 +44,6 @@ export default function TransformToolPanel({
     setBusy(true);
     setLastError(null);
 
-    const token = getAccessToken();
-
     const tool =
       operation === "translate"
         ? "TRANSLATE"
@@ -64,33 +58,21 @@ export default function TransformToolPanel({
         ? { target_id: selectedId, degrees: Number(degrees), axis: "y" } // axis stub
         : { target_id: selectedId, x: Number(x), y: Number(y), z: Number(z) };
 
-    const body = {
-      snapshot_id: activeSnapshot.id,
-      station: "geometry",
-      tool,
-      payload,
-    };
-
     try {
-      // ✅ Uses your existing /tools router (Tier 7.1 path).
-      // Tier 7.12 will unify this behind one adapter.
-      const res = await fetch("http://127.0.0.1:8000/tools/execute", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
+      const res = await executeTool({
+        snapshotId: activeSnapshot.id,
+        station: "geometry",
+        tool,
+        payload,
+        mode: "proposals",      // ✅ canonical governed path
+        enablePreview: false,   // set true only if /assistant/proposals/preview exists
       });
 
-      const data = await res.json().catch(() => ({}));
-
       if (!res.ok) {
-        const msg = data?.detail || `Tool execution failed: ${res.status}`;
-        throw new Error(msg);
+        throw new Error(res.error?.detail || `Tool rejected (${res.error?.kind || "error"})`);
       }
 
-      onExecuted?.(data);
+      onExecuted?.(res.data);
     } catch (e) {
       setLastError(String(e?.message || e));
     } finally {
@@ -129,7 +111,12 @@ export default function TransformToolPanel({
         </div>
       ) : operation === "rotate" ? (
         <div className="grid grid-cols-1 gap-2">
-          <Field label="Degrees" value={degrees} setValue={setDegrees} disabled={disabled || busy} />
+          <Field
+            label="Degrees"
+            value={degrees}
+            setValue={setDegrees}
+            disabled={disabled || busy}
+          />
           <div className="text-xs opacity-70">
             Axis is stubbed to "y" for now; Tier 7.7+7.4 axis locks/gizmo handles will drive this.
           </div>

@@ -8,14 +8,27 @@ import {
   setSelectedId,
 } from "../../src/editor/selection/selectionStore";
 
+// ✅ Tier 7.12: mock the adapter so Tier 7.11 doesn't depend on network call count/endpoints
+vi.mock("../../src/services/studio/toolExecutionAdapter", () => ({
+  executeTool: vi.fn(async ({ payload }: any) => ({
+    ok: true,
+    data: { new_snapshot_id: 99, echoed_target_id: payload?.target_id },
+  })),
+}));
+
+import { executeTool } from "../../src/services/studio/toolExecutionAdapter";
+
 describe("tier_7_11 TransformToolPanel", () => {
   beforeEach(() => {
     clearSelection();
 
-    // Ensure getAccessToken() returns something
+    // no longer required, but harmless if other tests rely on it
     localStorage.setItem("access_token", "TEST_TOKEN");
 
+    // keep a fetch stub around in case some other import triggers it
     (globalThis as any).fetch = vi.fn();
+
+    vi.clearAllMocks();
   });
 
   it("blocks execution when no selection", () => {
@@ -40,11 +53,6 @@ describe("tier_7_11 TransformToolPanel", () => {
   it("sends target_id from selection store", async () => {
     setSelectedId("panel-1");
 
-    (globalThis as any).fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ new_snapshot_id: 99 }),
-    });
-
     render(<TransformToolPanel activeSnapshot={{ id: 10 }} disabled={false} />);
 
     const btn = screen.getByRole("button", { name: /execute/i });
@@ -54,15 +62,14 @@ describe("tier_7_11 TransformToolPanel", () => {
       await Promise.resolve(); // flush microtasks
     });
 
-    expect((globalThis as any).fetch).toHaveBeenCalledTimes(1);
+    // ✅ We assert adapter called once (stable even if adapter uses 2-3 fetches internally)
+    expect(executeTool).toHaveBeenCalledTimes(1);
 
-    const [url, opts] = (globalThis as any).fetch.mock.calls[0];
+    const args = (executeTool as any).mock.calls[0][0];
 
-    expect(String(url)).toContain("/tools/execute");
-
-    const body = JSON.parse(opts.body);
-
-    expect(body.snapshot_id).toBe(10);
-    expect(body.payload.target_id).toBe("panel-1");
+    expect(args.snapshotId).toBe(10);
+    expect(args.station).toBe("geometry");
+    expect(args.tool).toBe("TRANSLATE");
+    expect(args.payload.target_id).toBe("panel-1");
   });
 });

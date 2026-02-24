@@ -1,3 +1,4 @@
+// frontend/src/editor/gizmo/GizmoCommitController.jsx
 import React, { useMemo, useState } from "react";
 import TransformGizmo from "./TransformGizmo";
 
@@ -5,6 +6,7 @@ import { useSelection } from "../selection/selectionStore";
 import { toolPreflightGuard } from "../tools/toolPreflightGuard";
 import { executeTool } from "../../services/studio/toolExecutionAdapter";
 import { buildGizmoContext } from "./buildGizmoContext";
+import { validatePivot } from "../transform/validatePivot"; // ✅ Tier 7.23
 
 export default function GizmoCommitController({
   activeSnapshot,
@@ -69,6 +71,13 @@ export default function GizmoCommitController({
       const pivotMode = ui.pivotMode || "bbox_center";
       const customPivot = ui.customPivot || { x: 0, y: 0, z: 0 };
 
+      // ✅ Tier 7.23: block invalid custom pivot before hitting kernel
+      const pv = validatePivot(pivotMode, customPivot);
+      if (!pv.ok) {
+        setLastDecision({ allowed: false, reason: pv.reason });
+        throw new Error(pv.reason);
+      }
+
       const ctx = buildGizmoContext({
         selection,
         pivotMode,
@@ -116,7 +125,8 @@ export default function GizmoCommitController({
         reasonDisabled={
           !preflight.ok
             ? reasonText
-            : reasonDisabled || (activeTargetId || activeTargetIdResolved ? null : "select a target")
+            : reasonDisabled ||
+              (activeTargetId || activeTargetIdResolved ? null : "select a target")
         }
         activeTargetId={activeTargetIdResolved || activeTargetId || null}
         onCommit={handleCommit}

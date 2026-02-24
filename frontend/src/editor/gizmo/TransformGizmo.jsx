@@ -1,5 +1,7 @@
+// frontend/src/editor/gizmo/TransformGizmo.jsx
 import { useMemo, useState } from "react";
 import { buildTranslatePayload } from "./payloadBuilders";
+import PivotControls from "../transform/PivotControls";
 
 export default function TransformGizmo({
   enabled,
@@ -10,7 +12,7 @@ export default function TransformGizmo({
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [snapStep, setSnapStep] = useState(0.25);
 
-  // Tier 7.22 — pivot state (UI-only)
+  // Tier 7.22/7.23 — pivot state (UI-only, shared controls)
   const [pivotMode, setPivotMode] = useState("bbox_center");
   const [customPivot, setCustomPivot] = useState({ x: 0, y: 0, z: 0 });
 
@@ -30,12 +32,12 @@ export default function TransformGizmo({
       axis: "x",
       rawDelta: { x: 0.1 * sign, y: 0, z: 0 },
       snap: { enabled: snapEnabled, step: snapStep },
-      // context will be injected by controller
+      // context will be injected by controller (Tier 7.22)
     });
 
     onCommit?.({
       ...toolInvocation,
-      __ui: { pivotMode, customPivot }, // UI metadata for controller
+      __ui: { pivotMode, customPivot }, // UI metadata for controller (Tier 7.22/7.23)
     });
   };
 
@@ -70,37 +72,16 @@ export default function TransformGizmo({
         </label>
       </div>
 
-      {/* Pivot Controls */}
-      <div className="mt-3 flex items-center gap-2">
-        <span className="text-xs opacity-70">Pivot</span>
-        <select
-          className="border rounded px-2 py-1 text-sm"
-          value={pivotMode}
-          onChange={(e) => setPivotMode(e.target.value)}
+      {/* Pivot Controls (shared) */}
+      <div className="mt-3">
+        <PivotControls
+          pivotMode={pivotMode}
+          setPivotMode={setPivotMode}
+          customPivot={customPivot}
+          setCustomPivot={setCustomPivot}
           disabled={!enabled}
-        >
-          <option value="bbox_center">BBox</option>
-          <option value="world_origin">World</option>
-          <option value="custom">Custom</option>
-        </select>
+        />
       </div>
-
-      {pivotMode === "custom" ? (
-        <div className="mt-2 grid grid-cols-3 gap-2">
-          {["x", "y", "z"].map((k) => (
-            <input
-              key={k}
-              className="border rounded px-2 py-1 text-sm"
-              type="number"
-              value={customPivot[k]}
-              onChange={(e) =>
-                setCustomPivot({ ...customPivot, [k]: Number(e.target.value) })
-              }
-              disabled={!enabled}
-            />
-          ))}
-        </div>
-      ) : null}
 
       {/* Nudge */}
       <div className="mt-3 flex gap-2">

@@ -34,6 +34,9 @@ import ViewportSurface from "../editor/viewport/ViewportSurface";
 // ✅ Tier 7.11 ADD (selection → tool payload binding panel)
 import TransformToolPanel from "../editor/transform/TransformToolPanel";
 
+// ✅ Tier 7.17 ADD (typed selection HUD)
+import SelectionHud from "../editor/selection/SelectionHud";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -95,10 +98,7 @@ export default function StudioEditor() {
   const isEditable = activeSnapshot?.status === "draft";
 
   // ✅ Tier 7.9 ADD (resolve active target deterministically)
-  const { targetId: resolvedTargetId } = resolveSelectedTarget(
-    activeSnapshot,
-    selectedId
-  );
+  const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
 
   // =====================================================
   // TIER 7.8 — GIZMO GATE (TEMP stubs for lock/station)
@@ -163,10 +163,7 @@ export default function StudioEditor() {
               </span>
             )}
 
-            <SnapshotPreview
-              snapshot={activeSnapshot}
-              onDraftCreated={fetchSnapshots}
-            />
+            <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
 
             <FinalizeDraftButton snapshot={activeSnapshot} onFinalized={fetchSnapshots} />
           </>
@@ -176,6 +173,11 @@ export default function StudioEditor() {
         <div className="grid grid-cols-[360px_1fr] gap-3 p-3">
           {/* LEFT: tool controls */}
           <div className="space-y-3">
+            {/* ✅ Tier 7.17 ADD (typed selection HUD) */}
+            <div style={{ padding: 12 }}>
+              <SelectionHud />
+            </div>
+
             {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) — kept additive-safe */}
             <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
               <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
@@ -213,7 +215,6 @@ export default function StudioEditor() {
                 disabled={!isEditable}
                 onExecuted={(data) => {
                   console.log("Tool executed:", data);
-                  // optional: refresh snapshots or update UI
                   fetchSnapshots().catch(console.error);
                 }}
               />
@@ -221,10 +222,7 @@ export default function StudioEditor() {
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}
             <div style={{ padding: 12 }}>
-              <ReferenceFramesPanel
-                activeSnapshotId={activeSnapshot?.id}
-                disabled={!isEditable}
-              />
+              <ReferenceFramesPanel activeSnapshotId={activeSnapshot?.id} disabled={!isEditable} />
             </div>
           </div>
 

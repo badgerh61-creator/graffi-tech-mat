@@ -4,13 +4,15 @@ import { executeTool } from "../../services/studio/toolExecutionAdapter";
 import { useSelection } from "../selection/selectionStore";
 import { toolPreflightGuard } from "../tools/toolPreflightGuard";
 import { buildSelectedTargetIds } from "../selection/buildSelectedTargetIds";
+import PivotControls from "./PivotControls";
 
 /**
- * Tier 7.14 + Tier 7.19
+ * Tier 7.14 + Tier 7.19 + Tier 7.20
  * - Uses unified selectionStore (v2 primary/secondary) + preflight guard
  * - Blocks execution with normalized reasons (no_selection/no_snapshot/ui_disabled)
  * - Executes only via canonical adapter (Tier 7.12)
- * - Tier 7.19: adds selected_target_ids + pivot_mode when multi-select
+ * - Tier 7.19: adds selected_target_ids when multi-select
+ * - Tier 7.20: adds pivot UI + pivot_mode/pivot binding when multi-select
  */
 export default function TransformToolPanel({
   activeSnapshot,
@@ -25,6 +27,10 @@ export default function TransformToolPanel({
   const [z, setZ] = useState(0);
   const [factor, setFactor] = useState(1.0);
   const [degrees, setDegrees] = useState(5);
+
+  // Tier 7.20 pivot UI state
+  const [pivotMode, setPivotMode] = useState("bbox_center");
+  const [customPivot, setCustomPivot] = useState({ x: 0, y: 0, z: 0 });
 
   const [busy, setBusy] = useState(false);
   const [lastError, setLastError] = useState(null);
@@ -41,6 +47,7 @@ export default function TransformToolPanel({
 
   const selectedIds = useMemo(() => buildSelectedTargetIds(selection), [selection]);
   const isMulti = preflight.ok && selectedIds.length > 1;
+  const showPivot = isMulti;
 
   const reasonText = useMemo(() => {
     if (preflight.ok) return null;
@@ -72,7 +79,10 @@ export default function TransformToolPanel({
 
       // ✅ Tier 7.19 → Tier 7.5 multiselect fields
       selected_target_ids: isMulti ? selectedIds : undefined,
-      pivot_mode: isMulti ? "bbox_center" : undefined,
+
+      // ✅ Tier 7.20 pivot fields
+      pivot_mode: isMulti ? pivotMode : undefined,
+      pivot: isMulti && pivotMode === "custom" ? customPivot : undefined,
 
       // optional metadata (useful for audit/telemetry)
       drag_source: "nudge",
@@ -117,7 +127,7 @@ export default function TransformToolPanel({
   return (
     <div className="border rounded p-3 space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">Transform (Tier 7.14 + 7.19)</div>
+        <div className="text-sm font-semibold">Transform (Tier 7.14 + 7.19 + 7.20)</div>
         <div className="text-xs opacity-75">
           Target: {preflight.ok ? preflight.target_id : "none"}{" "}
           {preflight.ok ? `(selected ${selectedIds.length})` : ""}
@@ -167,6 +177,17 @@ export default function TransformToolPanel({
         </div>
       )}
 
+      {/* ✅ Tier 7.20: Pivot controls only when multi-select */}
+      {showPivot ? (
+        <PivotControls
+          pivotMode={pivotMode}
+          setPivotMode={setPivotMode}
+          customPivot={customPivot}
+          setCustomPivot={setCustomPivot}
+          disabled={!preflight.ok || busy || disabled}
+        />
+      ) : null}
+
       {lastError ? (
         <div className="text-xs border rounded p-2">
           <div className="font-semibold">Rejected</div>
@@ -186,7 +207,7 @@ export default function TransformToolPanel({
 
       <div className="text-xs opacity-70">
         Preflight blocks missing selection/snapshot/disabled state before hitting the kernel.
-        {isMulti ? " Multi-select payload enabled." : ""}
+        {isMulti ? " Multi-select payload + pivot enabled." : ""}
       </div>
     </div>
   );

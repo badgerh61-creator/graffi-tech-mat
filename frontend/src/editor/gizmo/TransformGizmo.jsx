@@ -1,16 +1,6 @@
 import { useMemo, useState } from "react";
 import { buildTranslatePayload } from "./payloadBuilders";
 
-/**
- * Tier 7.7 — UI-only gizmo stub.
- * No rendering engine dependency yet.
- *
- * Props:
- * - enabled: boolean
- * - reasonDisabled?: string
- * - activeTargetId?: string|null
- * - onCommit(payload): called on "commit" action (authoritative execution elsewhere)
- */
 export default function TransformGizmo({
   enabled,
   reasonDisabled,
@@ -19,6 +9,10 @@ export default function TransformGizmo({
 }) {
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [snapStep, setSnapStep] = useState(0.25);
+
+  // Tier 7.22 — pivot state (UI-only)
+  const [pivotMode, setPivotMode] = useState("bbox_center");
+  const [customPivot, setCustomPivot] = useState({ x: 0, y: 0, z: 0 });
 
   const canShow = !!activeTargetId;
 
@@ -30,15 +24,19 @@ export default function TransformGizmo({
 
   if (!canShow) return null;
 
-  // Minimal "commit" buttons instead of drag handles for now:
   const commitNudgeX = (sign) => {
     const toolInvocation = buildTranslatePayload({
       targetId: activeTargetId,
       axis: "x",
       rawDelta: { x: 0.1 * sign, y: 0, z: 0 },
       snap: { enabled: snapEnabled, step: snapStep },
+      // context will be injected by controller
     });
-    onCommit?.(toolInvocation);
+
+    onCommit?.({
+      ...toolInvocation,
+      __ui: { pivotMode, customPivot }, // UI metadata for controller
+    });
   };
 
   return (
@@ -46,6 +44,7 @@ export default function TransformGizmo({
       <div className="font-semibold">Transform Gizmo</div>
       <div className="opacity-80 mt-1">{statusText}</div>
 
+      {/* Snap Controls */}
       <div className="mt-2 flex items-center gap-2">
         <label className="flex items-center gap-2">
           <input
@@ -71,6 +70,39 @@ export default function TransformGizmo({
         </label>
       </div>
 
+      {/* Pivot Controls */}
+      <div className="mt-3 flex items-center gap-2">
+        <span className="text-xs opacity-70">Pivot</span>
+        <select
+          className="border rounded px-2 py-1 text-sm"
+          value={pivotMode}
+          onChange={(e) => setPivotMode(e.target.value)}
+          disabled={!enabled}
+        >
+          <option value="bbox_center">BBox</option>
+          <option value="world_origin">World</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+
+      {pivotMode === "custom" ? (
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          {["x", "y", "z"].map((k) => (
+            <input
+              key={k}
+              className="border rounded px-2 py-1 text-sm"
+              type="number"
+              value={customPivot[k]}
+              onChange={(e) =>
+                setCustomPivot({ ...customPivot, [k]: Number(e.target.value) })
+              }
+              disabled={!enabled}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {/* Nudge */}
       <div className="mt-3 flex gap-2">
         <button
           className="border rounded px-3 py-1"
@@ -89,7 +121,7 @@ export default function TransformGizmo({
       </div>
 
       <div className="text-xs opacity-70 mt-2">
-        UI-only: emits payloads. Kernel execution is wired in Tier 7.8.
+        UI-only: emits payloads. Kernel execution wired via controller.
       </div>
     </div>
   );

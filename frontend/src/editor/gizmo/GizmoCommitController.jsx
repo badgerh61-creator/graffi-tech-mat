@@ -1,23 +1,14 @@
 import React, { useMemo, useState } from "react";
 import TransformGizmo from "./TransformGizmo";
 
-// Tier 7.15: use typed selection + preflight + adapter
-import { useSelection as useSelectionStore } from "../selection/selectionStore";
+import { useSelection } from "../selection/selectionStore";
 import { toolPreflightGuard } from "../tools/toolPreflightGuard";
 import { executeTool } from "../../services/studio/toolExecutionAdapter";
+import { buildGizmoContext } from "./buildGizmoContext";
 
-/**
- * Props:
- * - activeSnapshot: object (must include id, status)
- * - activeTargetId: string|null   (legacy prop; kept additive-safe)
- * - enabled: boolean              (already gated by parent: draft/lock/role/station)
- * - reasonDisabled: string|null
- * - onApplied(newSnapshotId): callback
- * - enablePreview: boolean (optional; adapter handles non-blocking preview)
- */
 export default function GizmoCommitController({
   activeSnapshot,
-  activeTargetId, // legacy; kept, but typed selection is canonical now
+  activeTargetId,
   enabled,
   reasonDisabled,
   onApplied,
@@ -27,13 +18,11 @@ export default function GizmoCommitController({
   const [lastDecision, setLastDecision] = useState(null);
   const [lastError, setLastError] = useState(null);
 
-  // Canonical selection (Tier 7.13)
-  const selection = useSelectionStore();
+  const selection = useSelection();
 
-  // Preflight (Tier 7.14) — do not execute unless ok
   const preflight = toolPreflightGuard({
     selection,
-    uiDisabled: !enabled, // parent already computed eligibility
+    uiDisabled: !enabled,
     activeSnapshotId: activeSnapshot?.id,
   });
 
@@ -62,7 +51,6 @@ export default function GizmoCommitController({
     setLastError(null);
     setLastDecision(null);
 
-    // Preflight first: never call backend if blocked
     if (!preflight.ok) {
       setLastError(reasonText || "blocked");
       return;
@@ -75,11 +63,21 @@ export default function GizmoCommitController({
     }
 
     setBusy(true);
+
     try {
-      // Force canonical target_id from typed selection primary
+      const ui = toolInvocation.__ui || {};
+      const pivotMode = ui.pivotMode || "bbox_center";
+      const customPivot = ui.customPivot || { x: 0, y: 0, z: 0 };
+
+      const ctx = buildGizmoContext({
+        selection,
+        pivotMode,
+        customPivot,
+      });
+
       const payload = {
         ...(toolInvocation?.payload || {}),
-        target_id: preflight.target_id,
+        ...(ctx || {}),
       };
 
       const res = await executeTool({
@@ -87,12 +85,11 @@ export default function GizmoCommitController({
         station: toolInvocation.station,
         tool: toolInvocation.tool,
         payload,
-        mode: "proposals",        // ✅ canonical execution path
+        mode: "proposals",
         enablePreview: !!enablePreview,
       });
 
       if (!res.ok) {
-        // Keep decision if adapter surfaced it (optional)
         setLastDecision(res.data?.decision || null);
         throw new Error(res.error?.detail || res.error?.kind || "rejected");
       }

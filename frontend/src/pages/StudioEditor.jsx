@@ -31,6 +31,9 @@ import { resolveSelectedTarget } from "../editor/selection/resolveSelectedTarget
 // ✅ Tier 7.10 ADD (viewport picking stub)
 import ViewportSurface from "../editor/viewport/ViewportSurface";
 
+// ✅ Tier 7.11 ADD (selection → tool payload binding panel)
+import TransformToolPanel from "../editor/transform/TransformToolPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -160,7 +163,10 @@ export default function StudioEditor() {
               </span>
             )}
 
-            <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
+            <SnapshotPreview
+              snapshot={activeSnapshot}
+              onDraftCreated={fetchSnapshots}
+            />
 
             <FinalizeDraftButton snapshot={activeSnapshot} onFinalized={fetchSnapshots} />
           </>
@@ -195,6 +201,19 @@ export default function StudioEditor() {
                 enablePreview={false} // set true only if /assistant/proposals/preview exists
                 onApplied={(newId) => {
                   console.log("Applied new snapshot:", newId);
+                  fetchSnapshots().catch(console.error);
+                }}
+              />
+            </div>
+
+            {/* ✅ Tier 7.11 ADD (transform tool panel binds target_id from selectionStore) */}
+            <div style={{ padding: 12 }}>
+              <TransformToolPanel
+                activeSnapshot={activeSnapshot}
+                disabled={!isEditable}
+                onExecuted={(data) => {
+                  console.log("Tool executed:", data);
+                  // optional: refresh snapshots or update UI
                   fetchSnapshots().catch(console.error);
                 }}
               />

@@ -11,6 +11,9 @@ import { clearSelection, setSelectedId, useSelection } from "../selection/select
 // ✅ 6G.6 layers
 import { useSceneLayers, ensureKind } from "./layersStore";
 
+// ✅ 7.27 preview ghost
+import { useGizmoPreview } from "../gizmo/gizmoPreviewStore";
+
 function makeRenderer(canvas) {
   const r = new THREE.WebGLRenderer({ canvas, antialias: true });
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -64,7 +67,6 @@ function fitCameraToObject(camera, object3d) {
 function applyOpacityToMaterial(material, opacity) {
   const op = Number.isFinite(Number(opacity)) ? Number(opacity) : 1.0;
   const clamped = Math.min(1, Math.max(0, op));
-
   if (!material) return;
 
   if (Array.isArray(material)) {
@@ -89,6 +91,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
   // ✅ 6G.6 layers state
   const layers = useSceneLayers();
+
+  // ✅ 7.27 preview state
+  const { preview } = useGizmoPreview();
 
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
@@ -116,6 +121,25 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     const root = new THREE.Group();
     root.name = "scene-root";
     scene.add(root);
+
+    // ✅ 7.27 ghost holder
+    let ghost = null;
+
+    function clearGhost() {
+      if (!ghost) return;
+
+      root.remove(ghost);
+      ghost.traverse((n) => {
+        if (n?.isMesh) {
+          n.geometry?.dispose?.();
+          const mat = n.material;
+          if (Array.isArray(mat)) mat.forEach((m) => m?.dispose?.());
+          else mat?.dispose?.();
+        }
+      });
+
+      ghost = null;
+    }
 
     // camera
     const rect = container.getBoundingClientRect();
@@ -177,14 +201,12 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     // ✅ 6G.7 object groups for framing
     const objectGroups = new Map(); // objectId -> THREE.Group
 
-    // ✅ helper: find objectId for a hit mesh
     function resolveObjectIdFromHitMesh(hitMesh) {
       if (!hitMesh) return null;
 
       let objectId = meshToObjectId.get(hitMesh);
       if (objectId) return objectId;
 
-      // fallback: walk parents to find group name "obj:<id>"
       let p = hitMesh.parent;
       while (p && !objectId) {
         if (typeof p.name === "string" && p.name.startsWith("obj:")) {
@@ -196,14 +218,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       return objectId || null;
     }
 
-    // ✅ 6G.5-friendly improvement: prefer named ancestor ONLY for ID-building
     function pickIdNodeForMeshPath(hitMesh) {
       if (!hitMesh) return null;
-
-      // If the mesh already has a name, use it
       if (hitMesh.name && String(hitMesh.name).trim()) return hitMesh;
 
-      // Otherwise climb until boundary; return first named node
       let p = hitMesh.parent;
       while (p) {
         if (typeof p.name === "string" && p.name.startsWith("obj:")) break;
@@ -213,7 +231,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       return hitMesh;
     }
 
-    // ✅ 6G.7: frame selected object or whole scene (no selection mutation)
     function frameSelectedOrScene() {
       if (!selectedId) {
         fitCameraToScene(camera, root);
@@ -227,6 +244,65 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       else fitCameraToScene(camera, root);
     }
 
+    // ✅ 7.27 apply ghost from preview
+    function applyPreviewGhost() {
+      clearGhost();
+      if (!preview) return;
+
+      const targetId = preview.payload?.target_id || preview.target_id;
+      if (!targetId) return;
+
+      const objectId = String(targetId).split("::")[0];
+      const group = objectGroups.get(objectId);
+      if (!group) return;
+
+      ghost = group.clone(true);
+      ghost.name = `ghost:${group.name || objectId}`;
+
+      const ghostOpacity = 0.35;
+
+      ghost.traverse((node) => {
+        if (node?.isMesh && node.material) {
+          const mats = Array.isArray(node.material) ? node.material : [node.material];
+          const cloned = mats.map((m) => {
+            const mm = m.clone();
+            mm.transparent = true;
+            mm.opacity = ghostOpacity;
+            mm.depthWrite = false;
+            mm.needsUpdate = true;
+            return mm;
+          });
+          node.material = Array.isArray(node.material) ? cloned : cloned[0];
+        }
+      });
+
+      const tool = preview.tool;
+      const p = preview.payload || {};
+
+      if (tool === "TRANSLATE") {
+        const d = p.delta || {};
+        ghost.position.x += Number(d.x || 0);
+        ghost.position.y += Number(d.y || 0);
+        ghost.position.z += Number(d.z || 0);
+      } else if (tool === "ROTATE") {
+        const degrees = Number(p.degrees || 0);
+        const rad = (degrees * Math.PI) / 180;
+        const axis = String(p.axis || "y");
+        if (axis === "x") ghost.rotation.x += rad;
+        else if (axis === "y") ghost.rotation.y += rad;
+        else ghost.rotation.z += rad;
+      } else if (tool === "SCALE") {
+        const factor = Number(p.factor || 1);
+        const axis = String(p.axis || "uniform");
+        if (axis === "uniform") ghost.scale.multiplyScalar(factor);
+        else if (axis === "x") ghost.scale.x *= factor;
+        else if (axis === "y") ghost.scale.y *= factor;
+        else ghost.scale.z *= factor;
+      }
+
+      root.add(ghost);
+    }
+
     async function loadAll() {
       setErr(null);
       pickables = [];
@@ -235,6 +311,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       setLoadingCount(0);
 
       // clear root
+      clearGhost();
       while (root.children.length) root.remove(root.children[0]);
 
       if (!objects.length) return;
@@ -254,13 +331,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         group.name = `obj:${objId}`;
         group.userData.kind = kind;
 
-        // ✅ layer visibility
         group.visible = !!cfg.visible;
 
         root.add(group);
         objectGroups.set(objId, group);
 
-        // apply transform to group
         applyTransformToObject3D(group, obj.transform);
 
         const assetRef = obj.asset_ref ? String(obj.asset_ref).trim() : "";
@@ -316,8 +391,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         }
       }
 
-      // default framing after load
       fitCameraToScene(camera, root);
+
+      // ✅ After objects exist, apply ghost (if preview active)
+      applyPreviewGhost();
     }
 
     loadAll();
@@ -346,7 +423,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         return;
       }
 
-      // ✅ use named ancestor only for nicer mesh_path (6G.5)
       const idNode = pickIdNodeForMeshPath(hitMesh);
 
       const id = buildPickedTargetId({ objectId, mesh: idNode });
@@ -358,7 +434,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       setSelectedId(id);
     }
 
-    // ✅ 6G.7: double-click = select + frame object
     function onDoubleClick(e) {
       if (disabled) return;
 
@@ -386,7 +461,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       else fitCameraToScene(camera, root);
     }
 
-    // ✅ 6G.7: F key framing (no selection mutation)
     function onKeyDown(e) {
       if (String(e.key || "").toLowerCase() === "f") {
         frameSelectedOrScene();
@@ -408,6 +482,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
+
+      clearGhost();
 
       canvas.removeEventListener("click", onClick);
       canvas.removeEventListener("dblclick", onDoubleClick);
@@ -431,9 +507,14 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       renderer.dispose();
     };
-    // ✅ re-run on objects/disabled/layers/selection (selection needed for F framing)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds), selectedId]);
+  }, [
+    JSON.stringify(objects),
+    disabled,
+    JSON.stringify(layers.kinds),
+    selectedId,
+    JSON.stringify(preview || null), // ✅ 7.27 re-apply ghost when preview changes
+  ]);
 
   return (
     <div className="border rounded p-3 space-y-2">
@@ -459,6 +540,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       <div className="text-xs opacity-70">
         Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to frame selected (or whole scene).
+        Dragging gizmo pads shows a ghost preview (UI-only).
       </div>
     </div>
   );

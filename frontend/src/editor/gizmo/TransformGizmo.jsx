@@ -12,6 +12,14 @@ import DragPad from "./DragPad";
 import PivotControls from "../transform/PivotControls";
 import SnapControls from "../transform/SnapControls";
 
+// ✅ Tier 7.27 — preview store + deterministic preview math
+import { setGizmoPreview, clearGizmoPreview } from "./gizmoPreviewStore";
+import {
+  makeTranslatePreview,
+  makeRotatePreview,
+  makeScalePreview,
+} from "./previewMath";
+
 export default function TransformGizmo({
   enabled,
   reasonDisabled,
@@ -158,7 +166,8 @@ export default function TransformGizmo({
       ? "Degree step"
       : "Scale step";
 
-  const snapInputStep = mode === "translate" ? 0.05 : mode === "rotate" ? 1 : 0.01;
+  const snapInputStep =
+    mode === "translate" ? 0.05 : mode === "rotate" ? 1 : 0.01;
 
   // =========================
   // Render
@@ -174,7 +183,10 @@ export default function TransformGizmo({
         <span className="text-xs opacity-70">Mode</span>
         <select
           value={mode}
-          onChange={(e) => setMode(e.target.value)}
+          onChange={(e) => {
+            setMode(e.target.value);
+            clearGizmoPreview(); // ✅ switching modes clears ghost preview
+          }}
           disabled={!enabled}
           className="border rounded px-2 py-1 text-sm"
         >
@@ -187,9 +199,15 @@ export default function TransformGizmo({
       {/* Snap Controls */}
       <SnapControls
         enabled={snapEnabled}
-        setEnabled={setSnapEnabled}
+        setEnabled={(v) => {
+          setSnapEnabled(v);
+          clearGizmoPreview(); // ✅ snap changes should clear current preview
+        }}
         step={snapStep}
-        setStep={setSnapStep}
+        setStep={(v) => {
+          setSnapStep(v);
+          clearGizmoPreview(); // ✅ step changes should clear current preview
+        }}
         label="Snapping"
         stepLabel={snapLabel}
         stepInputStep={snapInputStep}
@@ -199,13 +217,19 @@ export default function TransformGizmo({
       {/* Pivot Controls */}
       <PivotControls
         pivotMode={pivotMode}
-        setPivotMode={setPivotMode}
+        setPivotMode={(v) => {
+          setPivotMode(v);
+          clearGizmoPreview(); // ✅ pivot changes clear preview
+        }}
         customPivot={customPivot}
-        setCustomPivot={setCustomPivot}
+        setCustomPivot={(v) => {
+          setCustomPivot(v);
+          clearGizmoPreview(); // ✅ pivot changes clear preview
+        }}
         disabled={!enabled}
       />
 
-      {/* Tier 7.26 — Drag Pads (release => one commit) */}
+      {/* Tier 7.26 + 7.27 — Drag Pads (preview while dragging, release => one commit) */}
       {mode === "translate" ? (
         <div className="grid grid-cols-1 gap-2">
           <DragPad
@@ -214,7 +238,21 @@ export default function TransformGizmo({
             axisLabel="X"
             mode="translate"
             scale={TRANSLATE_PER_PX}
-            onCommit={(v) => commitTranslateFromDrag("x", v)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeTranslatePreview({
+                  targetId: activeTargetId,
+                  axis: "x",
+                  rawDeltaAxis: v,
+                  snap: { enabled: snapEnabled, step: snapStepTranslate },
+                })
+              );
+            }}
+            onCommit={(v) => {
+              clearGizmoPreview();
+              commitTranslateFromDrag("x", v);
+            }}
           />
           <DragPad
             enabled={enabled}
@@ -222,7 +260,21 @@ export default function TransformGizmo({
             axisLabel="Y"
             mode="translate"
             scale={TRANSLATE_PER_PX}
-            onCommit={(v) => commitTranslateFromDrag("y", v)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeTranslatePreview({
+                  targetId: activeTargetId,
+                  axis: "y",
+                  rawDeltaAxis: v,
+                  snap: { enabled: snapEnabled, step: snapStepTranslate },
+                })
+              );
+            }}
+            onCommit={(v) => {
+              clearGizmoPreview();
+              commitTranslateFromDrag("y", v);
+            }}
           />
           <DragPad
             enabled={enabled}
@@ -230,7 +282,21 @@ export default function TransformGizmo({
             axisLabel="Z"
             mode="translate"
             scale={TRANSLATE_PER_PX}
-            onCommit={(v) => commitTranslateFromDrag("z", v)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeTranslatePreview({
+                  targetId: activeTargetId,
+                  axis: "z",
+                  rawDeltaAxis: v,
+                  snap: { enabled: snapEnabled, step: snapStepTranslate },
+                })
+              );
+            }}
+            onCommit={(v) => {
+              clearGizmoPreview();
+              commitTranslateFromDrag("z", v);
+            }}
           />
         </div>
       ) : mode === "rotate" ? (
@@ -241,7 +307,21 @@ export default function TransformGizmo({
             axisLabel="X"
             mode="rotate"
             scale={ROTATE_DEG_PER_PX}
-            onCommit={(deg) => commitRotateFromDrag("x", deg)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeRotatePreview({
+                  targetId: activeTargetId,
+                  axis: "x",
+                  rawDegrees: v,
+                  snap: { enabled: snapEnabled, step_degrees: snapStepDegrees },
+                })
+              );
+            }}
+            onCommit={(deg) => {
+              clearGizmoPreview();
+              commitRotateFromDrag("x", deg);
+            }}
           />
           <DragPad
             enabled={enabled}
@@ -249,7 +329,21 @@ export default function TransformGizmo({
             axisLabel="Y"
             mode="rotate"
             scale={ROTATE_DEG_PER_PX}
-            onCommit={(deg) => commitRotateFromDrag("y", deg)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeRotatePreview({
+                  targetId: activeTargetId,
+                  axis: "y",
+                  rawDegrees: v,
+                  snap: { enabled: snapEnabled, step_degrees: snapStepDegrees },
+                })
+              );
+            }}
+            onCommit={(deg) => {
+              clearGizmoPreview();
+              commitRotateFromDrag("y", deg);
+            }}
           />
           <DragPad
             enabled={enabled}
@@ -257,7 +351,21 @@ export default function TransformGizmo({
             axisLabel="Z"
             mode="rotate"
             scale={ROTATE_DEG_PER_PX}
-            onCommit={(deg) => commitRotateFromDrag("z", deg)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeRotatePreview({
+                  targetId: activeTargetId,
+                  axis: "z",
+                  rawDegrees: v,
+                  snap: { enabled: snapEnabled, step_degrees: snapStepDegrees },
+                })
+              );
+            }}
+            onCommit={(deg) => {
+              clearGizmoPreview();
+              commitRotateFromDrag("z", deg);
+            }}
           />
         </div>
       ) : (
@@ -268,7 +376,21 @@ export default function TransformGizmo({
             axisLabel="Uniform"
             mode="scale"
             scale={SCALE_PER_PX}
-            onCommit={(factor) => commitScaleFromDrag("uniform", factor)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeScalePreview({
+                  targetId: activeTargetId,
+                  axis: "uniform",
+                  rawFactor: v,
+                  snap: { enabled: snapEnabled, step_factor: snapStepFactor },
+                })
+              );
+            }}
+            onCommit={(factor) => {
+              clearGizmoPreview();
+              commitScaleFromDrag("uniform", factor);
+            }}
           />
           <DragPad
             enabled={enabled}
@@ -276,7 +398,21 @@ export default function TransformGizmo({
             axisLabel="X"
             mode="scale"
             scale={SCALE_PER_PX}
-            onCommit={(factor) => commitScaleFromDrag("x", factor)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeScalePreview({
+                  targetId: activeTargetId,
+                  axis: "x",
+                  rawFactor: v,
+                  snap: { enabled: snapEnabled, step_factor: snapStepFactor },
+                })
+              );
+            }}
+            onCommit={(factor) => {
+              clearGizmoPreview();
+              commitScaleFromDrag("x", factor);
+            }}
           />
           <DragPad
             enabled={enabled}
@@ -284,7 +420,21 @@ export default function TransformGizmo({
             axisLabel="Y"
             mode="scale"
             scale={SCALE_PER_PX}
-            onCommit={(factor) => commitScaleFromDrag("y", factor)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeScalePreview({
+                  targetId: activeTargetId,
+                  axis: "y",
+                  rawFactor: v,
+                  snap: { enabled: snapEnabled, step_factor: snapStepFactor },
+                })
+              );
+            }}
+            onCommit={(factor) => {
+              clearGizmoPreview();
+              commitScaleFromDrag("y", factor);
+            }}
           />
           <DragPad
             enabled={enabled}
@@ -292,13 +442,27 @@ export default function TransformGizmo({
             axisLabel="Z"
             mode="scale"
             scale={SCALE_PER_PX}
-            onCommit={(factor) => commitScaleFromDrag("z", factor)}
+            onPreview={(v) => {
+              if (v == null) return clearGizmoPreview();
+              setGizmoPreview(
+                makeScalePreview({
+                  targetId: activeTargetId,
+                  axis: "z",
+                  rawFactor: v,
+                  snap: { enabled: snapEnabled, step_factor: snapStepFactor },
+                })
+              );
+            }}
+            onCommit={(factor) => {
+              clearGizmoPreview();
+              commitScaleFromDrag("z", factor);
+            }}
           />
         </div>
       )}
 
       <div className="text-xs opacity-70">
-        UI-only: drag previews locally; release emits one governed tool payload. Kernel execution via controller.
+        UI-only: drag previews with a ghost; release emits one governed tool payload. Kernel execution via controller.
       </div>
     </div>
   );

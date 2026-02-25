@@ -28,7 +28,7 @@ import GizmoCommitController from "../editor/gizmo/GizmoCommitController";
 import { useSelection as useSelectionStore } from "../editor/selection/selectionStore";
 import { resolveSelectedTarget } from "../editor/selection/resolveSelectedTarget";
 
-// ✅ Tier 7.10 ADD (viewport picking stub)
+// ✅ Tier 7.10 ADD (viewport picking stub) — keep as fallback
 import ViewportSurface from "../editor/viewport/ViewportSurface";
 
 // ✅ Tier 7.11 ADD (selection → tool payload binding panel)
@@ -43,6 +43,9 @@ import SceneIndexPanel from "../editor/scene/SceneIndexPanel";
 
 // ✅ Tier 6G.2 ADD (attach asset panel)
 import AttachAssetPanel from "../editor/scene/AttachAssetPanel";
+
+// ✅ Tier 6G.3 ADD (real Three.js viewer + picking)
+import ThreeSceneViewer from "../editor/scene/ThreeSceneViewer";
 
 export default function StudioEditor() {
   const user = getCurrentUser();
@@ -268,8 +271,14 @@ export default function StudioEditor() {
             </div>
           </div>
 
-          {/* RIGHT: viewport picking + editor host */}
+          {/* RIGHT: viewport + editor host */}
           <div className="space-y-3">
+            {/* ✅ Tier 6G.3: Real Viewer (Three.js) */}
+            <div style={{ padding: 12 }}>
+              <ThreeSceneViewer sceneIndex={sceneIndex} disabled={!activeSnapshot?.id} />
+            </div>
+
+            {/* ✅ Keep Tier 7.10 stub viewport as a fallback/debug surface */}
             <ViewportSurface disabled={!activeSnapshot} />
 
             {/* ===============================

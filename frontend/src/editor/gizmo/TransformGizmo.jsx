@@ -7,6 +7,8 @@ import {
   buildScalePayload,
 } from "./payloadBuilders";
 
+import DragPad from "./DragPad";
+
 import PivotControls from "../transform/PivotControls";
 import SnapControls from "../transform/SnapControls";
 
@@ -47,72 +49,89 @@ export default function TransformGizmo({
   if (!canShow) return null;
 
   // =========================
-  // Commit Helpers
+  // Deterministic mapping scales (Tier 7.26)
+  // =========================
+  const TRANSLATE_PER_PX = 0.02; // units per px (tune later)
+  const ROTATE_DEG_PER_PX = 0.2; // degrees per px
+  const SCALE_PER_PX = 0.005; // factor delta per px
+
+  // =========================
+  // Commit Helpers (Drag → one commit)
   // =========================
 
-  const commitTranslate = (axis, sign) => {
+  function commitTranslateFromDrag(axis, rawDeltaAxis) {
+    const rawDelta =
+      axis === "x"
+        ? { x: rawDeltaAxis, y: 0, z: 0 }
+        : axis === "y"
+        ? { x: 0, y: rawDeltaAxis, z: 0 }
+        : { x: 0, y: 0, z: rawDeltaAxis };
+
     const invocation = buildTranslatePayload({
       targetId: activeTargetId,
       axis,
-      rawDelta:
-        axis === "x"
-          ? { x: 0.1 * sign, y: 0, z: 0 }
-          : axis === "y"
-          ? { x: 0, y: 0.1 * sign, z: 0 }
-          : { x: 0, y: 0, z: 0.1 * sign },
+      rawDelta,
       snap: { enabled: snapEnabled, step: snapStepTranslate },
     });
 
     onCommit?.({
       ...invocation,
       __ui: {
+        mode: "translate",
         pivotMode,
         customPivot,
         snapEnabled,
         snapStep: snapStepTranslate,
+        mapping: { per_px: TRANSLATE_PER_PX },
       },
     });
-  };
+  }
 
-  const commitRotate = (axis, sign) => {
+  function commitRotateFromDrag(axis, rawDegrees) {
     const invocation = buildRotatePayload({
       targetId: activeTargetId,
       axis,
-      rawDegrees: 10 * sign,
+      rawDegrees,
       snap: { enabled: snapEnabled, step_degrees: snapStepDegrees },
     });
 
     onCommit?.({
       ...invocation,
       __ui: {
+        mode: "rotate",
         pivotMode,
         customPivot,
         snapEnabled,
         snapStepDegrees,
+        mapping: { deg_per_px: ROTATE_DEG_PER_PX },
       },
     });
-  };
+  }
 
-  const commitScale = (axis, sign) => {
-    const factor = sign > 0 ? 1.1 : 0.9;
+  function commitScaleFromDrag(axis, rawFactor) {
+    let f = rawFactor;
+    if (!Number.isFinite(f)) f = 1;
+    f = Math.max(0.01, Math.min(100, f));
 
     const invocation = buildScalePayload({
       targetId: activeTargetId,
       axis,
-      rawFactor: factor,
+      rawFactor: f,
       snap: { enabled: snapEnabled, step_factor: snapStepFactor },
     });
 
     onCommit?.({
       ...invocation,
       __ui: {
+        mode: "scale",
         pivotMode,
         customPivot,
         snapEnabled,
         snapStepFactor,
+        mapping: { per_px: SCALE_PER_PX },
       },
     });
-  };
+  }
 
   // =========================
   // Snap UI Config (dynamic per mode)
@@ -139,12 +158,7 @@ export default function TransformGizmo({
       ? "Degree step"
       : "Scale step";
 
-  const snapInputStep =
-    mode === "translate"
-      ? 0.05
-      : mode === "rotate"
-      ? 1
-      : 0.01;
+  const snapInputStep = mode === "translate" ? 0.05 : mode === "rotate" ? 1 : 0.01;
 
   // =========================
   // Render
@@ -191,44 +205,100 @@ export default function TransformGizmo({
         disabled={!enabled}
       />
 
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-2">
-        {mode === "translate" && (
-          <>
-            <button className="border rounded px-3 py-1" onClick={() => commitTranslate("x", -1)} disabled={!enabled}>
-              Nudge -X
-            </button>
-            <button className="border rounded px-3 py-1" onClick={() => commitTranslate("x", +1)} disabled={!enabled}>
-              Nudge +X
-            </button>
-          </>
-        )}
-
-        {mode === "rotate" && (
-          <>
-            <button className="border rounded px-3 py-1" onClick={() => commitRotate("y", -1)} disabled={!enabled}>
-              Rotate -Y
-            </button>
-            <button className="border rounded px-3 py-1" onClick={() => commitRotate("y", +1)} disabled={!enabled}>
-              Rotate +Y
-            </button>
-          </>
-        )}
-
-        {mode === "scale" && (
-          <>
-            <button className="border rounded px-3 py-1" onClick={() => commitScale("uniform", -1)} disabled={!enabled}>
-              Scale -
-            </button>
-            <button className="border rounded px-3 py-1" onClick={() => commitScale("uniform", +1)} disabled={!enabled}>
-              Scale +
-            </button>
-          </>
-        )}
-      </div>
+      {/* Tier 7.26 — Drag Pads (release => one commit) */}
+      {mode === "translate" ? (
+        <div className="grid grid-cols-1 gap-2">
+          <DragPad
+            enabled={enabled}
+            label="Translate"
+            axisLabel="X"
+            mode="translate"
+            scale={TRANSLATE_PER_PX}
+            onCommit={(v) => commitTranslateFromDrag("x", v)}
+          />
+          <DragPad
+            enabled={enabled}
+            label="Translate"
+            axisLabel="Y"
+            mode="translate"
+            scale={TRANSLATE_PER_PX}
+            onCommit={(v) => commitTranslateFromDrag("y", v)}
+          />
+          <DragPad
+            enabled={enabled}
+            label="Translate"
+            axisLabel="Z"
+            mode="translate"
+            scale={TRANSLATE_PER_PX}
+            onCommit={(v) => commitTranslateFromDrag("z", v)}
+          />
+        </div>
+      ) : mode === "rotate" ? (
+        <div className="grid grid-cols-1 gap-2">
+          <DragPad
+            enabled={enabled}
+            label="Rotate"
+            axisLabel="X"
+            mode="rotate"
+            scale={ROTATE_DEG_PER_PX}
+            onCommit={(deg) => commitRotateFromDrag("x", deg)}
+          />
+          <DragPad
+            enabled={enabled}
+            label="Rotate"
+            axisLabel="Y"
+            mode="rotate"
+            scale={ROTATE_DEG_PER_PX}
+            onCommit={(deg) => commitRotateFromDrag("y", deg)}
+          />
+          <DragPad
+            enabled={enabled}
+            label="Rotate"
+            axisLabel="Z"
+            mode="rotate"
+            scale={ROTATE_DEG_PER_PX}
+            onCommit={(deg) => commitRotateFromDrag("z", deg)}
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-2">
+          <DragPad
+            enabled={enabled}
+            label="Scale"
+            axisLabel="Uniform"
+            mode="scale"
+            scale={SCALE_PER_PX}
+            onCommit={(factor) => commitScaleFromDrag("uniform", factor)}
+          />
+          <DragPad
+            enabled={enabled}
+            label="Scale"
+            axisLabel="X"
+            mode="scale"
+            scale={SCALE_PER_PX}
+            onCommit={(factor) => commitScaleFromDrag("x", factor)}
+          />
+          <DragPad
+            enabled={enabled}
+            label="Scale"
+            axisLabel="Y"
+            mode="scale"
+            scale={SCALE_PER_PX}
+            onCommit={(factor) => commitScaleFromDrag("y", factor)}
+          />
+          <DragPad
+            enabled={enabled}
+            label="Scale"
+            axisLabel="Z"
+            mode="scale"
+            scale={SCALE_PER_PX}
+            onCommit={(factor) => commitScaleFromDrag("z", factor)}
+          />
+        </div>
+      )}
 
       <div className="text-xs opacity-70">
-        UI-only: emits governed tool payloads. Kernel execution via controller.
+        UI-only: drag previews locally; release emits one governed tool payload. Kernel execution via controller.
       </div>
     </div>
   );

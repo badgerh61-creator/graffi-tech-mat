@@ -14,7 +14,6 @@ describe("tier_7_20 pivot payload", () => {
       "../../src/services/studio/toolExecutionAdapter"
     );
 
-    // Seed unified selection store (primary + secondary) using the v2 API you added
     const { clearSelection, setPrimarySelection, toggleSecondarySelection } =
       await import("../../src/editor/selection/selectionStore");
 
@@ -31,15 +30,15 @@ describe("tier_7_20 pivot payload", () => {
       fireEvent.change(modeSelect, { target: { value: "custom" } });
     });
 
-    // set pivot xyz inputs (they appear only in custom)
-    const spin = screen.getAllByRole("spinbutton");
-    // last 3 number inputs are pivot xyz in this layout
-    const last3 = spin.slice(-3);
+    // ✅ Robust: target pivot inputs by label (SnapControls added new spinbuttons)
+    const pivotX = screen.getByLabelText("X");
+    const pivotY = screen.getByLabelText("Y");
+    const pivotZ = screen.getByLabelText("Z");
 
     await act(async () => {
-      fireEvent.change(last3[0], { target: { value: "1" } });
-      fireEvent.change(last3[1], { target: { value: "2" } });
-      fireEvent.change(last3[2], { target: { value: "3" } });
+      fireEvent.change(pivotX, { target: { value: "1" } });
+      fireEvent.change(pivotY, { target: { value: "2" } });
+      fireEvent.change(pivotZ, { target: { value: "3" } });
     });
 
     await act(async () => {
@@ -50,5 +49,8 @@ describe("tier_7_20 pivot payload", () => {
     expect(call.payload.selected_target_ids).toEqual(["a", "b"]);
     expect(call.payload.pivot_mode).toBe("custom");
     expect(call.payload.pivot).toEqual({ x: 1, y: 2, z: 3 });
+
+    // (optional, but consistent with 7.24)
+    expect(call.payload.snap).toEqual({ enabled: true, step: 0.25 });
   });
 });

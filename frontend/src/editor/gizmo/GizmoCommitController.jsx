@@ -8,6 +8,9 @@ import { executeTool } from "../../services/studio/toolExecutionAdapter";
 import { buildGizmoContext } from "./buildGizmoContext";
 import { validatePivot } from "../transform/validatePivot"; // ✅ Tier 7.23
 
+// ✅ Tier 7.24
+import { validateSnap } from "../transform/validateSnap";
+
 export default function GizmoCommitController({
   activeSnapshot,
   activeTargetId,
@@ -76,6 +79,15 @@ export default function GizmoCommitController({
       if (!pv.ok) {
         setLastDecision({ allowed: false, reason: pv.reason });
         throw new Error(pv.reason);
+      }
+
+      // ✅ Tier 7.24: block invalid snap step before hitting kernel
+      const { snapEnabled, snapStep } = ui || {};
+      const sv = validateSnap(!!snapEnabled, Number(snapStep));
+      if (!sv.ok) {
+        setLastDecision({ allowed: false, reason: sv.reason });
+        // important: stop here (no backend call)
+        return;
       }
 
       const ctx = buildGizmoContext({

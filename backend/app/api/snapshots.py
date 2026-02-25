@@ -13,6 +13,7 @@ from app.services.rendering import render_snapshot
 from app.core.config import settings
 
 from app.services.snapshot_finalize import finalize_snapshot
+from app.services.scene_index_service import build_scene_index
 
 # -------------------------------------------------
 # Project-scoped snapshot routes (Phase 3 → Phase 4)
@@ -247,3 +248,29 @@ def finalize_draft_snapshot(
         "status": completed.status,
     }
 
+
+# =================================================
+# Tier 6G.1 — Scene Index (READ-ONLY)
+# =================================================
+
+@router.get("/{snapshot_id}/scene")
+def get_snapshot_scene_index(
+    project_id: int,
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    snapshot = (
+        db.query(RenderedSnapshot)
+        .filter(
+            RenderedSnapshot.id == snapshot_id,
+            RenderedSnapshot.project_id == project_id,
+        )
+        .first()
+    )
+
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    # Read-only deterministic projection
+    return build_scene_index(snapshot)

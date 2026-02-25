@@ -37,6 +37,10 @@ import TransformToolPanel from "../editor/transform/TransformToolPanel";
 // ✅ Tier 7.17 ADD (typed selection HUD)
 import SelectionHud from "../editor/selection/SelectionHud";
 
+// ✅ Tier 6G.1 ADD (scene index fetch + debug panel)
+import { fetchScene } from "../services/studio/sceneApi";
+import SceneIndexPanel from "../editor/scene/SceneIndexPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -45,6 +49,10 @@ export default function StudioEditor() {
 
   const [snapshots, setSnapshots] = useState([]);
   const [sceneStateHash, setSceneStateHash] = useState("__working__");
+
+  // ✅ Tier 6G.1 ADD (scene index state)
+  const [sceneIndex, setSceneIndex] = useState(null);
+  const [sceneErr, setSceneErr] = useState(null);
 
   // ===============================
   // DIRTY STATE (EDITOR-LOCAL)
@@ -96,6 +104,18 @@ export default function StudioEditor() {
 
   const activeSnapshot = draftSnapshot ?? completedSnapshot;
   const isEditable = activeSnapshot?.status === "draft";
+
+  // ✅ Tier 6G.1 ADD (fetch scene index for active snapshot)
+  useEffect(() => {
+    if (!activeSnapshot?.id) return;
+
+    setSceneErr(null);
+    setSceneIndex(null);
+
+    fetchScene(projectId, activeSnapshot.id)
+      .then(setSceneIndex)
+      .catch((e) => setSceneErr(String(e?.message || e)));
+  }, [projectId, activeSnapshot?.id]);
 
   // ✅ Tier 7.9 ADD (resolve active target deterministically)
   const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
@@ -173,6 +193,12 @@ export default function StudioEditor() {
         <div className="grid grid-cols-[360px_1fr] gap-3 p-3">
           {/* LEFT: tool controls */}
           <div className="space-y-3">
+            {/* ✅ Tier 6G.1 ADD (Scene Index debug panel) */}
+            <div style={{ padding: 12 }}>
+              {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
+              <SceneIndexPanel sceneIndex={sceneIndex} snapshotId={activeSnapshot?.id} />
+            </div>
+
             {/* ✅ Tier 7.17 ADD (typed selection HUD) */}
             <div style={{ padding: 12 }}>
               <SelectionHud />

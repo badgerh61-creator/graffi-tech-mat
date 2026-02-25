@@ -1,5 +1,10 @@
+import { buildMeshPath } from "./meshPath";
+
 export function buildPickedTargetId({ objectId, mesh }) {
-  const meshKey = (mesh?.name && String(mesh.name).trim()) ? mesh.name : mesh?.uuid;
-  if (!objectId || !meshKey) return null;
-  return `${objectId}::${meshKey}`;
+  if (!objectId || !mesh) return null;
+
+  const meshPath = buildMeshPath(mesh);
+  if (!meshPath) return null;
+
+  return `${objectId}::${meshPath}`;
 }

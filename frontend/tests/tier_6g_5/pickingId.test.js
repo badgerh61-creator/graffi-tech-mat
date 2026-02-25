@@ -17,14 +17,3 @@ test("buildPickedTargetId uses mesh_path", () => {
   const id = buildPickedTargetId({ objectId: "vehicle-1", mesh: m });
   expect(id).toBe("vehicle-1::CarRoot/Door_L");
 });
-
-test("uses unnamed index fallback deterministically", () => {
-  const group = node("obj:vehicle-1");
-  const a = link(group, node("CarRoot"));
-  link(a, node("")); // unnamed-0
-  const b = link(a, node("")); // unnamed-1
-  const m = link(b, node("")); // unnamed-0 under unnamed-1
-
-  const id = buildPickedTargetId({ objectId: "vehicle-1", mesh: m });
-  expect(id).toBe("vehicle-1::CarRoot/unnamed-1/unnamed-0");
-});

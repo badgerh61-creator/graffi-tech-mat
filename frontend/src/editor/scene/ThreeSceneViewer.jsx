@@ -33,7 +33,11 @@ function fitCameraToScene(camera, root) {
   const fov = (camera.fov * Math.PI) / 180;
   const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.6;
 
-  camera.position.set(center.x + distance, center.y + distance * 0.5, center.z + distance);
+  camera.position.set(
+    center.x + distance,
+    center.y + distance * 0.5,
+    center.z + distance
+  );
   camera.lookAt(center);
   camera.updateProjectionMatrix();
 }
@@ -126,6 +130,22 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     const mouse = new THREE.Vector2();
     let pickables = [];
     const meshToObjectId = new Map(); // Mesh -> objectId
+
+    // ✅ 6G.5-friendly improvement: prefer named ancestor for nicer mesh_path
+    function preferNamedAncestor(mesh) {
+      if (!mesh) return mesh;
+
+      if (mesh.name && String(mesh.name).trim()) return mesh;
+
+      let p = mesh.parent;
+      while (p) {
+        if (typeof p.name === "string" && p.name.startsWith("obj:")) break;
+        if (p.name && String(p.name).trim()) return p;
+        p = p.parent;
+      }
+
+      return mesh;
+    }
 
     async function loadAll() {
       setErr(null);
@@ -221,7 +241,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         return;
       }
 
-      const mesh = hits[0].object;
+      // ✅ prefer named ancestor for stable + readable mesh_path selection ids
+      const mesh = preferNamedAncestor(hits[0].object);
 
       // Resolve objectId deterministically from map
       let objectId = meshToObjectId.get(mesh);
@@ -308,11 +329,20 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         </div>
       ) : null}
 
-      <div ref={containerRef} className="border rounded overflow-hidden" style={{ height: 460 }}>
-        <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+      <div
+        ref={containerRef}
+        className="border rounded overflow-hidden"
+        style={{ height: 460 }}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", height: "100%", display: "block" }}
+        />
       </div>
 
-      <div className="text-xs opacity-70">Click mesh/placeholder to select. Click empty clears.</div>
+      <div className="text-xs opacity-70">
+        Click mesh/placeholder to select. Click empty clears.
+      </div>
     </div>
   );
 }

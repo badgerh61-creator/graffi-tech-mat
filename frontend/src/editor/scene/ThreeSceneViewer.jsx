@@ -1,3 +1,4 @@
+// frontend/src/editor/scene/ThreeSceneViewer.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -36,11 +37,26 @@ function fitCameraToScene(camera, root) {
   const fov = (camera.fov * Math.PI) / 180;
   const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.6;
 
-  camera.position.set(
-    center.x + distance,
-    center.y + distance * 0.5,
-    center.z + distance
-  );
+  camera.position.set(center.x + distance, center.y + distance * 0.5, center.z + distance);
+  camera.lookAt(center);
+  camera.updateProjectionMatrix();
+}
+
+// ✅ 6G.7
+function fitCameraToObject(camera, object3d) {
+  const box = new THREE.Box3().setFromObject(object3d);
+  if (box.isEmpty()) return;
+
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const fov = (camera.fov * Math.PI) / 180;
+  const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.6;
+
+  camera.position.set(center.x + distance, center.y + distance * 0.5, center.z + distance);
   camera.lookAt(center);
   camera.updateProjectionMatrix();
 }
@@ -77,10 +93,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
-  const objects = useMemo(
-    () => (sceneIndex?.objects || []).filter(Boolean),
-    [sceneIndex]
-  );
+  const objects = useMemo(() => (sceneIndex?.objects || []).filter(Boolean), [sceneIndex]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -131,10 +144,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       const offset = camera.position.clone();
       const spherical = new THREE.Spherical().setFromVector3(offset);
       spherical.theta -= dx;
-      spherical.phi = Math.min(
-        Math.max(0.2, spherical.phi - dy),
-        Math.PI - 0.2
-      );
+      spherical.phi = Math.min(Math.max(0.2, spherical.phi - dy), Math.PI - 0.2);
       offset.setFromSpherical(spherical);
       camera.position.copy(offset);
       camera.lookAt(0, 0.8, 0);
@@ -164,26 +174,64 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     let pickables = [];
     const meshToObjectId = new Map(); // Mesh -> objectId
 
-    // ✅ 6G.5-friendly improvement: prefer named ancestor for nicer mesh_path
-    function preferNamedAncestor(mesh) {
-      if (!mesh) return mesh;
+    // ✅ 6G.7 object groups for framing
+    const objectGroups = new Map(); // objectId -> THREE.Group
 
-      if (mesh.name && String(mesh.name).trim()) return mesh;
+    // ✅ helper: find objectId for a hit mesh
+    function resolveObjectIdFromHitMesh(hitMesh) {
+      if (!hitMesh) return null;
 
-      let p = mesh.parent;
+      let objectId = meshToObjectId.get(hitMesh);
+      if (objectId) return objectId;
+
+      // fallback: walk parents to find group name "obj:<id>"
+      let p = hitMesh.parent;
+      while (p && !objectId) {
+        if (typeof p.name === "string" && p.name.startsWith("obj:")) {
+          objectId = p.name.slice(4);
+          break;
+        }
+        p = p.parent;
+      }
+      return objectId || null;
+    }
+
+    // ✅ 6G.5-friendly improvement: prefer named ancestor ONLY for ID-building
+    function pickIdNodeForMeshPath(hitMesh) {
+      if (!hitMesh) return null;
+
+      // If the mesh already has a name, use it
+      if (hitMesh.name && String(hitMesh.name).trim()) return hitMesh;
+
+      // Otherwise climb until boundary; return first named node
+      let p = hitMesh.parent;
       while (p) {
         if (typeof p.name === "string" && p.name.startsWith("obj:")) break;
         if (p.name && String(p.name).trim()) return p;
         p = p.parent;
       }
+      return hitMesh;
+    }
 
-      return mesh;
+    // ✅ 6G.7: frame selected object or whole scene (no selection mutation)
+    function frameSelectedOrScene() {
+      if (!selectedId) {
+        fitCameraToScene(camera, root);
+        return;
+      }
+
+      const objectId = String(selectedId).split("::")[0];
+      const group = objectGroups.get(objectId);
+
+      if (group) fitCameraToObject(camera, group);
+      else fitCameraToScene(camera, root);
     }
 
     async function loadAll() {
       setErr(null);
       pickables = [];
       meshToObjectId.clear();
+      objectGroups.clear();
       setLoadingCount(0);
 
       // clear root
@@ -193,7 +241,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       const loader = new GLTFLoader();
 
-      // Sequential load = simplest deterministic behavior (optimize later)
       for (const obj of objects) {
         if (disposed) return;
 
@@ -211,31 +258,27 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         group.visible = !!cfg.visible;
 
         root.add(group);
+        objectGroups.set(objId, group);
 
-        // Apply transform to the group
+        // apply transform to group
         applyTransformToObject3D(group, obj.transform);
 
         const assetRef = obj.asset_ref ? String(obj.asset_ref).trim() : "";
 
-        // No asset_ref -> placeholder
         if (!assetRef) {
           const placeholder = makePlaceholderMesh(objId);
           group.add(placeholder);
 
-          // ✅ opacity for placeholder
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
-          // ✅ pick filter
           if (cfg.pickable) {
             pickables.push(placeholder);
             meshToObjectId.set(placeholder, objId);
           }
-
           continue;
         }
 
         setLoadingCount((c) => c + 1);
-
         try {
           const url = await resolveAssetRef(assetRef);
           if (!url) throw new Error("asset_ref could not be resolved");
@@ -246,28 +289,22 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const gltfRoot = gltf.scene;
           group.add(gltfRoot);
 
-          // Collect pickable meshes + apply opacity
           gltfRoot.traverse((node) => {
             if (!node || !node.isMesh) return;
 
-            // ✅ opacity by kind
             applyOpacityToMaterial(node.material, cfg.opacity);
 
-            // ✅ pick filter
             if (cfg.pickable) {
               pickables.push(node);
               meshToObjectId.set(node, objId);
             }
           });
         } catch (e) {
-          // Failed load -> placeholder fallback
           const placeholder = makePlaceholderMesh(`${objId} (failed)`);
           group.add(placeholder);
 
-          // ✅ opacity for placeholder
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
-          // ✅ pick filter
           if (cfg.pickable) {
             pickables.push(placeholder);
             meshToObjectId.set(placeholder, objId);
@@ -279,7 +316,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         }
       }
 
-      // Fit camera to whole scene
+      // default framing after load
       fitCameraToScene(camera, root);
     }
 
@@ -301,30 +338,18 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         return;
       }
 
-      // ✅ prefer named ancestor for stable + readable mesh_path selection ids
-      const mesh = preferNamedAncestor(hits[0].object);
-
-      // Resolve objectId deterministically from map
-      let objectId = meshToObjectId.get(mesh);
-
-      // Fallback: walk up parents to find group name "obj:<id>"
-      if (!objectId) {
-        let p = mesh.parent;
-        while (p && !objectId) {
-          if (typeof p.name === "string" && p.name.startsWith("obj:")) {
-            objectId = p.name.slice(4);
-            break;
-          }
-          p = p.parent;
-        }
-      }
+      const hitMesh = hits[0].object;
+      const objectId = resolveObjectIdFromHitMesh(hitMesh);
 
       if (!objectId) {
         clearSelection();
         return;
       }
 
-      const id = buildPickedTargetId({ objectId, mesh });
+      // ✅ use named ancestor only for nicer mesh_path (6G.5)
+      const idNode = pickIdNodeForMeshPath(hitMesh);
+
+      const id = buildPickedTargetId({ objectId, mesh: idNode });
       if (!id) {
         clearSelection();
         return;
@@ -333,7 +358,44 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       setSelectedId(id);
     }
 
+    // ✅ 6G.7: double-click = select + frame object
+    function onDoubleClick(e) {
+      if (disabled) return;
+
+      const r = canvas.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width) * 2 - 1;
+      const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
+      mouse.set(x, y);
+
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(pickables, true);
+      if (!hits.length) return;
+
+      const hitMesh = hits[0].object;
+      const objectId = resolveObjectIdFromHitMesh(hitMesh);
+      if (!objectId) return;
+
+      const idNode = pickIdNodeForMeshPath(hitMesh);
+      const id = buildPickedTargetId({ objectId, mesh: idNode });
+      if (!id) return;
+
+      setSelectedId(id);
+
+      const group = objectGroups.get(objectId);
+      if (group) fitCameraToObject(camera, group);
+      else fitCameraToScene(camera, root);
+    }
+
+    // ✅ 6G.7: F key framing (no selection mutation)
+    function onKeyDown(e) {
+      if (String(e.key || "").toLowerCase() === "f") {
+        frameSelectedOrScene();
+      }
+    }
+
     canvas.addEventListener("click", onClick);
+    canvas.addEventListener("dblclick", onDoubleClick);
+    window.addEventListener("keydown", onKeyDown);
 
     // render loop
     let raf = 0;
@@ -348,6 +410,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       cancelAnimationFrame(raf);
 
       canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("dblclick", onDoubleClick);
+      window.removeEventListener("keydown", onKeyDown);
 
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointerup", onPointerUp);
@@ -356,7 +420,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       ro.disconnect();
 
-      // dispose geometries/materials
       root.traverse((node) => {
         if (node?.isMesh) {
           node.geometry?.dispose?.();
@@ -368,9 +431,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       renderer.dispose();
     };
-    // ✅ re-run on objects/disabled/layers changes (simple + safe)
+    // ✅ re-run on objects/disabled/layers/selection (selection needed for F framing)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds)]);
+  }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds), selectedId]);
 
   return (
     <div className="border rounded p-3 space-y-2">
@@ -386,25 +449,16 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       {!objects.length ? (
         <div className="text-sm opacity-75">
-          No objects in scene index yet. Attach an asset (6G.2) or ensure
-          body_state.scene.objects[] exists.
+          No objects in scene index yet. Attach an asset (6G.2) or ensure body_state.scene.objects[] exists.
         </div>
       ) : null}
 
-      <div
-        ref={containerRef}
-        className="border rounded overflow-hidden"
-        style={{ height: 460 }}
-      >
-        <canvas
-          ref={canvasRef}
-          style={{ width: "100%", height: "100%", display: "block" }}
-        />
+      <div ref={containerRef} className="border rounded overflow-hidden" style={{ height: 460 }}>
+        <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
       </div>
 
       <div className="text-xs opacity-70">
-        Click mesh/placeholder to select. Click empty clears. Layers control
-        visibility/pickability/opacity.
+        Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to frame selected (or whole scene).
       </div>
     </div>
   );

@@ -47,6 +47,9 @@ import AttachAssetPanel from "../editor/scene/AttachAssetPanel";
 // ✅ Tier 6G.3 ADD (real Three.js viewer + picking)
 import ThreeSceneViewer from "../editor/scene/ThreeSceneViewer";
 
+// ✅ Tier 6G.6 ADD (scene layers + pick filters)
+import SceneLayersPanel from "../editor/scene/SceneLayersPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -207,6 +210,11 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
               <SceneIndexPanel sceneIndex={sceneIndex} snapshotId={activeSnapshot?.id} />
+            </div>
+
+            {/* ✅ Tier 6G.6 ADD (Scene layers + pick filters + opacity) */}
+            <div style={{ padding: 12 }}>
+              <SceneLayersPanel sceneIndex={sceneIndex} />
             </div>
 
             {/* ✅ Tier 6G.2 ADD (Attach asset to object, then refresh scene) */}

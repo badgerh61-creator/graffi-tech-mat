@@ -7,6 +7,9 @@ import { buildPickedTargetId } from "./pickingId";
 import { applyTransformToObject3D, makePlaceholderMesh } from "./applyTransform";
 import { clearSelection, setSelectedId, useSelection } from "../selection/selectionStore";
 
+// ✅ 6G.6 layers
+import { useSceneLayers, ensureKind } from "./layersStore";
+
 function makeRenderer(canvas) {
   const r = new THREE.WebGLRenderer({ canvas, antialias: true });
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -42,15 +45,42 @@ function fitCameraToScene(camera, root) {
   camera.updateProjectionMatrix();
 }
 
+function applyOpacityToMaterial(material, opacity) {
+  const op = Number.isFinite(Number(opacity)) ? Number(opacity) : 1.0;
+  const clamped = Math.min(1, Math.max(0, op));
+
+  if (!material) return;
+
+  if (Array.isArray(material)) {
+    material.forEach((m) => {
+      if (!m) return;
+      m.transparent = clamped < 1;
+      m.opacity = clamped;
+      m.needsUpdate = true;
+    });
+  } else {
+    material.transparent = clamped < 1;
+    material.opacity = clamped;
+    material.needsUpdate = true;
+  }
+}
+
 export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
   const { selectedId } = useSelection();
+
+  // ✅ 6G.6 layers state
+  const layers = useSceneLayers();
+
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
-  const objects = useMemo(() => (sceneIndex?.objects || []).filter(Boolean), [sceneIndex]);
+  const objects = useMemo(
+    () => (sceneIndex?.objects || []).filter(Boolean),
+    [sceneIndex]
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -101,7 +131,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       const offset = camera.position.clone();
       const spherical = new THREE.Spherical().setFromVector3(offset);
       spherical.theta -= dx;
-      spherical.phi = Math.min(Math.max(0.2, spherical.phi - dy), Math.PI - 0.2);
+      spherical.phi = Math.min(
+        Math.max(0.2, spherical.phi - dy),
+        Math.PI - 0.2
+      );
       offset.setFromSpherical(spherical);
       camera.position.copy(offset);
       camera.lookAt(0, 0.8, 0);
@@ -167,8 +200,16 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         const objId = String(obj.id || "").trim();
         if (!objId) continue;
 
+        const kind = String(obj.kind || "unknown");
+        const cfg = layers.kinds[kind] || ensureKind(kind);
+
         const group = new THREE.Group();
         group.name = `obj:${objId}`;
+        group.userData.kind = kind;
+
+        // ✅ layer visibility
+        group.visible = !!cfg.visible;
+
         root.add(group);
 
         // Apply transform to the group
@@ -181,8 +222,15 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const placeholder = makePlaceholderMesh(objId);
           group.add(placeholder);
 
-          pickables.push(placeholder);
-          meshToObjectId.set(placeholder, objId);
+          // ✅ opacity for placeholder
+          applyOpacityToMaterial(placeholder.material, cfg.opacity);
+
+          // ✅ pick filter
+          if (cfg.pickable) {
+            pickables.push(placeholder);
+            meshToObjectId.set(placeholder, objId);
+          }
+
           continue;
         }
 
@@ -198,9 +246,15 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const gltfRoot = gltf.scene;
           group.add(gltfRoot);
 
-          // Collect pickable meshes
+          // Collect pickable meshes + apply opacity
           gltfRoot.traverse((node) => {
-            if (node && node.isMesh) {
+            if (!node || !node.isMesh) return;
+
+            // ✅ opacity by kind
+            applyOpacityToMaterial(node.material, cfg.opacity);
+
+            // ✅ pick filter
+            if (cfg.pickable) {
               pickables.push(node);
               meshToObjectId.set(node, objId);
             }
@@ -210,8 +264,14 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const placeholder = makePlaceholderMesh(`${objId} (failed)`);
           group.add(placeholder);
 
-          pickables.push(placeholder);
-          meshToObjectId.set(placeholder, objId);
+          // ✅ opacity for placeholder
+          applyOpacityToMaterial(placeholder.material, cfg.opacity);
+
+          // ✅ pick filter
+          if (cfg.pickable) {
+            pickables.push(placeholder);
+            meshToObjectId.set(placeholder, objId);
+          }
 
           setErr((prev) => prev || String(e?.message || e));
         } finally {
@@ -308,8 +368,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       renderer.dispose();
     };
+    // ✅ re-run on objects/disabled/layers changes (simple + safe)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(objects), disabled]);
+  }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds)]);
 
   return (
     <div className="border rounded p-3 space-y-2">
@@ -325,7 +386,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       {!objects.length ? (
         <div className="text-sm opacity-75">
-          No objects in scene index yet. Attach an asset (6G.2) or ensure body_state.scene.objects[] exists.
+          No objects in scene index yet. Attach an asset (6G.2) or ensure
+          body_state.scene.objects[] exists.
         </div>
       ) : null}
 
@@ -341,7 +403,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       </div>
 
       <div className="text-xs opacity-70">
-        Click mesh/placeholder to select. Click empty clears.
+        Click mesh/placeholder to select. Click empty clears. Layers control
+        visibility/pickability/opacity.
       </div>
     </div>
   );

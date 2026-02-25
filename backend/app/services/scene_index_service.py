@@ -4,13 +4,16 @@ from typing import Any, Dict, List
 
 
 def _default_stub_objects() -> List[Dict[str, Any]]:
-    # Deterministic fallback until real asset registry / scene persistence exists.
+    """
+    Deterministic fallback until real asset registry / scene persistence exists.
+    Stub must NOT pretend a real asset exists.
+    """
     return [
         {
             "id": "vehicle-1",
             "kind": "vehicle",
             "name": "Default Vehicle",
-            "asset_ref": "vehicles/default.glb",
+            "asset_ref": None,  # ← changed from "vehicles/default.glb"
             "transform": {
                 "position": {"x": 0, "y": 0, "z": 0},
                 "rotation": {"x": 0, "y": 0, "z": 0},

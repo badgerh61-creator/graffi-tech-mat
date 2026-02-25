@@ -1,6 +1,7 @@
 def test_scene_index_returns_objects(client, completed_snapshot):
-    # completed_snapshot should include .id and .project_id from your fixtures
-    resp = client.get(f"/projects/{completed_snapshot.project_id}/snapshots/{completed_snapshot.id}/scene")
+    resp = client.get(
+        f"/projects/{completed_snapshot.project_id}/snapshots/{completed_snapshot.id}/scene"
+    )
     assert resp.status_code == 200
 
     data = resp.json()
@@ -8,15 +9,23 @@ def test_scene_index_returns_objects(client, completed_snapshot):
     assert isinstance(data["objects"], list)
     assert len(data["objects"]) >= 1
 
+    # Validate the first object shape (stub guarantees >= 1)
     obj = data["objects"][0]
-    assert "id" in obj
-    assert "kind" in obj
+    assert isinstance(obj, dict)
+
+    assert obj.get("id")
+    assert obj.get("kind")
     assert "name" in obj
     assert "asset_ref" in obj
-    assert "transform" in obj
-    assert "position" in obj["transform"]
-    assert "rotation" in obj["transform"]
-    assert "scale" in obj["transform"]
+
+    t = obj.get("transform")
+    assert isinstance(t, dict)
+    assert set(t.keys()) >= {"position", "rotation", "scale"}
+
+    for k in ("position", "rotation", "scale"):
+        v = t[k]
+        assert isinstance(v, dict)
+        assert set(v.keys()) >= {"x", "y", "z"}
 
 
 def test_scene_index_404_when_snapshot_missing(client, project):

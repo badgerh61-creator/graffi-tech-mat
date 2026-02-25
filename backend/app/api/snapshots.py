@@ -15,6 +15,13 @@ from app.core.config import settings
 from app.services.snapshot_finalize import finalize_snapshot
 from app.services.scene_index_service import build_scene_index
 
+from sqlalchemy.orm.attributes import flag_modified
+
+from app.models.asset import Asset
+from app.models.model import ModelRecord
+from app import crud
+
+
 # -------------------------------------------------
 # Project-scoped snapshot routes (Phase 3 → Phase 4)
 # -------------------------------------------------
@@ -274,3 +281,111 @@ def get_snapshot_scene_index(
 
     # Read-only deterministic projection
     return build_scene_index(snapshot)
+    
+    
+# =================================================
+# Tier 6G.2 — Attach Asset Tool (DRAFT ONLY)
+# =================================================
+
+@router.post("/{snapshot_id}/tools/attach-asset")
+def attach_asset_to_snapshot_scene(
+    project_id: int,
+    snapshot_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    user=Depends(require_editor),
+):
+    object_id = str(payload.get("object_id") or "").strip()
+    asset_id = payload.get("asset_id")
+
+    if not object_id:
+        raise HTTPException(status_code=422, detail="object_id is required")
+    if asset_id is None:
+        raise HTTPException(status_code=422, detail="asset_id is required")
+
+    snapshot = (
+        db.query(RenderedSnapshot)
+        .filter(
+            RenderedSnapshot.id == snapshot_id,
+            RenderedSnapshot.project_id == project_id,
+        )
+        .first()
+    )
+    if not snapshot:
+        raise HTTPException(404, "Snapshot not found")
+
+    if snapshot.status != SnapshotStatus.DRAFT.value:
+        raise HTTPException(409, "Only draft snapshots can attach assets")
+
+    # Phase U ownership gate (authority lives on RenderedSnapshot)
+    ownership = snapshot.resolve_ownership(user)
+    if ownership == "owned_by_other":
+        raise HTTPException(409, "Draft is owned by another user")
+
+    # Load asset + access check through model (same logic as assets.py)
+    asset = (
+        db.query(Asset)
+        .join(ModelRecord)
+        .filter(Asset.id == int(asset_id))
+        .first()
+    )
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+
+    model = crud.get_model_if_accessible(db, model_id=asset.model_id, user_id=user.id)
+    if not model:
+        raise HTTPException(403, "No access to asset")
+
+    # Ensure body_state.scene.objects exists
+    if snapshot.body_state is None:
+        snapshot.body_state = {}
+
+    scene = snapshot.body_state.get("scene")
+    if not isinstance(scene, dict):
+        scene = {}
+        snapshot.body_state["scene"] = scene
+
+    objects = scene.get("objects")
+    if not isinstance(objects, list):
+        objects = []
+        scene["objects"] = objects
+
+    # Find or create object entry
+    found = None
+    for o in objects:
+        if isinstance(o, dict) and o.get("id") == object_id:
+            found = o
+            break
+
+    kind = str(payload.get("kind") or "vehicle").strip() or "vehicle"
+    name = str(payload.get("name") or asset.filename or object_id).strip() or object_id
+
+    if found is None:
+        found = {
+            "id": object_id,
+            "kind": kind,
+            "name": name,
+            "asset_ref": None,
+            "transform": {
+                "position": {"x": 0, "y": 0, "z": 0},
+                "rotation": {"x": 0, "y": 0, "z": 0},
+                "scale": {"x": 1, "y": 1, "z": 1},
+            },
+        }
+        objects.append(found)
+
+    # Stable pointer for viewer: resolve via GET /assets/{id}/url in 6G.3
+    found["asset_ref"] = f"asset:{asset.id}"
+
+    # Deterministic ordering by object id
+    objects.sort(key=lambda x: str((x or {}).get("id") or ""))
+
+    flag_modified(snapshot, "body_state")
+    db.commit()
+    db.refresh(snapshot)
+
+    return {
+        "snapshot_id": snapshot.id,
+        "object_id": object_id,
+        "asset_ref": found["asset_ref"],
+    }

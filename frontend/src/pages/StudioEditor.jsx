@@ -41,6 +41,9 @@ import SelectionHud from "../editor/selection/SelectionHud";
 import { fetchScene } from "../services/studio/sceneApi";
 import SceneIndexPanel from "../editor/scene/SceneIndexPanel";
 
+// ✅ Tier 6G.2 ADD (attach asset panel)
+import AttachAssetPanel from "../editor/scene/AttachAssetPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -105,8 +108,7 @@ export default function StudioEditor() {
   const activeSnapshot = draftSnapshot ?? completedSnapshot;
   const isEditable = activeSnapshot?.status === "draft";
 
-  // ✅ Tier 6G.1 ADD (fetch scene index for active snapshot)
-  useEffect(() => {
+  const refreshSceneIndex = useCallback(() => {
     if (!activeSnapshot?.id) return;
 
     setSceneErr(null);
@@ -116,6 +118,11 @@ export default function StudioEditor() {
       .then(setSceneIndex)
       .catch((e) => setSceneErr(String(e?.message || e)));
   }, [projectId, activeSnapshot?.id]);
+
+  // ✅ Tier 6G.1 ADD (fetch scene index for active snapshot)
+  useEffect(() => {
+    refreshSceneIndex();
+  }, [refreshSceneIndex]);
 
   // ✅ Tier 7.9 ADD (resolve active target deterministically)
   const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
@@ -197,6 +204,15 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
               <SceneIndexPanel sceneIndex={sceneIndex} snapshotId={activeSnapshot?.id} />
+            </div>
+
+            {/* ✅ Tier 6G.2 ADD (Attach asset to object, then refresh scene) */}
+            <div style={{ padding: 12 }}>
+              <AttachAssetPanel
+                projectId={projectId}
+                snapshotId={activeSnapshot?.id}
+                onAttached={refreshSceneIndex}
+              />
             </div>
 
             {/* ✅ Tier 7.17 ADD (typed selection HUD) */}

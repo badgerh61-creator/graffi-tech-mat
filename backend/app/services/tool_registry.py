@@ -17,6 +17,10 @@ from app.services.tuning_mutation import (
     update_suspension_config,
 )
 
+# ✅ Tier 7.33: parametric components (executor helpers)
+from app.services.components.store import find_component, upsert_component
+from app.services.components.compiler import compile_component_ops
+
 
 class Tool:
     def __init__(self, *, name, is_mutating: bool, executor=None):
@@ -48,6 +52,62 @@ class Tool:
             target_id=params.get("target_id", "default"),
             params=params,
         )
+
+
+# ✅ Tier 7.33: leaf tool executor (returns a NEW snapshot, like other tools)
+def _execute_apply_component(*, db, snapshot, user, params):
+    component_id = str((params or {}).get("component_id") or "")
+    if not component_id:
+        raise HTTPException(422, "component_id required")
+
+    current = find_component(snapshot, component_id)
+    if not current:
+        raise HTTPException(409, "component not found")
+
+    next_params = (params or {}).get("next_params") or {}
+    target_id = (params or {}).get("target_id") or current.get("target_id")
+
+    kind = current.get("kind") or "custom"
+    ops = compile_component_ops(kind=kind, params=next_params, target_id=target_id)
+
+    # 1) Create a new snapshot first so component params persist even if ops is empty
+    new_snapshot = snapshot.clone_for_mutation(
+        created_by=user.id,
+    )
+    db.add(new_snapshot)
+    db.commit()
+
+    # 2) Persist component state onto the new snapshot
+    next_component = {
+        **current,
+        "params": next_params,
+        "target_id": target_id,
+        "version": int(current.get("version") or 1),
+        "enabled": bool(current.get("enabled", True)),
+    }
+    upsert_component(new_snapshot, next_component)
+
+    # 3) Execute compiled ops sequentially (each op returns a new snapshot)
+    working = new_snapshot
+    for op in ops:
+        op_tool = op.get("tool")
+        op_payload = op.get("payload") or {}
+        if not op_tool:
+            continue
+
+        # Compiler emits "TRANSLATE"/"ROTATE"/"SCALE" — registry uses "translate"/"rotate"/"scale"
+        leaf = str(op_tool).lower() if str(op_tool).upper() in ("TRANSLATE", "ROTATE", "SCALE") else str(op_tool)
+
+        working = apply_transform(
+            db=db,
+            snapshot=working,
+            user=user,
+            operation=leaf,
+            target_id=op_payload.get("target_id", "default"),
+            params=op_payload,
+        )
+
+    return working
 
 
 TOOLS = {
@@ -83,6 +143,16 @@ TOOLS = {
         is_mutating=True,
         executor=update_suspension_config,  # ✅ custom
     ),
+
+    # --------------------------
+    # Tier 7.33 — Parametric Components
+    # --------------------------
+
+    "APPLY_COMPONENT": Tool(
+        name="APPLY_COMPONENT",
+        is_mutating=True,
+        executor=_execute_apply_component,  # ✅ custom
+    ),
 }
 
 
@@ -91,4 +161,3 @@ def get_tool(tool_name: str) -> Tool:
     if not tool:
         raise HTTPException(422, f"Unknown tool: {tool_name}")
     return tool
-

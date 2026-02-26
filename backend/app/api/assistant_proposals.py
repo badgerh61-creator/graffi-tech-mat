@@ -19,6 +19,9 @@ from app.services.assistant_proposal_applier import (
 )
 from app.services.assistant_metrics_preview import preview_metrics_for_proposal
 
+# ✅ Tier 7.33 — component evaluation (compile ops + constraints)
+from app.services.tools.apply_component_tool import evaluate_apply_component
+
 # ✅ MUST match tests: "/assistant/proposals/apply"
 router = APIRouter(prefix="/assistant/proposals", tags=["assistant-proposals"])
 
@@ -82,6 +85,23 @@ def evaluate_assistant_proposal(
         payload=tool_req["payload"],
     )
 
+    # ✅ Tier 7.33: If APPLY_COMPONENT, compile ops + evaluate constraints (only if kernel allowed)
+    component_eval = None
+    if decision.allowed and tool_req.get("tool") == "APPLY_COMPONENT":
+        component_eval = evaluate_apply_component(
+            snapshot=snapshot,
+            payload=tool_req.get("payload") or {},
+        )
+        # If constraints/components fail, downgrade allowed=false deterministically
+        if component_eval.get("ok") is not True:
+            decision = type(decision)(
+                allowed=False,
+                reason="constraints",
+                mode=decision.mode,
+                tool=decision.tool,
+                payload=decision.payload,
+            )
+
     log_event(
         db,
         user_id=getattr(user, "id", None),
@@ -95,10 +115,12 @@ def evaluate_assistant_proposal(
             "reason": decision.reason,
             "mode": decision.mode,
             "proposal_id": str(proposal_id) if proposal_id else None,
+            # ✅ extra debug signal (harmless for old phases)
+            "component_ok": (component_eval or {}).get("ok") if component_eval else None,
         },
     )
 
-    return {
+    resp = {
         "allowed": decision.allowed,
         "reason": decision.reason,
         "mode": decision.mode,
@@ -106,6 +128,14 @@ def evaluate_assistant_proposal(
         "tool": tool_req["tool"],
         "payload": decision.payload,
     }
+
+    # ✅ Only add these fields for APPLY_COMPONENT (won’t affect older callers)
+    if tool_req.get("tool") == "APPLY_COMPONENT":
+        resp["component_ok"] = (component_eval or {}).get("ok")
+        resp["ops"] = (component_eval or {}).get("ops", [])
+        resp["violations"] = (component_eval or {}).get("violations", [])
+
+    return resp
 
 
 @router.post("/preview")
@@ -221,4 +251,3 @@ def apply_assistant_proposal_endpoint(
         "parent_snapshot_id": getattr(new_snapshot, "parent_snapshot_id", None),
         "status": "ok",
     }
-

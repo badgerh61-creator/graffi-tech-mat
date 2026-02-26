@@ -15,7 +15,8 @@ from app.crud.assistant_proposals import get_proposal
 from app.services.proposal_hashing import compute_payload_hash
 
 
-_TRANSFORM_OPS = {"translate", "rotate", "scale"}
+# ✅ Tier 7.33: include APPLY_COMPONENT as a transform-category leaf tool
+_TRANSFORM_OPS = {"translate", "rotate", "scale", "APPLY_COMPONENT"}
 
 # ✅ ADD (Tier 4.6 tuning preview/apply leaf tools map to kernel category "tuning")
 _TUNING_OPS = {
@@ -141,4 +142,3 @@ def apply_assistant_proposal(
     )
 
     return new_snapshot
-

@@ -50,6 +50,10 @@ import ThreeSceneViewer from "../editor/scene/ThreeSceneViewer";
 // ✅ Tier 6G.6 ADD (scene layers + pick filters)
 import SceneLayersPanel from "../editor/scene/SceneLayersPanel";
 
+// ✅ Tier 7.28 ADD (Undo/Redo UI + local history)
+import UndoRedoBar from "../editor/history/UndoRedoBar";
+import { historyPush } from "../editor/history/historyStore";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -62,6 +66,9 @@ export default function StudioEditor() {
   // ✅ Tier 6G.1 ADD (scene index state)
   const [sceneIndex, setSceneIndex] = useState(null);
   const [sceneErr, setSceneErr] = useState(null);
+
+  // ✅ Tier 7.28 ADD — allow overriding which snapshot is active (for history jumps)
+  const [activeSnapshotOverrideId, setActiveSnapshotOverrideId] = useState(null);
 
   // ===============================
   // DIRTY STATE (EDITOR-LOCAL)
@@ -111,8 +118,18 @@ export default function StudioEditor() {
   const draftSnapshot = snapshots.find((s) => s.status === "draft");
   const completedSnapshot = snapshots.find((s) => s.status === "completed");
 
-  const activeSnapshot = draftSnapshot ?? completedSnapshot;
+  // ✅ Tier 7.28 — if user navigated via undo/redo, honor override first
+  const overrideSnapshot = activeSnapshotOverrideId
+    ? snapshots.find((s) => s.id === activeSnapshotOverrideId)
+    : null;
+
+  const activeSnapshot = overrideSnapshot ?? (draftSnapshot ?? completedSnapshot);
   const isEditable = activeSnapshot?.status === "draft";
+
+  // ✅ Tier 7.28 — whenever activeSnapshot changes, push into local history stack
+  useEffect(() => {
+    if (activeSnapshot?.id) historyPush(activeSnapshot.id);
+  }, [activeSnapshot?.id]);
 
   const refreshSceneIndex = useCallback(() => {
     if (!activeSnapshot?.id) return;
@@ -206,6 +223,18 @@ export default function StudioEditor() {
         <div className="grid grid-cols-[360px_1fr] gap-3 p-3">
           {/* LEFT: tool controls */}
           <div className="space-y-3">
+            {/* ✅ Tier 7.28 ADD (Undo/Redo bar) */}
+            <div style={{ padding: 12 }}>
+              <UndoRedoBar
+                projectId={projectId} // ✅ REQUIRED after UndoRedoBar signature update
+                activeSnapshotId={activeSnapshot?.id}
+                onNavigate={(id) => {
+                  // allow jumping even if a draft exists
+                  setActiveSnapshotOverrideId(Number(id));
+                }}
+              />
+            </div>
+
             {/* ✅ Tier 6G.1 ADD (Scene Index debug panel) */}
             <div style={{ padding: 12 }}>
               {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
@@ -256,6 +285,10 @@ export default function StudioEditor() {
                 enablePreview={false} // set true only if /assistant/proposals/preview exists
                 onApplied={(newId) => {
                   console.log("Applied new snapshot:", newId);
+
+                  // after commit, clear override so normal draft/complete selection rules apply again
+                  setActiveSnapshotOverrideId(null);
+
                   fetchSnapshots().catch(console.error);
                 }}
               />

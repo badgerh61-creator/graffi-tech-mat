@@ -1,7 +1,11 @@
 // frontend/src/editor/scene/ThreeSceneViewer.jsx
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+// ✅ Step 1 — TransformControls (Three.js handles)
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 
 import { resolveAssetRef } from "./resolveAssetRef";
 import { buildPickedTargetId } from "./pickingId";
@@ -13,6 +17,9 @@ import { useSceneLayers, ensureKind } from "./layersStore";
 
 // ✅ 7.27 preview ghost
 import { useGizmoPreview } from "../gizmo/gizmoPreviewStore";
+
+// ✅ Step 6 — shared gizmo mode store
+import { useGizmoMode } from "../gizmo/gizmoModeStore";
 
 function makeRenderer(canvas) {
   const r = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -95,6 +102,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
   // ✅ 7.27 preview state
   const { preview } = useGizmoPreview();
 
+  // ✅ shared gizmo mode (translate/rotate/scale)
+  const { mode: gizmoMode } = useGizmoMode();
+
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
@@ -122,35 +132,32 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     root.name = "scene-root";
     scene.add(root);
 
-    // ✅ 7.27 ghost holder
-    let ghost = null;
-
-    function clearGhost() {
-      if (!ghost) return;
-
-      root.remove(ghost);
-      ghost.traverse((n) => {
-        if (n?.isMesh) {
-          n.geometry?.dispose?.();
-          const mat = n.material;
-          if (Array.isArray(mat)) mat.forEach((m) => m?.dispose?.());
-          else mat?.dispose?.();
-        }
-      });
-
-      ghost = null;
-    }
-
     // camera
     const rect = container.getBoundingClientRect();
     const camera = makeCamera(rect.width || 800, rect.height || 500);
+
+    // ✅ TransformControls (Step 1)
+    const transformControls = new TransformControls(camera, renderer.domElement);
+    transformControls.setMode(gizmoMode); // translate | rotate | scale
+    transformControls.enabled = !disabled;
+    transformControls.visible = false; // becomes true once attached
+    scene.add(transformControls);
 
     // orbit drag
     let isDragging = false,
       lastX = 0,
       lastY = 0;
 
+    // while gizmo is dragging: disable orbit drag
+    function onGizmoDraggingChanged(e) {
+      const dragging = !!e?.value;
+      if (dragging) isDragging = false;
+    }
+    transformControls.addEventListener("dragging-changed", onGizmoDraggingChanged);
+
     function onPointerDown(e) {
+      // ignore orbit start if clicking on gizmo handles
+      if (transformControls.dragging) return;
       isDragging = true;
       lastX = e.clientX;
       lastY = e.clientY;
@@ -192,13 +199,32 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     const ro = new ResizeObserver(() => resize());
     ro.observe(container);
 
+    // ✅ 7.27 ghost holder
+    let ghost = null;
+
+    function clearGhost() {
+      if (!ghost) return;
+
+      root.remove(ghost);
+      ghost.traverse((n) => {
+        if (n?.isMesh) {
+          n.geometry?.dispose?.();
+          const mat = n.material;
+          if (Array.isArray(mat)) mat.forEach((m) => m?.dispose?.());
+          else mat?.dispose?.();
+        }
+      });
+
+      ghost = null;
+    }
+
     // picking sets
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let pickables = [];
     const meshToObjectId = new Map(); // Mesh -> objectId
 
-    // ✅ 6G.7 object groups for framing
+    // ✅ 6G.7 object groups for framing + gizmo attach
     const objectGroups = new Map(); // objectId -> THREE.Group
 
     function resolveObjectIdFromHitMesh(hitMesh) {
@@ -242,6 +268,36 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       if (group) fitCameraToObject(camera, group);
       else fitCameraToScene(camera, root);
+    }
+
+    // ✅ Attach gizmo to selected object group (UI-only)
+    function syncTransformControlsToSelection() {
+      transformControls.setMode(gizmoMode);
+
+      if (disabled || !selectedId) {
+        transformControls.detach();
+        transformControls.visible = false;
+        return;
+      }
+
+      const objectId = String(selectedId).split("::")[0];
+      const group = objectGroups.get(objectId);
+
+      if (!group) {
+        transformControls.detach();
+        transformControls.visible = false;
+        return;
+      }
+
+      // If layer hides the object, don't show gizmo
+      if (group.visible === false) {
+        transformControls.detach();
+        transformControls.visible = false;
+        return;
+      }
+
+      transformControls.attach(group);
+      transformControls.visible = true;
     }
 
     // ✅ 7.27 apply ghost from preview
@@ -312,6 +368,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       // clear root
       clearGhost();
+      transformControls.detach();
+      transformControls.visible = false;
+
       while (root.children.length) root.remove(root.children[0]);
 
       if (!objects.length) return;
@@ -393,8 +452,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       fitCameraToScene(camera, root);
 
-      // ✅ After objects exist, apply ghost (if preview active)
+      // apply ghost if active
       applyPreviewGhost();
+
+      // attach gizmo if selection exists
+      syncTransformControlsToSelection();
     }
 
     loadAll();
@@ -479,11 +541,19 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     }
     tick();
 
+    // keep gizmo synced when selection/mode changes
+    // (safe because we re-run effect on deps, but also do quick sync here)
+    syncTransformControlsToSelection();
+
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
 
       clearGhost();
+
+      transformControls.removeEventListener("dragging-changed", onGizmoDraggingChanged);
+      transformControls.detach();
+      scene.remove(transformControls);
 
       canvas.removeEventListener("click", onClick);
       canvas.removeEventListener("dblclick", onDoubleClick);
@@ -513,7 +583,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     disabled,
     JSON.stringify(layers.kinds),
     selectedId,
-    JSON.stringify(preview || null), // ✅ 7.27 re-apply ghost when preview changes
+    JSON.stringify(preview || null),
+    gizmoMode, // ✅ Step 6: update TransformControls mode
   ]);
 
   return (
@@ -540,8 +611,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       <div className="text-xs opacity-70">
         Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to frame selected (or whole scene).
-        Dragging gizmo pads shows a ghost preview (UI-only).
+        Drag pads show ghost preview (UI-only). TransformControls mode is synced with the panel.
       </div>
     </div>
   );
 }
+

@@ -20,6 +20,9 @@ import {
   makeScalePreview,
 } from "./previewMath";
 
+// ✅ Shared gizmo mode (syncs with Three.js TransformControls)
+import { useGizmoMode, setGizmoMode } from "./gizmoModeStore";
+
 export default function TransformGizmo({
   enabled,
   reasonDisabled,
@@ -27,9 +30,9 @@ export default function TransformGizmo({
   onCommit,
 }) {
   // =========================
-  // Mode
+  // Mode (shared store)
   // =========================
-  const [mode, setMode] = useState("translate"); // translate | rotate | scale
+  const { mode } = useGizmoMode(); // translate | rotate | scale
 
   // =========================
   // Snap State (Tier 7.24 shared)
@@ -178,14 +181,14 @@ export default function TransformGizmo({
       <div className="font-semibold">Transform Gizmo</div>
       <div className="opacity-80">{statusText}</div>
 
-      {/* Mode Selector */}
+      {/* Mode Selector (shared mode store) */}
       <div className="flex items-center gap-2">
         <span className="text-xs opacity-70">Mode</span>
         <select
           value={mode}
           onChange={(e) => {
-            setMode(e.target.value);
-            clearGizmoPreview(); // ✅ switching modes clears ghost preview
+            setGizmoMode(e.target.value);
+            clearGizmoPreview(); // switching modes clears ghost preview
           }}
           disabled={!enabled}
           className="border rounded px-2 py-1 text-sm"
@@ -201,12 +204,12 @@ export default function TransformGizmo({
         enabled={snapEnabled}
         setEnabled={(v) => {
           setSnapEnabled(v);
-          clearGizmoPreview(); // ✅ snap changes should clear current preview
+          clearGizmoPreview();
         }}
         step={snapStep}
         setStep={(v) => {
           setSnapStep(v);
-          clearGizmoPreview(); // ✅ step changes should clear current preview
+          clearGizmoPreview();
         }}
         label="Snapping"
         stepLabel={snapLabel}
@@ -219,17 +222,17 @@ export default function TransformGizmo({
         pivotMode={pivotMode}
         setPivotMode={(v) => {
           setPivotMode(v);
-          clearGizmoPreview(); // ✅ pivot changes clear preview
+          clearGizmoPreview();
         }}
         customPivot={customPivot}
         setCustomPivot={(v) => {
           setCustomPivot(v);
-          clearGizmoPreview(); // ✅ pivot changes clear preview
+          clearGizmoPreview();
         }}
         disabled={!enabled}
       />
 
-      {/* Tier 7.26 + 7.27 — Drag Pads (preview while dragging, release => one commit) */}
+      {/* Drag Pads */}
       {mode === "translate" ? (
         <div className="grid grid-cols-1 gap-2">
           <DragPad
@@ -462,8 +465,9 @@ export default function TransformGizmo({
       )}
 
       <div className="text-xs opacity-70">
-        UI-only: drag previews with a ghost; release emits one governed tool payload. Kernel execution via controller.
+        UI-only: drag previews with a ghost; release emits one governed tool payload.
       </div>
     </div>
   );
 }
+

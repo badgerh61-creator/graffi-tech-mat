@@ -3,12 +3,17 @@ import { getAccessToken } from "../../utils/auth";
 
 const API_BASE = "http://127.0.0.1:8000";
 
-export async function fetchScene(projectId, snapshotId) {
+/**
+ * fetchScene(projectId, snapshotId, { signal })
+ * - supports AbortController to prevent stale fetch overwrites
+ */
+export async function fetchScene(projectId, snapshotId, opts = {}) {
   const token = getAccessToken?.();
 
   const res = await fetch(
     `${API_BASE}/projects/${projectId}/snapshots/${snapshotId}/scene`,
     {
+      signal: opts.signal,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     }
   );

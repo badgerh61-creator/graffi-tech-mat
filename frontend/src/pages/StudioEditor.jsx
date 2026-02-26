@@ -25,7 +25,10 @@ import GizmoCommitController from "../editor/gizmo/GizmoCommitController";
 /* ✅ Tier 7.9 ADD (canonical selection store + resolver)
    - Alias import names to avoid clashing with Tier 7.1 useSelection().
 */
-import { useSelection as useSelectionStore } from "../editor/selection/selectionStore";
+import {
+  useSelection as useSelectionStore,
+  clearSelection,
+} from "../editor/selection/selectionStore";
 import { resolveSelectedTarget } from "../editor/selection/resolveSelectedTarget";
 
 // ✅ Tier 7.10 ADD (viewport picking stub) — keep as fallback
@@ -59,6 +62,9 @@ import SnapshotHistoryGraphPanel from "../editor/history/SnapshotHistoryGraphPan
 
 // ✅ Tier 7.30 ADD (Snapshot Diff Preview Panel)
 import SnapshotDiffPanel from "../editor/history/SnapshotDiffPanel";
+
+// ✅ Tier 7.27/7.31 glue (clear ghost preview on snapshot change)
+import { clearGizmoPreview } from "../editor/gizmo/gizmoPreviewStore";
 
 export default function StudioEditor() {
   const user = getCurrentUser();
@@ -145,21 +151,70 @@ export default function StudioEditor() {
     if (activeSnapshot?.id) historyPush(activeSnapshot.id);
   }, [activeSnapshot?.id]);
 
-  const refreshSceneIndex = useCallback(() => {
+  // =====================================================
+  // Tier 7.31 — SAFE SNAPSHOT NAVIGATION (UI-only)
+  // =====================================================
+  const navigateToSnapshot = useCallback(
+    (id) => {
+      const nextId = Number(id);
+      if (!Number.isFinite(nextId)) return;
+
+      // Clear volatile UI state (must never drift across snapshot boundaries)
+      try {
+        clearGizmoPreview?.();
+      } catch {}
+      try {
+        clearSelection?.();
+      } catch {}
+
+      // allow jumping even if a draft exists
+      setActiveSnapshotOverrideId(nextId);
+
+      // keep snapshot list/status in sync after navigation
+      fetchSnapshots().catch(console.error);
+    },
+    [fetchSnapshots]
+  );
+
+  // =====================================================
+  // ✅ Tier 6G.1 — Scene Index fetch (race-safe)
+  // =====================================================
+  useEffect(() => {
     if (!activeSnapshot?.id) return;
+
+    const controller = new AbortController();
 
     setSceneErr(null);
     setSceneIndex(null);
 
-    fetchScene(projectId, activeSnapshot.id)
+    fetchScene(projectId, activeSnapshot.id, { signal: controller.signal })
       .then(setSceneIndex)
-      .catch((e) => setSceneErr(String(e?.message || e)));
+      .catch((e) => {
+        if (e?.name === "AbortError") return;
+        setSceneErr(String(e?.message || e));
+      });
+
+    return () => controller.abort();
   }, [projectId, activeSnapshot?.id]);
 
-  // ✅ Tier 6G.1 ADD (fetch scene index for active snapshot)
-  useEffect(() => {
-    refreshSceneIndex();
-  }, [refreshSceneIndex]);
+  // ✅ Tier 6G.2: allow attach panel to refresh the current snapshot’s scene index
+  const refreshSceneIndex = useCallback(() => {
+    if (!activeSnapshot?.id) return;
+
+    const controller = new AbortController();
+
+    setSceneErr(null);
+    setSceneIndex(null);
+
+    fetchScene(projectId, activeSnapshot.id, { signal: controller.signal })
+      .then(setSceneIndex)
+      .catch((e) => {
+        if (e?.name === "AbortError") return;
+        setSceneErr(String(e?.message || e));
+      });
+
+    return () => controller.abort();
+  }, [projectId, activeSnapshot?.id]);
 
   // ✅ Tier 7.9 ADD (resolve active target deterministically)
   const { targetId: resolvedTargetId } = resolveSelectedTarget(
@@ -230,9 +285,15 @@ export default function StudioEditor() {
               </span>
             )}
 
-            <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
+            <SnapshotPreview
+              snapshot={activeSnapshot}
+              onDraftCreated={fetchSnapshots}
+            />
 
-            <FinalizeDraftButton snapshot={activeSnapshot} onFinalized={fetchSnapshots} />
+            <FinalizeDraftButton
+              snapshot={activeSnapshot}
+              onFinalized={fetchSnapshots}
+            />
           </>
         }
       >
@@ -243,16 +304,9 @@ export default function StudioEditor() {
             {/* ✅ Tier 7.28 ADD (Undo/Redo bar) */}
             <div style={{ padding: 12 }}>
               <UndoRedoBar
-                projectId={projectId} // ✅ REQUIRED after UndoRedoBar signature update
+                projectId={projectId}
                 activeSnapshotId={activeSnapshot?.id}
-                onNavigate={(id) => {
-                  // allow jumping even if a draft exists
-                  setActiveSnapshotOverrideId(Number(id));
-
-                  // ✅ Tiny optional improvement:
-                  // keep snapshot list/status in sync after navigation
-                  fetchSnapshots().catch(console.error);
-                }}
+                onNavigate={navigateToSnapshot}
               />
             </div>
 
@@ -260,10 +314,7 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <SnapshotHistoryGraphPanel
                 activeSnapshotId={activeSnapshot?.id}
-                onNavigate={(id) => {
-                  setActiveSnapshotOverrideId(Number(id));
-                  fetchSnapshots().catch(console.error);
-                }}
+                onNavigate={navigateToSnapshot}
               />
             </div>
 
@@ -277,8 +328,13 @@ export default function StudioEditor() {
 
             {/* ✅ Tier 6G.1 ADD (Scene Index debug panel) */}
             <div style={{ padding: 12 }}>
-              {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
-              <SceneIndexPanel sceneIndex={sceneIndex} snapshotId={activeSnapshot?.id} />
+              {sceneErr ? (
+                <div className="text-red-600 text-sm">{sceneErr}</div>
+              ) : null}
+              <SceneIndexPanel
+                sceneIndex={sceneIndex}
+                snapshotId={activeSnapshot?.id}
+              />
             </div>
 
             {/* ✅ Tier 6G.6 ADD (Scene layers + pick filters + opacity) */}
@@ -301,7 +357,14 @@ export default function StudioEditor() {
             </div>
 
             {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) — kept additive-safe */}
-            <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
+            <div
+              style={{
+                padding: 12,
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
               <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
 
               <TransformToolbar
@@ -348,7 +411,10 @@ export default function StudioEditor() {
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}
             <div style={{ padding: 12 }}>
-              <ReferenceFramesPanel activeSnapshotId={activeSnapshot?.id} disabled={!isEditable} />
+              <ReferenceFramesPanel
+                activeSnapshotId={activeSnapshot?.id}
+                disabled={!isEditable}
+              />
             </div>
           </div>
 
@@ -356,7 +422,10 @@ export default function StudioEditor() {
           <div className="space-y-3">
             {/* ✅ Tier 6G.3: Real Viewer (Three.js) */}
             <div style={{ padding: 12 }}>
-              <ThreeSceneViewer sceneIndex={sceneIndex} disabled={!activeSnapshot?.id} />
+              <ThreeSceneViewer
+                sceneIndex={sceneIndex}
+                disabled={!activeSnapshot?.id}
+              />
             </div>
 
             {/* ✅ Keep Tier 7.10 stub viewport as a fallback/debug surface */}

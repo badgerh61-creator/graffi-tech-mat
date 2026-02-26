@@ -1,6 +1,6 @@
 // frontend/src/pages/StudioEditor.jsx
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 
 import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
@@ -56,6 +56,9 @@ import { historyPush } from "../editor/history/historyStore";
 
 // ✅ Tier 7.29 ADD (Snapshot History Graph Panel)
 import SnapshotHistoryGraphPanel from "../editor/history/SnapshotHistoryGraphPanel";
+
+// ✅ Tier 7.30 ADD (Snapshot Diff Preview Panel)
+import SnapshotDiffPanel from "../editor/history/SnapshotDiffPanel";
 
 export default function StudioEditor() {
   const user = getCurrentUser();
@@ -128,6 +131,14 @@ export default function StudioEditor() {
 
   const activeSnapshot = overrideSnapshot ?? (draftSnapshot ?? completedSnapshot);
   const isEditable = activeSnapshot?.status === "draft";
+
+  // ✅ Tier 7.30 — find base snapshot (parent) for diff preview
+  const baseSnapshot = useMemo(() => {
+    if (!activeSnapshot?.parent_snapshot_id) return null;
+    return (
+      snapshots?.find((s) => s.id === activeSnapshot.parent_snapshot_id) || null
+    );
+  }, [activeSnapshot?.id, activeSnapshot?.parent_snapshot_id, snapshots]);
 
   // ✅ Tier 7.28 — whenever activeSnapshot changes, push into local history stack
   useEffect(() => {
@@ -253,6 +264,14 @@ export default function StudioEditor() {
                   setActiveSnapshotOverrideId(Number(id));
                   fetchSnapshots().catch(console.error);
                 }}
+              />
+            </div>
+
+            {/* ✅ Tier 7.30 ADD (Snapshot Diff Preview Panel) */}
+            <div style={{ padding: 12 }}>
+              <SnapshotDiffPanel
+                baseSnapshot={baseSnapshot}
+                targetSnapshot={activeSnapshot}
               />
             </div>
 

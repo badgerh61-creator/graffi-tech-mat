@@ -54,6 +54,9 @@ import SceneLayersPanel from "../editor/scene/SceneLayersPanel";
 import UndoRedoBar from "../editor/history/UndoRedoBar";
 import { historyPush } from "../editor/history/historyStore";
 
+// ✅ Tier 7.29 ADD (Snapshot History Graph Panel)
+import SnapshotHistoryGraphPanel from "../editor/history/SnapshotHistoryGraphPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -148,7 +151,10 @@ export default function StudioEditor() {
   }, [refreshSceneIndex]);
 
   // ✅ Tier 7.9 ADD (resolve active target deterministically)
-  const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
+  const { targetId: resolvedTargetId } = resolveSelectedTarget(
+    activeSnapshot,
+    selectedId
+  );
 
   // =====================================================
   // TIER 7.8 — GIZMO GATE (TEMP stubs for lock/station)
@@ -234,6 +240,17 @@ export default function StudioEditor() {
 
                   // ✅ Tiny optional improvement:
                   // keep snapshot list/status in sync after navigation
+                  fetchSnapshots().catch(console.error);
+                }}
+              />
+            </div>
+
+            {/* ✅ Tier 7.29 ADD (Snapshot History Graph Panel) */}
+            <div style={{ padding: 12 }}>
+              <SnapshotHistoryGraphPanel
+                activeSnapshotId={activeSnapshot?.id}
+                onNavigate={(id) => {
+                  setActiveSnapshotOverrideId(Number(id));
                   fetchSnapshots().catch(console.error);
                 }}
               />

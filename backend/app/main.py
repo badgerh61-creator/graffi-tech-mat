@@ -83,6 +83,7 @@ from app.api.health import router as health_router
 from app.api.tools import router as tools_router
 from app.api.reference_frames import router as reference_frames_router
 from app.api.selection import router as selection_router
+from app.api import snapshot_history
 
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
     """
@@ -251,7 +252,8 @@ def create_app() -> FastAPI:
     app.include_router(tools_router)
     app.include_router(reference_frames_router)
     app.include_router(selection_router)
-
+    app.include_router(snapshot_history.router)
+    
     return app
 
 

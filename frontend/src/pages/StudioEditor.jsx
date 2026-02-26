@@ -231,6 +231,10 @@ export default function StudioEditor() {
                 onNavigate={(id) => {
                   // allow jumping even if a draft exists
                   setActiveSnapshotOverrideId(Number(id));
+
+                  // ✅ Tiny optional improvement:
+                  // keep snapshot list/status in sync after navigation
+                  fetchSnapshots().catch(console.error);
                 }}
               />
             </div>

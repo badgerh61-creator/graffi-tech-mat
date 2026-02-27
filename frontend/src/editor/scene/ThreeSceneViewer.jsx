@@ -23,6 +23,9 @@ import { useSceneLayers, ensureKind } from "./layersStore";
 import { clearMeshIndex, setMeshPathsForObject } from "./meshIndexStore";
 import { buildMeshPath } from "./meshPath";
 
+// ✅ 6G.9 selection bounding box helpers
+import { parseSelectedId, findNodeByMeshPath } from "./selectionResolve";
+
 // ✅ 7.27 preview ghost
 import { useGizmoPreview } from "../gizmo/gizmoPreviewStore";
 
@@ -164,6 +167,46 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     transformControls.enabled = !disabled;
     transformControls.visible = false; // becomes true once attached
     scene.add(transformControls);
+
+    // ✅ 6G.9 selection bounding box helper
+    let selectionBoxHelper = null;
+
+    function clearSelectionBox() {
+      if (!selectionBoxHelper) return;
+      scene.remove(selectionBoxHelper);
+      selectionBoxHelper.geometry?.dispose?.();
+      selectionBoxHelper.material?.dispose?.();
+      selectionBoxHelper = null;
+    }
+
+    function updateSelectionBox() {
+      clearSelectionBox();
+
+      if (!selectedId) return;
+
+      const { objectId, meshPath } = parseSelectedId(selectedId);
+      if (!objectId) return;
+
+      const group = objectGroups.get(String(objectId));
+      if (!group) return;
+
+      // If hidden by layers, don't draw the box.
+      if (group.visible === false) return;
+
+      let target = group;
+
+      if (meshPath) {
+        const node = findNodeByMeshPath(group, meshPath);
+        if (node) target = node;
+      }
+
+      const box = new THREE.Box3().setFromObject(target);
+      if (box.isEmpty()) return;
+
+      selectionBoxHelper = new THREE.Box3Helper(box);
+      selectionBoxHelper.name = "selection-box-helper";
+      scene.add(selectionBoxHelper);
+    }
 
     // orbit drag
     let isDragging = false,
@@ -427,8 +470,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
-          // ✅ 6G.10: placeholder still has a deterministic "mesh path"
-          // It will appear as something like "placeholder:<id>" due to makePlaceholderMesh name.
           try {
             const mp = buildMeshPath(placeholder);
             if (mp) setMeshPathsForObject(objId, [mp]);
@@ -452,7 +493,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const gltfRoot = gltf.scene;
           group.add(gltfRoot);
 
-          // ✅ 6G.10: collect deterministic mesh paths for the tree panel
           const meshPaths = [];
 
           gltfRoot.traverse((node) => {
@@ -460,7 +500,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
             applyOpacityToMaterial(node.material, cfg.opacity);
 
-            // publish mesh paths (stable, human readable)
             try {
               const mp = buildMeshPath(node);
               if (mp) meshPaths.push(mp);
@@ -502,6 +541,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       // attach gizmo if selection exists
       syncTransformControlsToSelection();
+
+      // ✅ 6G.9 selection bounding box
+      updateSelectionBox();
     }
 
     loadAll();
@@ -589,11 +631,15 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     // keep gizmo synced when selection/mode changes
     syncTransformControlsToSelection();
 
+    // ✅ 6G.9 keep selection box synced too
+    updateSelectionBox();
+
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
 
       clearGhost();
+      clearSelectionBox();
 
       transformControls.removeEventListener("dragging-changed", onGizmoDraggingChanged);
       transformControls.detach();
@@ -621,7 +667,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       renderer.dispose();
 
-      // ✅ Tier 6G.8 safety: some GPUs/drivers keep ghost contexts; guard-call if available
       try {
         renderer.forceContextLoss?.();
       } catch {}
@@ -667,7 +712,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       <div className="text-xs opacity-70">
         Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to frame selected (or whole scene).
-        Drag pads show ghost preview (UI-only). TransformControls mode is synced with the panel.
+        TransformControls mode is synced with the panel. Bounding box shows selection target (6G.9).
       </div>
     </div>
   );

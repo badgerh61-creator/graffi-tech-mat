@@ -55,12 +55,31 @@ def client():
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_db():
+    """
+    SQLite-safe schema reset that avoids SQLAlchemy DROP ordering warnings
+    when FK cycles exist (projects <-> rendered_snapshots).
+    """
     with engine.connect() as conn:
+        # SQLite: disable FK checks during drop/create
         conn.execute(text("PRAGMA foreign_keys=OFF"))
-        Base.metadata.drop_all(bind=conn)
-        Base.metadata.create_all(bind=conn)
-        conn.execute(text("PRAGMA foreign_keys=ON"))
 
+        # --- hard drop all tables in a safe way (SQLite) ---
+        # This avoids SQLAlchemy trying (and warning) about DROP ordering cycles.
+        table_names = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table'")
+        ).fetchall()
+
+        # Drop only real tables (skip sqlite internal tables)
+        for (name,) in table_names:
+            if name.startswith("sqlite_"):
+                continue
+            conn.execute(text(f'DROP TABLE IF EXISTS "{name}"'))
+
+        # Recreate everything from metadata (canonical)
+        Base.metadata.create_all(bind=conn)
+
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        
 
 # -------------------------------------------------
 # Database session

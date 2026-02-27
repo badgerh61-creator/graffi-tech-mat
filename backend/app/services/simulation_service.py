@@ -1,17 +1,22 @@
+# backend/app/services/simulation_service.py
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
-import json, hashlib
+import json
+import hashlib
+
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from app.models.simulation_job import SimulationJob
 from app.models.telemetry_artifact import TelemetryArtifact
-from app.services.pseudo_sim_engine import PseudoSimScenario, run_pseudo_sim
+from app.services.simulation_engine_registry import engine_registry
+
 
 def _stable_hash(obj: Any) -> str:
     raw = json.dumps(obj, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
 
 def create_job_and_run_sync(
     *,
@@ -20,30 +25,35 @@ def create_job_and_run_sync(
     scenario: Dict[str, Any],
     engine_version: str,
 ) -> SimulationJob:
-    # 6S.1 baseline: record a job, run immediately, store artifact
+    """
+    6S.1 baseline: record a job then execute immediately (sync) and store artifact.
+    6S.2: execution is routed through the engine registry (plugin slot).
+    """
     job = SimulationJob(
         snapshot_id=snapshot_id,
         engine_version=engine_version,
         status="running",
         scenario_json=json.dumps(scenario, sort_keys=True),
+        artifact_id=None,
+        error=None,
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
     try:
-        if engine_version != "pseudo-v1":
-            raise HTTPException(422, "unknown engine_version")
+        # 6S.2: resolve engine via registry
+        try:
+            engine = engine_registry.get(engine_version)
+        except ValueError as e:
+            # Preserve contract: unknown engine => 422
+            raise HTTPException(422, str(e))
 
-        sc = PseudoSimScenario(
-            duration_s=float(scenario.get("duration_s", 10.0)),
-            timestep_s=float(scenario.get("timestep_s", 0.1)),
-            throttle=float(scenario.get("throttle", 0.6)),
-            gear_ratio=float(scenario.get("gear_ratio", 10.0)),
-            mass_kg=float(scenario.get("mass_kg", 1200.0)),
-        )
+        result = engine.run(snapshot_id=snapshot_id, scenario=scenario)
 
-        curves = run_pseudo_sim(scenario=sc)
+        curves = result.get("curves") or {}
+        timestep_s = float(result.get("timestep_s", float(scenario.get("timestep_s", 0.1))))
+        duration_s = float(result.get("duration_s", float(scenario.get("duration_s", 10.0))))
 
         scenario_hash = _stable_hash({"scenario": scenario, "engine_version": engine_version})
 
@@ -51,8 +61,8 @@ def create_job_and_run_sync(
             snapshot_id=snapshot_id,
             scenario_hash=scenario_hash,
             engine_version=engine_version,
-            timestep_ms=int(round(sc.timestep_s * 1000.0)),
-            duration_s=int(round(sc.duration_s)),
+            timestep_ms=int(round(timestep_s * 1000.0)),
+            duration_s=int(round(duration_s)),
             curves_json=json.dumps(curves, sort_keys=True),
         )
         db.add(art)
@@ -81,8 +91,10 @@ def create_job_and_run_sync(
         db.refresh(job)
         raise HTTPException(500, "simulation failed") from e
 
+
 def get_job(db: Session, job_id: int) -> Optional[SimulationJob]:
     return db.query(SimulationJob).filter(SimulationJob.id == job_id).first()
+
 
 def get_artifact(db: Session, artifact_id: int) -> Optional[TelemetryArtifact]:
     return db.query(TelemetryArtifact).filter(TelemetryArtifact.id == artifact_id).first()

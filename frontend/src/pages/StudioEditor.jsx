@@ -72,6 +72,9 @@ import { clearGizmoPreview } from "../editor/gizmo/gizmoPreviewStore";
 // ✅ Tier 6S.1 ADD (telemetry viewer panel)
 import TelemetryViewerPanel from "../editor/telemetry/TelemetryViewerPanel";
 
+// ✅ Tier 6S.3 ADD (advanced telemetry overlay + toggles)
+import TelemetryAdvancedPanel from "../editor/telemetry/TelemetryAdvancedPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -451,6 +454,11 @@ export default function StudioEditor() {
             {/* ✅ Tier 6S.1 ADD (telemetry viewer panel) */}
             <div style={{ padding: 12 }}>
               <TelemetryViewerPanel activeSnapshot={activeSnapshot} />
+            </div>
+
+            {/* ✅ Tier 6S.3 ADD (advanced telemetry overlay + toggles) */}
+            <div style={{ padding: 12 }}>
+              <TelemetryAdvancedPanel />
             </div>
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}

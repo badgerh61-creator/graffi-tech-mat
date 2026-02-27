@@ -177,7 +177,16 @@ export default function StudioEditor() {
   );
 
   // =====================================================
+  // ✅ Tier 6G.8 — Deterministic rebind key (forces viewer remount)
+  // =====================================================
+  const sceneRebindKey = useMemo(() => {
+    if (!activeSnapshot?.id) return "snap:none";
+    return `snap:${activeSnapshot.id}`;
+  }, [activeSnapshot?.id]);
+
+  // =====================================================
   // ✅ Tier 6G.1 — Scene Index fetch (race-safe)
+  // ✅ Tier 6G.8 — Enforce selection validity after snapshot switch
   // =====================================================
   useEffect(() => {
     if (!activeSnapshot?.id) return;
@@ -188,14 +197,33 @@ export default function StudioEditor() {
     setSceneIndex(null);
 
     fetchScene(projectId, activeSnapshot.id, { signal: controller.signal })
-      .then(setSceneIndex)
+      .then((idx) => {
+        setSceneIndex(idx);
+
+        // ✅ Tier 6G.8 selection validity:
+        // if selectedId exists but its object_id is not present in the new scene, clear selection
+        try {
+          if (selectedId) {
+            const objectId = String(selectedId).split("::")[0];
+            const ids =
+              (idx?.objects || [])
+                .filter(Boolean)
+                .map((o) => String(o.id || "").trim())
+                .filter(Boolean) || [];
+
+            if (!ids.includes(objectId)) {
+              clearSelection?.();
+            }
+          }
+        } catch {}
+      })
       .catch((e) => {
         if (e?.name === "AbortError") return;
         setSceneErr(String(e?.message || e));
       });
 
     return () => controller.abort();
-  }, [projectId, activeSnapshot?.id]);
+  }, [projectId, activeSnapshot?.id, selectedId]);
 
   // ✅ Tier 6G.2: allow attach panel to refresh the current snapshot’s scene index
   const refreshSceneIndex = useCallback(() => {
@@ -420,9 +448,10 @@ export default function StudioEditor() {
 
           {/* RIGHT: viewport + editor host */}
           <div className="space-y-3">
-            {/* ✅ Tier 6G.3: Real Viewer (Three.js) */}
+            {/* ✅ Tier 6G.8: key forces clean remount on snapshot change (prevents ghosting) */}
             <div style={{ padding: 12 }}>
               <ThreeSceneViewer
+                key={sceneRebindKey}
                 sceneIndex={sceneIndex}
                 disabled={!activeSnapshot?.id}
               />

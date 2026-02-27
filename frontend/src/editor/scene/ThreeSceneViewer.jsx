@@ -10,7 +10,11 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { resolveAssetRef } from "./resolveAssetRef";
 import { buildPickedTargetId } from "./pickingId";
 import { applyTransformToObject3D, makePlaceholderMesh } from "./applyTransform";
-import { clearSelection, setSelectedId, useSelection } from "../selection/selectionStore";
+import {
+  clearSelection,
+  setSelectedId,
+  useSelection,
+} from "../selection/selectionStore";
 
 // ✅ 6G.6 layers
 import { useSceneLayers, ensureKind } from "./layersStore";
@@ -47,7 +51,11 @@ function fitCameraToScene(camera, root) {
   const fov = (camera.fov * Math.PI) / 180;
   const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.6;
 
-  camera.position.set(center.x + distance, center.y + distance * 0.5, center.z + distance);
+  camera.position.set(
+    center.x + distance,
+    center.y + distance * 0.5,
+    center.z + distance
+  );
   camera.lookAt(center);
   camera.updateProjectionMatrix();
 }
@@ -66,7 +74,11 @@ function fitCameraToObject(camera, object3d) {
   const fov = (camera.fov * Math.PI) / 180;
   const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.6;
 
-  camera.position.set(center.x + distance, center.y + distance * 0.5, center.z + distance);
+  camera.position.set(
+    center.x + distance,
+    center.y + distance * 0.5,
+    center.z + distance
+  );
   camera.lookAt(center);
   camera.updateProjectionMatrix();
 }
@@ -108,7 +120,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
-  const objects = useMemo(() => (sceneIndex?.objects || []).filter(Boolean), [sceneIndex]);
+  const objects = useMemo(
+    () => (sceneIndex?.objects || []).filter(Boolean),
+    [sceneIndex]
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -542,7 +557,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     tick();
 
     // keep gizmo synced when selection/mode changes
-    // (safe because we re-run effect on deps, but also do quick sync here)
     syncTransformControlsToSelection();
 
     return () => {
@@ -576,6 +590,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       });
 
       renderer.dispose();
+
+      // ✅ Tier 6G.8 safety: some GPUs/drivers keep ghost contexts; guard-call if available
+      try {
+        renderer.forceContextLoss?.();
+      } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -584,7 +603,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     JSON.stringify(layers.kinds),
     selectedId,
     JSON.stringify(preview || null),
-    gizmoMode, // ✅ Step 6: update TransformControls mode
+    gizmoMode,
   ]);
 
   return (
@@ -616,4 +635,3 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     </div>
   );
 }
-

@@ -12,11 +12,8 @@ describe("TelemetryComparePanel", () => {
   it("loads summaries and compare delta", async () => {
     global.fetch = vi
       .fn()
-      // summary A
       .mockResolvedValueOnce({ ok: true, json: async () => ({ summary: { speed_avg_mps: 1.0 } }) })
-      // summary B
       .mockResolvedValueOnce({ ok: true, json: async () => ({ summary: { speed_avg_mps: 2.0 } }) })
-      // compare
       .mockResolvedValueOnce({ ok: true, json: async () => ({ delta: { speed_avg_mps: 1.0 } }) });
 
     render(<TelemetryComparePanel />);
@@ -26,7 +23,7 @@ describe("TelemetryComparePanel", () => {
 
     fireEvent.click(screen.getByText("Compare"));
 
-    // ✅ wait until compare UI is rendered
     expect(await screen.findByText("Δ (B - A)")).toBeTruthy();
+    expect(global.fetch).toHaveBeenCalledTimes(3); // optional stability check
   });
 });

@@ -86,6 +86,7 @@ from app.api.selection import router as selection_router
 from app.api import snapshot_history
 
 from app.api.simulation import router as simulation_router
+from app.api.simulation_lab import router as simulation_lab_router
 
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
     """
@@ -257,6 +258,7 @@ def create_app() -> FastAPI:
     app.include_router(snapshot_history.router)
     
     app.include_router(simulation_router)
+    app.include_router(simulation_lab_router)
     
     return app
 

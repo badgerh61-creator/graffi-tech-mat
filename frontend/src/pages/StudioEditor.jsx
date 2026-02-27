@@ -78,6 +78,9 @@ import TelemetryAdvancedPanel from "../editor/telemetry/TelemetryAdvancedPanel";
 // ✅ Tier 6S.4 ADD (compare + summary + CSV export panel)
 import TelemetryComparePanel from "../editor/telemetry/TelemetryComparePanel";
 
+// ✅ Tier 6S.5 ADD (lab mode: scenarios + runs + compare matrix)
+import TelemetryLabPanel from "../editor/telemetry/TelemetryLabPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -467,6 +470,11 @@ export default function StudioEditor() {
             {/* ✅ Tier 6S.4 ADD (telemetry compare + summary + CSV export) */}
             <div style={{ padding: 12 }}>
               <TelemetryComparePanel />
+            </div>
+
+            {/* ✅ Tier 6S.5 ADD (lab mode: scenarios + runs + compare matrix) */}
+            <div style={{ padding: 12 }}>
+              <TelemetryLabPanel projectId={projectId} activeSnapshot={activeSnapshot} />
             </div>
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}

@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+import json
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user
+from app.db.session import get_db
+
+from app.schemas.simulation_lab import (
+    ScenarioCreateRequest, ScenarioCreateResponse,
+    ScenarioListResponse, ScenarioListItem,
+    RunCreateRequest, RunCreateResponse,
+    RunListResponse, RunListItem,
+    CompareMatrixRequest, CompareMatrixResponse,
+)
+
+from app.services.simulation_scenarios import create_scenario, list_scenarios, get_scenario
+from app.services.simulation_runs import create_run_index, list_runs
+from app.services.telemetry_compare_matrix import build_compare_matrix
+from app.services.simulation_service import create_job_and_run_sync, get_artifact
+
+router = APIRouter(prefix="/simulation", tags=["simulation-lab"])
+
+
+@router.post("/scenarios", response_model=ScenarioCreateResponse)
+def create_scenario_endpoint(
+    body: ScenarioCreateRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    sid = create_scenario(
+        db=db,
+        project_id=body.project_id,
+        name=body.name,
+        scenario=body.scenario,
+        user_id=user.id,
+    )
+    return ScenarioCreateResponse(scenario_id=sid)
+
+
+@router.get("/scenarios", response_model=ScenarioListResponse)
+def list_scenarios_endpoint(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    scenarios = list_scenarios(db=db, project_id=project_id)
+    return ScenarioListResponse(
+        project_id=project_id,
+        scenarios=[ScenarioListItem(**s) for s in scenarios],
+    )
+
+
+def _resolve_snapshot_model():
+    try:
+        from app.models.rendered_snapshot import RenderedSnapshot as Snapshot  # type: ignore
+        return Snapshot
+    except Exception:
+        from app.models.snapshot import Snapshot  # type: ignore
+        return Snapshot
+
+
+@router.post("/run", response_model=RunCreateResponse)
+def run_scenario_endpoint(
+    body: RunCreateRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # enforce exactly one of scenario_id or scenario
+    if (body.scenario_id is None and body.scenario is None) or (
+        body.scenario_id is not None and body.scenario is not None
+    ):
+        raise HTTPException(422, "Provide exactly one of scenario_id or scenario")
+
+    Snapshot = _resolve_snapshot_model()
+    snap = db.query(Snapshot).filter(Snapshot.id == body.snapshot_id).first()
+    if not snap:
+        raise HTTPException(404, "Snapshot not found")
+
+    project_id = int(getattr(snap, "project_id", 0))
+    if project_id <= 0:
+        raise HTTPException(422, "Snapshot missing project_id")
+
+    scenario_id = body.scenario_id
+    scenario = body.scenario
+
+    if scenario_id is not None:
+        s = get_scenario(db=db, scenario_id=int(scenario_id))
+        scenario = s["scenario"]
+
+    # Create artifact using the same path as 6S.1 (job + artifact)
+    job = create_job_and_run_sync(
+        db=db,
+        snapshot_id=int(body.snapshot_id),
+        scenario=scenario or {},
+        engine_version=body.engine_version,
+    )
+    if not job.artifact_id:
+        raise HTTPException(500, "simulation did not produce artifact")
+
+    run_id = create_run_index(
+        db=db,
+        project_id=project_id,
+        snapshot_id=int(body.snapshot_id),
+        scenario_id=int(scenario_id) if scenario_id is not None else None,
+        artifact_id=int(job.artifact_id),
+        engine_version=body.engine_version,
+        user_id=user.id,
+    )
+
+    return RunCreateResponse(run_id=run_id, artifact_id=int(job.artifact_id))
+
+
+@router.get("/runs", response_model=RunListResponse)
+def list_runs_endpoint(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    runs = list_runs(db=db, project_id=project_id)
+    return RunListResponse(
+        project_id=project_id,
+        runs=[RunListItem(**r) for r in runs],
+    )
+
+
+@router.post("/compare/matrix", response_model=CompareMatrixResponse)
+def compare_matrix_endpoint(
+    body: CompareMatrixRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # fetch artifacts via existing TelemetryArtifact model
+    from app.models.telemetry_artifact import TelemetryArtifact
+
+    rows = db.query(TelemetryArtifact).filter(TelemetryArtifact.id.in_(body.artifact_ids)).all()
+    if len(rows) != len(set(body.artifact_ids)):
+        raise HTTPException(404, "One or more artifacts not found")
+
+    artifacts = []
+    for r in rows:
+        artifacts.append(
+            {
+                "id": int(r.id),
+                "curves": json.loads(r.curves_json or "{}"),
+                "timestep_s": float(r.timestep_ms) / 1000.0,
+                "duration_s": float(r.duration_s),
+            }
+        )
+
+    matrix = build_compare_matrix(artifacts=artifacts)
+    ids = sorted(list(set(body.artifact_ids)))
+    return CompareMatrixResponse(artifact_ids=ids, matrix=matrix)

@@ -83,6 +83,9 @@ import TelemetryLabPanel from "../editor/telemetry/TelemetryLabPanel";
 // ✅ Tier 6S.6 ADD (scenario templates + presets)
 import ScenarioTemplatesPanel from "../editor/telemetry/ScenarioTemplatesPanel";
 
+// ✅ Tier 6S.7 ADD (batch runner panel)
+import BatchRunnerPanel from "../editor/telemetry/BatchRunnerPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -492,6 +495,11 @@ export default function StudioEditor() {
                 projectId={projectId}
                 onCreated={() => setLabRefreshKey((k) => k + 1)}
               />
+            </div>
+
+            {/* ✅ Tier 6S.7 ADD (batch runner: N templates/scenarios -> N artifacts + runs) */}
+            <div style={{ padding: 12 }}>
+              <BatchRunnerPanel activeSnapshot={activeSnapshot} />
             </div>
 
             {/* ✅ Tier 6S.5 ADD (lab mode: scenarios + runs + compare matrix) */}

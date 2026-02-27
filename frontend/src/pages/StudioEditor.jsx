@@ -69,6 +69,9 @@ import SnapshotDiffPanel from "../editor/history/SnapshotDiffPanel";
 // ✅ Tier 7.27/7.31 glue (clear ghost preview on snapshot change)
 import { clearGizmoPreview } from "../editor/gizmo/gizmoPreviewStore";
 
+// ✅ Tier 6S.1 ADD (telemetry viewer panel)
+import TelemetryViewerPanel from "../editor/telemetry/TelemetryViewerPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -443,6 +446,11 @@ export default function StudioEditor() {
                   fetchSnapshots().catch(console.error);
                 }}
               />
+            </div>
+
+            {/* ✅ Tier 6S.1 ADD (telemetry viewer panel) */}
+            <div style={{ padding: 12 }}>
+              <TelemetryViewerPanel activeSnapshot={activeSnapshot} />
             </div>
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}

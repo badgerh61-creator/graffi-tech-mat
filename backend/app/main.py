@@ -85,6 +85,8 @@ from app.api.reference_frames import router as reference_frames_router
 from app.api.selection import router as selection_router
 from app.api import snapshot_history
 
+from app.api.simulation import router as simulation_router
+
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
     """
     Additive-only safety: detect duplicate (method, path) pairs.
@@ -253,6 +255,8 @@ def create_app() -> FastAPI:
     app.include_router(reference_frames_router)
     app.include_router(selection_router)
     app.include_router(snapshot_history.router)
+    
+    app.include_router(simulation_router)
     
     return app
 

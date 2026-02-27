@@ -1,5 +1,3 @@
-# backend/app/db/base.py
-
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -25,6 +23,12 @@ from app.models import (  # noqa: F401
     project,
     rendered_snapshot,
 
+    # ----------------------------
+    # Tier 6S — Simulation (6S.1)
+    # ----------------------------
+    simulation_job,
+    telemetry_artifact,
+
     # Phase E — LEGACY export intent (DISABLED)
     # export,  # ⛔ DO NOT IMPORT (legacy table only)
 
@@ -41,4 +45,3 @@ from app.models import (  # noqa: F401
     # Infra
     patch_registry,
 )
-

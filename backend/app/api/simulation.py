@@ -6,13 +6,18 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
+from fastapi.responses import PlainTextResponse
 from app.schemas.simulation import (
     SimulationJobCreateRequest,
     SimulationJobCreateResponse,
     SimulationJobStatusResponse,
     TelemetryArtifactResponse,
+    TelemetrySummaryResponse,
+    TelemetryCompareRequest,
+    TelemetryCompareResponse,
 )
 from app.services.simulation_service import create_job_and_run_sync, get_job, get_artifact
+from app.services.telemetry_reports import compute_summary, compute_delta, export_csv
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
@@ -95,3 +100,77 @@ def get_telemetry_artifact(
         duration_s=float(art.duration_s),
         curves=curves,
     )
+    
+    
+# --- Tier 6S.4 (ADD ONLY): summary + compare + CSV export ---
+
+@router.get("/artifacts/{artifact_id}/summary", response_model=TelemetrySummaryResponse)
+def artifact_summary(
+    artifact_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    art = get_artifact(db, artifact_id)
+    if not art:
+        raise HTTPException(404, "Artifact not found")
+
+    curves = json.loads(art.curves_json or "{}")
+    timestep_s = float(art.timestep_ms) / 1000.0
+    duration_s = float(art.duration_s)
+
+    summary = compute_summary(curves=curves, timestep_s=timestep_s, duration_s=duration_s)
+
+    return TelemetrySummaryResponse(
+        artifact_id=art.id,
+        snapshot_id=art.snapshot_id,
+        engine_version=art.engine_version,
+        summary=summary,
+    )
+
+
+@router.post("/compare", response_model=TelemetryCompareResponse)
+def compare_artifacts(
+    body: TelemetryCompareRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    a = get_artifact(db, body.a_artifact_id)
+    b = get_artifact(db, body.b_artifact_id)
+    if not a or not b:
+        raise HTTPException(404, "Artifact not found")
+
+    a_curves = json.loads(a.curves_json or "{}")
+    b_curves = json.loads(b.curves_json or "{}")
+
+    a_sum = compute_summary(
+        curves=a_curves,
+        timestep_s=float(a.timestep_ms) / 1000.0,
+        duration_s=float(a.duration_s),
+    )
+    b_sum = compute_summary(
+        curves=b_curves,
+        timestep_s=float(b.timestep_ms) / 1000.0,
+        duration_s=float(b.duration_s),
+    )
+
+    return TelemetryCompareResponse(
+        a_artifact_id=a.id,
+        b_artifact_id=b.id,
+        delta=compute_delta(a_summary=a_sum, b_summary=b_sum),
+    )
+
+
+@router.get("/artifacts/{artifact_id}/export.csv", response_class=PlainTextResponse)
+def artifact_export_csv(
+    artifact_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    art = get_artifact(db, artifact_id)
+    if not art:
+        raise HTTPException(404, "Artifact not found")
+
+    curves = json.loads(art.curves_json or "{}")
+    csv = export_csv(curves=curves)
+
+    return PlainTextResponse(content=csv, media_type="text/csv")

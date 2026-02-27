@@ -36,3 +36,23 @@ class TelemetryArtifactResponse(BaseModel):
     timestep_s: float
     duration_s: float
     curves: Dict[str, Any]
+    
+ 
+# --- Tier 6S.4 (ADD ONLY): telemetry summary + compare responses ---
+
+class TelemetrySummaryResponse(BaseModel):
+    artifact_id: int
+    snapshot_id: int
+    engine_version: str
+    summary: Dict[str, float]
+
+
+class TelemetryCompareRequest(BaseModel):
+    a_artifact_id: int
+    b_artifact_id: int
+
+
+class TelemetryCompareResponse(BaseModel):
+    a_artifact_id: int
+    b_artifact_id: int
+    delta: Dict[str, float]    

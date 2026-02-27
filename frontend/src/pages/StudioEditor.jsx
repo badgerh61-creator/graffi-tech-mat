@@ -75,6 +75,9 @@ import TelemetryViewerPanel from "../editor/telemetry/TelemetryViewerPanel";
 // ✅ Tier 6S.3 ADD (advanced telemetry overlay + toggles)
 import TelemetryAdvancedPanel from "../editor/telemetry/TelemetryAdvancedPanel";
 
+// ✅ Tier 6S.4 ADD (compare + summary + CSV export panel)
+import TelemetryComparePanel from "../editor/telemetry/TelemetryComparePanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -459,6 +462,11 @@ export default function StudioEditor() {
             {/* ✅ Tier 6S.3 ADD (advanced telemetry overlay + toggles) */}
             <div style={{ padding: 12 }}>
               <TelemetryAdvancedPanel />
+            </div>
+
+            {/* ✅ Tier 6S.4 ADD (telemetry compare + summary + CSV export) */}
+            <div style={{ padding: 12 }}>
+              <TelemetryComparePanel />
             </div>
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}

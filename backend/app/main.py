@@ -89,6 +89,7 @@ from app.api.simulation import router as simulation_router
 from app.api.simulation_lab import router as simulation_lab_router
 from app.api.simulation_templates import router as simulation_templates_router
 from app.api.simulation_batch import router as simulation_batch_router
+from app.api.simulation_repro import router as simulation_repro_router
 
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
     """
@@ -263,6 +264,7 @@ def create_app() -> FastAPI:
     app.include_router(simulation_lab_router)
     app.include_router(simulation_templates_router)
     app.include_router(simulation_batch_router)
+    app.include_router(simulation_repro_router)
     
     return app
 

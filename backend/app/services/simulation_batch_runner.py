@@ -11,6 +11,17 @@ from app.services.simulation_runs import create_run_index
 from app.services.scenario_templates import materialize_template
 from app.services.simulation_service import create_job_and_run_sync  # rename if yours differs
 
+# Tier 6S.9 hashing helpers (best-effort)
+try:
+    from app.services.reproducibility import stable_hash as _stable_hash
+except Exception:  # pragma: no cover
+    _stable_hash = None
+
+try:
+    from app.services.scenario_hashing import compute_scenario_hash as _compute_scenario_hash
+except Exception:  # pragma: no cover
+    _compute_scenario_hash = None
+
 
 def _resolve_snapshot_model():
     try:
@@ -19,6 +30,31 @@ def _resolve_snapshot_model():
     except Exception:
         from app.models.snapshot import Snapshot  # type: ignore
         return Snapshot
+
+
+def _compute_snapshot_hash_best_effort(snap) -> str:
+    if not _stable_hash:
+        return ""
+    payload = {
+        "id": int(getattr(snap, "id", 0) or 0),
+        "updated_at": str(getattr(snap, "updated_at", "") or ""),
+        "scene_json": str(getattr(snap, "scene_json", "") or ""),
+        "state_json": str(getattr(snap, "state_json", "") or ""),
+        "content_json": str(getattr(snap, "content_json", "") or ""),
+        "metrics_json": str(getattr(snap, "metrics_json", "") or ""),
+    }
+    return _stable_hash(payload)
+
+
+def _compute_scenario_hash_best_effort(*, scenario: dict, engine_version: str) -> str:
+    if not _compute_scenario_hash:
+        return ""
+    return _compute_scenario_hash(
+        scenario=scenario or {},
+        template_key=None,
+        template_version=None,
+        engine_version=engine_version,
+    )
 
 
 def create_batch_and_run(
@@ -45,6 +81,9 @@ def create_batch_and_run(
     project_id = int(getattr(snap, "project_id", 0))
     if project_id <= 0:
         raise HTTPException(422, "Snapshot missing project_id")
+
+    # Tier 6S.9: snapshot hash once, reused for all runs
+    snapshot_hash = _compute_snapshot_hash_best_effort(snap)
 
     batch = SimulationBatch(
         project_id=project_id,
@@ -80,6 +119,8 @@ def create_batch_and_run(
             if not job.artifact_id:
                 raise HTTPException(500, "simulation did not produce artifact")
 
+            scenario_hash = _compute_scenario_hash_best_effort(scenario=scenario or {}, engine_version=engine_version)
+
             run_id = create_run_index(
                 db=db,
                 project_id=project_id,
@@ -88,6 +129,10 @@ def create_batch_and_run(
                 artifact_id=int(job.artifact_id),
                 engine_version=engine_version,
                 user_id=user_id,
+
+                # optional fields
+                snapshot_hash=snapshot_hash,
+                scenario_hash=scenario_hash,
             )
 
             run_ids.append(int(run_id))
@@ -107,6 +152,8 @@ def create_batch_and_run(
             if not job.artifact_id:
                 raise HTTPException(500, "simulation did not produce artifact")
 
+            scenario_hash = _compute_scenario_hash_best_effort(scenario=scenario or {}, engine_version=engine_version)
+
             run_id = create_run_index(
                 db=db,
                 project_id=project_id,
@@ -115,6 +162,9 @@ def create_batch_and_run(
                 artifact_id=int(job.artifact_id),
                 engine_version=engine_version,
                 user_id=user_id,
+
+                snapshot_hash=snapshot_hash,
+                scenario_hash=scenario_hash,
             )
 
             run_ids.append(int(run_id))

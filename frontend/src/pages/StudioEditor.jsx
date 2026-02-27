@@ -53,6 +53,9 @@ import ThreeSceneViewer from "../editor/scene/ThreeSceneViewer";
 // ✅ Tier 6G.6 ADD (scene layers + pick filters)
 import SceneLayersPanel from "../editor/scene/SceneLayersPanel";
 
+// ✅ Tier 6G.10 ADD (scene graph tree panel)
+import SceneGraphPanel from "../editor/scene/SceneGraphPanel";
+
 // ✅ Tier 7.28 ADD (Undo/Redo UI + local history)
 import UndoRedoBar from "../editor/history/UndoRedoBar";
 import { historyPush } from "../editor/history/historyStore";
@@ -368,6 +371,11 @@ export default function StudioEditor() {
             {/* ✅ Tier 6G.6 ADD (Scene layers + pick filters + opacity) */}
             <div style={{ padding: 12 }}>
               <SceneLayersPanel sceneIndex={sceneIndex} />
+            </div>
+
+            {/* ✅ Tier 6G.10 ADD (Scene Graph tree panel) */}
+            <div style={{ padding: 12 }}>
+              <SceneGraphPanel sceneIndex={sceneIndex} />
             </div>
 
             {/* ✅ Tier 6G.2 ADD (Attach asset to object, then refresh scene) */}

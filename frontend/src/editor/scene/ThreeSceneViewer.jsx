@@ -19,6 +19,10 @@ import {
 // ✅ 6G.6 layers
 import { useSceneLayers, ensureKind } from "./layersStore";
 
+// ✅ 6G.10 mesh index publishing
+import { clearMeshIndex, setMeshPathsForObject } from "./meshIndexStore";
+import { buildMeshPath } from "./meshPath";
+
 // ✅ 7.27 preview ghost
 import { useGizmoPreview } from "../gizmo/gizmoPreviewStore";
 
@@ -129,6 +133,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
+
+    // ✅ 6G.10: wipe mesh index whenever viewer remounts/rebinds
+    clearMeshIndex();
 
     let disposed = false;
 
@@ -420,6 +427,13 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
+          // ✅ 6G.10: placeholder still has a deterministic "mesh path"
+          // It will appear as something like "placeholder:<id>" due to makePlaceholderMesh name.
+          try {
+            const mp = buildMeshPath(placeholder);
+            if (mp) setMeshPathsForObject(objId, [mp]);
+          } catch {}
+
           if (cfg.pickable) {
             pickables.push(placeholder);
             meshToObjectId.set(placeholder, objId);
@@ -438,21 +452,37 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const gltfRoot = gltf.scene;
           group.add(gltfRoot);
 
+          // ✅ 6G.10: collect deterministic mesh paths for the tree panel
+          const meshPaths = [];
+
           gltfRoot.traverse((node) => {
             if (!node || !node.isMesh) return;
 
             applyOpacityToMaterial(node.material, cfg.opacity);
+
+            // publish mesh paths (stable, human readable)
+            try {
+              const mp = buildMeshPath(node);
+              if (mp) meshPaths.push(mp);
+            } catch {}
 
             if (cfg.pickable) {
               pickables.push(node);
               meshToObjectId.set(node, objId);
             }
           });
+
+          setMeshPathsForObject(objId, meshPaths);
         } catch (e) {
           const placeholder = makePlaceholderMesh(`${objId} (failed)`);
           group.add(placeholder);
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
+
+          try {
+            const mp = buildMeshPath(placeholder);
+            if (mp) setMeshPathsForObject(objId, [mp]);
+          } catch {}
 
           if (cfg.pickable) {
             pickables.push(placeholder);
@@ -624,8 +654,15 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         </div>
       ) : null}
 
-      <div ref={containerRef} className="border rounded overflow-hidden" style={{ height: 460 }}>
-        <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+      <div
+        ref={containerRef}
+        className="border rounded overflow-hidden"
+        style={{ height: 460 }}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", height: "100%", display: "block" }}
+        />
       </div>
 
       <div className="text-xs opacity-70">

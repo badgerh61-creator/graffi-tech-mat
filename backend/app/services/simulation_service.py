@@ -28,6 +28,7 @@ def create_job_and_run_sync(
     """
     6S.1 baseline: record a job then execute immediately (sync) and store artifact.
     6S.2: execution is routed through the engine registry (plugin slot).
+    6S.8: engines may optionally return 'meta' which we store (additive).
     """
     job = SimulationJob(
         snapshot_id=snapshot_id,
@@ -46,12 +47,14 @@ def create_job_and_run_sync(
         try:
             engine = engine_registry.get(engine_version)
         except ValueError as e:
-            # Preserve contract: unknown engine => 422
             raise HTTPException(422, str(e))
 
-        result = engine.run(snapshot_id=snapshot_id, scenario=scenario)
+        result = engine.run(snapshot_id=snapshot_id, scenario=scenario) or {}
 
         curves = result.get("curves") or {}
+        meta = result.get("meta") or {}
+
+        # Keep old defaults exactly (stability)
         timestep_s = float(result.get("timestep_s", float(scenario.get("timestep_s", 0.1))))
         duration_s = float(result.get("duration_s", float(scenario.get("duration_s", 10.0))))
 
@@ -65,6 +68,11 @@ def create_job_and_run_sync(
             duration_s=int(round(duration_s)),
             curves_json=json.dumps(curves, sort_keys=True),
         )
+
+        # 6S.8 (ADD ONLY): store meta if the column exists (prevents older DB breakage)
+        if hasattr(art, "meta_json"):
+            setattr(art, "meta_json", json.dumps(meta, sort_keys=True))
+
         db.add(art)
         db.commit()
         db.refresh(art)

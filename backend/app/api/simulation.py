@@ -22,7 +22,6 @@ from app.services.telemetry_reports import compute_summary, compute_delta, expor
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
 def _resolve_snapshot_model():
-    # adapt to your repo naming (RenderedSnapshot vs Snapshot)
     try:
         from app.models.rendered_snapshot import RenderedSnapshot as Snapshot  # type: ignore
         return Snapshot
@@ -41,7 +40,6 @@ def create_sim_job(
     if not snap:
         raise HTTPException(404, "Snapshot not found")
 
-    # optional access hook if you already have it
     try:
         from app import crud
         fn = getattr(crud, "get_snapshot_if_accessible", None)
@@ -92,6 +90,15 @@ def get_telemetry_artifact(
         raise HTTPException(404, "Artifact not found")
 
     curves = json.loads(art.curves_json or "{}")
+
+    # 6S.8 (ADD ONLY): meta if present
+    meta = None
+    if hasattr(art, "meta_json"):
+        try:
+            meta = json.loads(getattr(art, "meta_json") or "{}")
+        except Exception:
+            meta = {}
+
     return TelemetryArtifactResponse(
         artifact_id=art.id,
         snapshot_id=art.snapshot_id,
@@ -99,9 +106,10 @@ def get_telemetry_artifact(
         timestep_s=float(art.timestep_ms) / 1000.0,
         duration_s=float(art.duration_s),
         curves=curves,
+        meta=meta,
     )
-    
-    
+
+
 # --- Tier 6S.4 (ADD ONLY): summary + compare + CSV export ---
 
 @router.get("/artifacts/{artifact_id}/summary", response_model=TelemetrySummaryResponse)
@@ -126,7 +134,6 @@ def artifact_summary(
         engine_version=art.engine_version,
         summary=summary,
     )
-
 
 @router.post("/compare", response_model=TelemetryCompareResponse)
 def compare_artifacts(
@@ -158,7 +165,6 @@ def compare_artifacts(
         b_artifact_id=b.id,
         delta=compute_delta(a_summary=a_sum, b_summary=b_sum),
     )
-
 
 @router.get("/artifacts/{artifact_id}/export.csv", response_class=PlainTextResponse)
 def artifact_export_csv(

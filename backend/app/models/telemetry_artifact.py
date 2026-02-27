@@ -18,4 +18,8 @@ class TelemetryArtifact(Base):
 
     curves_json = Column(Text, nullable=False, default="{}")
 
+    # 6S.8 (ADD ONLY): optional engine metadata (endurance, model_version, notes, etc.)
+    # Default keeps older tiers stable.
+    meta_json = Column(Text, nullable=False, default="{}")
+
     job = relationship("SimulationJob", back_populates="artifact")

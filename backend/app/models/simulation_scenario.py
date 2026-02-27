@@ -14,5 +14,11 @@ class SimulationScenario(Base):
     name = Column(String(120), nullable=False)
     scenario_json = Column(Text, nullable=False)
 
+    # 6S.6 (additive): template + reproducibility metadata
+    template_key = Column(String(64), nullable=True)
+    template_version = Column(String(16), nullable=True)
+    engine_version = Column(String(64), nullable=False, default="pseudo-v1")
+    scenario_hash = Column(String(128), nullable=False, index=True, default="")
+
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

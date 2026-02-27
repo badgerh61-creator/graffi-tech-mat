@@ -1,6 +1,5 @@
 // frontend/src/pages/StudioEditor.jsx
-
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 
 import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
@@ -81,6 +80,9 @@ import TelemetryComparePanel from "../editor/telemetry/TelemetryComparePanel";
 // ✅ Tier 6S.5 ADD (lab mode: scenarios + runs + compare matrix)
 import TelemetryLabPanel from "../editor/telemetry/TelemetryLabPanel";
 
+// ✅ Tier 6S.6 ADD (scenario templates + presets)
+import ScenarioTemplatesPanel from "../editor/telemetry/ScenarioTemplatesPanel";
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -97,6 +99,9 @@ export default function StudioEditor() {
   // ✅ Tier 7.28 ADD — allow overriding which snapshot is active (for history jumps)
   const [activeSnapshotOverrideId, setActiveSnapshotOverrideId] = useState(null);
 
+  // ✅ Tier 6S.6 ADD — force refresh/re-mount of lab panel after scenario creation
+  const [labRefreshKey, setLabRefreshKey] = useState(0);
+
   // ===============================
   // DIRTY STATE (EDITOR-LOCAL)
   // ===============================
@@ -108,26 +113,35 @@ export default function StudioEditor() {
   // ✅ Tier 7.9 ADD (canonical selection state)
   const { selectedId } = useSelectionStore();
 
+  // -------------------------------
+  // ✅ Safety: avoid overlapping snapshot fetches
+  // -------------------------------
+  const snapshotsFetchInFlight = useRef(false);
+
   // =====================================================
   // SNAPSHOT FETCH (AUTHORITATIVE)
   // =====================================================
   const fetchSnapshots = useCallback(() => {
-    const token = getAccessToken();
+    // Prevent overlap (helps during rapid navigation / HMR / rerenders)
+    if (snapshotsFetchInFlight.current) return Promise.resolve();
+    snapshotsFetchInFlight.current = true;
+
+    const token = getAccessToken?.();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
     return fetch(`http://127.0.0.1:8000/projects/${projectId}/snapshots/`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
     })
       .then((res) => {
-        if (!res.ok) {
-          throw new Error(`Snapshot fetch failed: ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`Snapshot fetch failed: ${res.status}`);
         return res.json();
       })
       .then((data) => {
         console.log("Snapshots:", data);
-        setSnapshots(data);
+        setSnapshots(Array.isArray(data) ? data : []);
+      })
+      .finally(() => {
+        snapshotsFetchInFlight.current = false;
       });
   }, [projectId]);
 
@@ -304,7 +318,7 @@ export default function StudioEditor() {
   });
 
   // =====================================================
-  // RENDER
+  // RENDER  (⚠️ NO TIER BLOCKS MOVED/REMOVED)
   // =====================================================
   return (
     <CapabilityProvider role={user?.role ?? "viewer"}>
@@ -472,9 +486,21 @@ export default function StudioEditor() {
               <TelemetryComparePanel />
             </div>
 
+            {/* ✅ Tier 6S.6 ADD (scenario templates + presets) */}
+            <div style={{ padding: 12 }}>
+              <ScenarioTemplatesPanel
+                projectId={projectId}
+                onCreated={() => setLabRefreshKey((k) => k + 1)}
+              />
+            </div>
+
             {/* ✅ Tier 6S.5 ADD (lab mode: scenarios + runs + compare matrix) */}
             <div style={{ padding: 12 }}>
-              <TelemetryLabPanel projectId={projectId} activeSnapshot={activeSnapshot} />
+              <TelemetryLabPanel
+                key={`lab:${labRefreshKey}`}
+                projectId={projectId}
+                activeSnapshot={activeSnapshot}
+              />
             </div>
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}

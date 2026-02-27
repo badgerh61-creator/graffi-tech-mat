@@ -1,5 +1,4 @@
 // frontend/src/editor/scene/ThreeSceneViewer.jsx
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -33,7 +32,18 @@ import { useGizmoPreview } from "../gizmo/gizmoPreviewStore";
 import { useGizmoMode } from "../gizmo/gizmoModeStore";
 
 function makeRenderer(canvas) {
-  const r = new THREE.WebGLRenderer({ canvas, antialias: true });
+  // Prefer WebGL2, fallback WebGL1. If neither exists, return null.
+  const gl2 = canvas.getContext("webgl2", { antialias: true });
+  const gl1 = gl2 ? null : canvas.getContext("webgl", { antialias: true });
+  const gl = gl2 || gl1;
+  if (!gl) return null;
+
+  const r = new THREE.WebGLRenderer({
+    canvas,
+    context: gl,
+    antialias: true,
+  });
+
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   return r;
 }
@@ -132,6 +142,34 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     [sceneIndex]
   );
 
+  // -------------------------------
+  // ✅ Prevent WebGL churn:
+  // keep rapidly-changing values in refs,
+  // so the main WebGL effect does NOT remount.
+  // -------------------------------
+  const selectedIdRef = useRef(selectedId);
+  const previewRef = useRef(preview);
+  const gizmoModeRef = useRef(gizmoMode);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  useEffect(() => {
+    previewRef.current = preview;
+  }, [preview]);
+
+  useEffect(() => {
+    gizmoModeRef.current = gizmoMode;
+  }, [gizmoMode]);
+
+  // Expose minimal internal sync hooks for secondary effects (no remount).
+  const viewerApiRef = useRef({
+    syncSelection: null,
+    syncPreview: null,
+    syncMode: null,
+  });
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -143,7 +181,30 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     let disposed = false;
 
     const scene = new THREE.Scene();
+
     const renderer = makeRenderer(canvas);
+    if (!renderer) {
+      setErr("WebGL is not available (context creation failed).");
+      return () => {};
+    }
+
+    // WebGL context loss safety
+    let contextLost = false;
+
+    function onContextLost(e) {
+      e.preventDefault();
+      contextLost = true;
+      setErr("WebGL context was lost. Refresh the page if it doesn’t recover.");
+    }
+
+    function onContextRestored() {
+      contextLost = false;
+      // keep message light; reloading is often safest
+      setErr("WebGL context restored. If blank, refresh the page.");
+    }
+
+    canvas.addEventListener("webglcontextlost", onContextLost, false);
+    canvas.addEventListener("webglcontextrestored", onContextRestored, false);
 
     // lighting + ground
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
@@ -163,7 +224,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
     // ✅ TransformControls (Step 1)
     const transformControls = new TransformControls(camera, renderer.domElement);
-    transformControls.setMode(gizmoMode); // translate | rotate | scale
+    transformControls.setMode(gizmoModeRef.current); // translate | rotate | scale
     transformControls.enabled = !disabled;
     transformControls.visible = false; // becomes true once attached
     scene.add(transformControls);
@@ -182,9 +243,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     function updateSelectionBox() {
       clearSelectionBox();
 
-      if (!selectedId) return;
+      const sid = selectedIdRef.current;
+      if (!sid) return;
 
-      const { objectId, meshPath } = parseSelectedId(selectedId);
+      const { objectId, meshPath } = parseSelectedId(sid);
       if (!objectId) return;
 
       const group = objectGroups.get(String(objectId));
@@ -218,7 +280,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       const dragging = !!e?.value;
       if (dragging) isDragging = false;
     }
-    transformControls.addEventListener("dragging-changed", onGizmoDraggingChanged);
+    transformControls.addEventListener(
+      "dragging-changed",
+      onGizmoDraggingChanged
+    );
 
     function onPointerDown(e) {
       // ignore orbit start if clicking on gizmo handles
@@ -240,7 +305,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       const offset = camera.position.clone();
       const spherical = new THREE.Spherical().setFromVector3(offset);
       spherical.theta -= dx;
-      spherical.phi = Math.min(Math.max(0.2, spherical.phi - dy), Math.PI - 0.2);
+      spherical.phi = Math.min(
+        Math.max(0.2, spherical.phi - dy),
+        Math.PI - 0.2
+      );
       offset.setFromSpherical(spherical);
       camera.position.copy(offset);
       camera.lookAt(0, 0.8, 0);
@@ -323,12 +391,13 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     }
 
     function frameSelectedOrScene() {
-      if (!selectedId) {
+      const sid = selectedIdRef.current;
+      if (!sid) {
         fitCameraToScene(camera, root);
         return;
       }
 
-      const objectId = String(selectedId).split("::")[0];
+      const objectId = String(sid).split("::")[0];
       const group = objectGroups.get(objectId);
 
       if (group) fitCameraToObject(camera, group);
@@ -337,15 +406,18 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
     // ✅ Attach gizmo to selected object group (UI-only)
     function syncTransformControlsToSelection() {
-      transformControls.setMode(gizmoMode);
+      const sid = selectedIdRef.current;
+      const mode = gizmoModeRef.current;
 
-      if (disabled || !selectedId) {
+      transformControls.setMode(mode);
+
+      if (disabled || !sid) {
         transformControls.detach();
         transformControls.visible = false;
         return;
       }
 
-      const objectId = String(selectedId).split("::")[0];
+      const objectId = String(sid).split("::")[0];
       const group = objectGroups.get(objectId);
 
       if (!group) {
@@ -368,9 +440,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     // ✅ 7.27 apply ghost from preview
     function applyPreviewGhost() {
       clearGhost();
-      if (!preview) return;
+      const pv = previewRef.current;
+      if (!pv) return;
 
-      const targetId = preview.payload?.target_id || preview.target_id;
+      const targetId = pv.payload?.target_id || pv.target_id;
       if (!targetId) return;
 
       const objectId = String(targetId).split("::")[0];
@@ -384,7 +457,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       ghost.traverse((node) => {
         if (node?.isMesh && node.material) {
-          const mats = Array.isArray(node.material) ? node.material : [node.material];
+          const mats = Array.isArray(node.material)
+            ? node.material
+            : [node.material];
           const cloned = mats.map((m) => {
             const mm = m.clone();
             mm.transparent = true;
@@ -397,8 +472,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         }
       });
 
-      const tool = preview.tool;
-      const p = preview.payload || {};
+      const tool = pv.tool;
+      const p = pv.payload || {};
 
       if (tool === "TRANSLATE") {
         const d = p.delta || {};
@@ -487,6 +562,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const url = await resolveAssetRef(assetRef);
           if (!url) throw new Error("asset_ref could not be resolved");
 
+          // ✅ DEBUG: show what URL we ended up trying to load
+          console.log("[ThreeSceneViewer] Loading GLB:", { objId, assetRef, url });
+
           const gltf = await loader.loadAsync(url);
           if (disposed) return;
 
@@ -513,6 +591,13 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
           setMeshPathsForObject(objId, meshPaths);
         } catch (e) {
+          // ✅ DEBUG: make failures visible
+          console.error("[ThreeSceneViewer] GLB load failed:", {
+            objId,
+            assetRef,
+            error: String(e?.message || e),
+          });
+
           const placeholder = makePlaceholderMesh(`${objId} (failed)`);
           group.add(placeholder);
 
@@ -546,6 +631,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       updateSelectionBox();
     }
 
+    // Run initial load
     loadAll();
 
     function onClick(e) {
@@ -624,24 +710,43 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     let raf = 0;
     function tick() {
       raf = requestAnimationFrame(tick);
+      if (contextLost) return;
       renderer.render(scene, camera);
     }
     tick();
 
-    // keep gizmo synced when selection/mode changes
-    syncTransformControlsToSelection();
+    // Publish sync hooks for secondary effects (no WebGL remount)
+    viewerApiRef.current.syncSelection = () => {
+      syncTransformControlsToSelection();
+      updateSelectionBox();
+    };
+    viewerApiRef.current.syncPreview = () => {
+      applyPreviewGhost();
+    };
+    viewerApiRef.current.syncMode = () => {
+      syncTransformControlsToSelection();
+    };
 
-    // ✅ 6G.9 keep selection box synced too
-    updateSelectionBox();
+    // initial sync (safe)
+    viewerApiRef.current.syncSelection?.();
+    viewerApiRef.current.syncPreview?.();
 
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
 
+      // clear sync hooks
+      viewerApiRef.current.syncSelection = null;
+      viewerApiRef.current.syncPreview = null;
+      viewerApiRef.current.syncMode = null;
+
       clearGhost();
       clearSelectionBox();
 
-      transformControls.removeEventListener("dragging-changed", onGizmoDraggingChanged);
+      transformControls.removeEventListener(
+        "dragging-changed",
+        onGizmoDraggingChanged
+      );
       transformControls.detach();
       scene.remove(transformControls);
 
@@ -665,21 +770,30 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         }
       });
 
+      canvas.removeEventListener("webglcontextlost", onContextLost);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored);
+
       renderer.dispose();
 
-      try {
-        renderer.forceContextLoss?.();
-      } catch {}
+      // Do NOT forceContextLoss during normal cleanup.
+      // It is useful for tests but causes churn during Vite HMR / fast reloads.
+      // try { renderer.forceContextLoss?.(); } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    JSON.stringify(objects),
-    disabled,
-    JSON.stringify(layers.kinds),
-    selectedId,
-    JSON.stringify(preview || null),
-    gizmoMode,
-  ]);
+  }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds)]);
+
+  // Secondary sync effects: do NOT remount WebGL
+  useEffect(() => {
+    viewerApiRef.current?.syncSelection?.();
+  }, [selectedId]);
+
+  useEffect(() => {
+    viewerApiRef.current?.syncMode?.();
+  }, [gizmoMode]);
+
+  useEffect(() => {
+    viewerApiRef.current?.syncPreview?.();
+  }, [preview]);
 
   return (
     <div className="border rounded p-3 space-y-2">
@@ -695,7 +809,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       {!objects.length ? (
         <div className="text-sm opacity-75">
-          No objects in scene index yet. Attach an asset (6G.2) or ensure body_state.scene.objects[] exists.
+          No objects in scene index yet. Attach an asset (6G.2) or ensure
+          body_state.scene.objects[] exists.
         </div>
       ) : null}
 
@@ -711,8 +826,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       </div>
 
       <div className="text-xs opacity-70">
-        Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to frame selected (or whole scene).
-        TransformControls mode is synced with the panel. Bounding box shows selection target (6G.9).
+        Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to
+        frame selected (or whole scene). TransformControls mode is synced with the
+        panel. Bounding box shows selection target (6G.9).
       </div>
     </div>
   );

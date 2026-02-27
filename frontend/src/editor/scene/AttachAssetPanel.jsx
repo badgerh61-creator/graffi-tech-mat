@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { listAssets, attachAsset } from "../../services/studio/assetsApi";
 
 export default function AttachAssetPanel({ projectId, snapshotId, onAttached }) {
@@ -14,16 +14,35 @@ export default function AttachAssetPanel({ projectId, snapshotId, onAttached }) 
       .catch((e) => setErr(String(e?.message || e)));
   }, []);
 
+  const disabledReason = useMemo(() => {
+    if (!projectId) return "missing projectId";
+    if (!snapshotId) return "missing snapshotId (active snapshot not ready yet)";
+    if (!assetId) return "select an asset first";
+    if (busy) return "busy";
+    return null;
+  }, [projectId, snapshotId, assetId, busy]);
+
   async function onAttach() {
-    if (!projectId || !snapshotId) return;
+    if (disabledReason) return;
+
     setErr(null);
     setBusy(true);
+
+    const payload = {
+      object_id: objectId,
+      asset_id: Number(assetId),
+      kind: "vehicle",
+    };
+
+    // 🔎 debug publish
+    window.__dbg_lastAttachPayload = payload;
+
     try {
-      await attachAsset(projectId, snapshotId, {
-        object_id: objectId,
-        asset_id: Number(assetId),
-        kind: "vehicle",
-      });
+      const resp = await attachAsset(projectId, snapshotId, payload);
+
+      // 🔎 debug publish
+      window.__dbg_attachAsset_response = resp;
+
       onAttached?.();
     } catch (e) {
       setErr(String(e?.message || e));
@@ -35,6 +54,20 @@ export default function AttachAssetPanel({ projectId, snapshotId, onAttached }) 
   return (
     <div className="border rounded p-3 space-y-2">
       <div className="text-sm font-semibold">Attach Asset (6G.2)</div>
+
+      {/* 🔎 always-visible debug */}
+      <div className="text-xs opacity-70">
+        projectId: <b>{String(projectId)}</b> · snapshotId:{" "}
+        <b>{snapshotId ? String(snapshotId) : "none"}</b> · assetId:{" "}
+        <b>{assetId ? String(assetId) : "none"}</b>
+        {disabledReason ? (
+          <>
+            {" "}
+            · <span className="text-red-600">disabled: {disabledReason}</span>
+          </>
+        ) : null}
+      </div>
+
       {err ? <div className="text-sm text-red-600">{err}</div> : null}
 
       <div>
@@ -64,7 +97,8 @@ export default function AttachAssetPanel({ projectId, snapshotId, onAttached }) 
 
       <button
         className="border rounded px-3 py-1 text-sm"
-        disabled={!assetId || busy || !projectId || !snapshotId}
+        disabled={!!disabledReason}
+        title={disabledReason || ""}
         onClick={onAttach}
       >
         {busy ? "Attaching…" : "Attach"}

@@ -9,12 +9,13 @@ const API_BASE = "http://127.0.0.1:8000";
  */
 export async function fetchScene(projectId, snapshotId, opts = {}) {
   const token = getAccessToken?.();
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
   const res = await fetch(
     `${API_BASE}/projects/${projectId}/snapshots/${snapshotId}/scene`,
     {
       signal: opts.signal,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers,
     }
   );
 

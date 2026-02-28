@@ -1,40 +1,51 @@
+// frontend/src/services/studio/draftWorkspaceApi.js
+
 const API_BASE = "http://127.0.0.1:8000";
 
-function authHeaders(getAccessToken) {
-  const token = getAccessToken?.();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+async function postJson(path, { getAccessToken } = {}) {
+  const token = typeof getAccessToken === "function" ? getAccessToken() : null;
 
-async function readJson(res) {
-  try { return await res.json(); } catch { return {}; }
-}
-
-export async function startEdit({ snapshotId, getAccessToken }) {
-  const res = await fetch(`${API_BASE}/snapshots/${snapshotId}/start-edit`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(getAccessToken) },
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}), // backend doesn't require payload, but keep shape stable
   });
-  const data = await readJson(res);
-  if (!res.ok) throw new Error(data?.detail || `start-edit failed: ${res.status}`);
-  return data;
+
+  // ✅ Avoid "Cannot read properties of undefined (reading 'ok')"
+  if (!res) {
+    throw new Error("Network error: no response");
+  }
+
+  // Best-effort parse for readable errors
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    const msg =
+      (data && (data.detail || data.message)) ||
+      `Request failed: ${res.status}`;
+    throw new Error(String(msg));
+  }
+
+  return data || {};
 }
 
-export async function completeDraft({ snapshotId, getAccessToken }) {
-  const res = await fetch(`${API_BASE}/snapshots/${snapshotId}/complete-draft`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(getAccessToken) },
-  });
-  const data = await readJson(res);
-  if (!res.ok) throw new Error(data?.detail || `complete-draft failed: ${res.status}`);
-  return data;
+// ✅ Tier 7.35 endpoints (must match backend OpenAPI exactly)
+export function startEdit({ snapshotId, getAccessToken }) {
+  return postJson(`/snapshots/${snapshotId}/start-edit`, { getAccessToken });
 }
 
-export async function discardDraft({ snapshotId, getAccessToken }) {
-  const res = await fetch(`${API_BASE}/snapshots/${snapshotId}/discard-draft`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(getAccessToken) },
-  });
-  const data = await readJson(res);
-  if (!res.ok) throw new Error(data?.detail || `discard-draft failed: ${res.status}`);
-  return data;
+export function completeDraft({ snapshotId, getAccessToken }) {
+  return postJson(`/snapshots/${snapshotId}/complete-draft`, { getAccessToken });
+}
+
+export function discardDraft({ snapshotId, getAccessToken }) {
+  return postJson(`/snapshots/${snapshotId}/discard-draft`, { getAccessToken });
 }

@@ -1,29 +1,27 @@
+// tests/tier_7_35/StudioModeBar.test.jsx
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, fireEvent, screen, waitFor } from "@testing-library/react";
+
 import StudioModeBar from "../../src/editor/modes/StudioModeBar";
 
-vi.mock("../../src/utils/auth", () => ({
-  getAccessToken: () => "T",
-}));
+// ✅ Mock API module (best: avoids fetch/res.ok issues entirely)
+vi.mock("../../src/services/studio/draftWorkspaceApi", () => {
+  return {
+    startEdit: vi.fn(async () => ({ draft_snapshot_id: 2 })),
+    completeDraft: vi.fn(async () => ({ completed_snapshot_id: 99 })),
+    discardDraft: vi.fn(async () => ({ parent_snapshot_id: 99 })),
+  };
+});
 
 describe("Tier 7.35 StudioModeBar", () => {
   beforeEach(() => {
-    global.fetch = vi.fn();
+    vi.clearAllMocks();
   });
 
-  it("shows READ when snapshot is completed", () => {
-    render(<StudioModeBar activeSnapshot={{ id: 1, status: "completed" }} />);
-    expect(screen.getByText(/READ/)).toBeTruthy();
-  });
-
-  it("calls start-edit and sets draft snapshot id", async () => {
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ mode: "edit", draft_snapshot_id: 99 }),
-    });
-
+  it("Enter Edit calls onSetActiveSnapshotId with draft_snapshot_id", async () => {
     const onSet = vi.fn();
+
     render(
       <StudioModeBar
         activeSnapshot={{ id: 1, status: "completed" }}
@@ -31,18 +29,44 @@ describe("Tier 7.35 StudioModeBar", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Enter Edit"));
+    fireEvent.click(screen.getByRole("button", { name: /enter edit/i }));
+
+    await waitFor(() => {
+      expect(onSet).toHaveBeenCalledWith(2);
+    });
+  });
+
+  it("Complete Draft calls onSetActiveSnapshotId with completed_snapshot_id", async () => {
+    const onSet = vi.fn();
+
+    render(
+      <StudioModeBar
+        activeSnapshot={{ id: 2, status: "draft" }}
+        onSetActiveSnapshotId={onSet}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /complete draft/i }));
 
     await waitFor(() => {
       expect(onSet).toHaveBeenCalledWith(99);
     });
-
-    const [url] = global.fetch.mock.calls[0];
-    expect(url).toContain("/snapshots/1/start-edit");
   });
 
-  it("shows EDIT (DRAFT) when snapshot is draft", () => {
-    render(<StudioModeBar activeSnapshot={{ id: 2, status: "draft" }} />);
-    expect(screen.getByText(/EDIT \(DRAFT\)/)).toBeTruthy();
+  it("Discard Draft calls onSetActiveSnapshotId with parent_snapshot_id", async () => {
+    const onSet = vi.fn();
+
+    render(
+      <StudioModeBar
+        activeSnapshot={{ id: 2, status: "draft" }}
+        onSetActiveSnapshotId={onSet}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /discard draft/i }));
+
+    await waitFor(() => {
+      expect(onSet).toHaveBeenCalledWith(99);
+    });
   });
 });

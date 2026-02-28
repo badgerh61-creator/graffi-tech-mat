@@ -1,16 +1,22 @@
 import React, { useMemo, useState } from "react";
 import { getAccessToken } from "../../utils/auth";
-import { startEdit, completeDraft, discardDraft } from "../../services/studio/draftWorkspaceApi";
+import {
+  startEdit,
+  completeDraft,
+  discardDraft,
+} from "../../services/studio/draftWorkspaceApi";
 
 export default function StudioModeBar({ activeSnapshot, onSetActiveSnapshotId }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
+  // Tier 7.35 truth: mode derives ONLY from snapshot status
   const mode = useMemo(() => {
     if (!activeSnapshot) return "read";
     return activeSnapshot.status === "draft" ? "edit" : "read";
   }, [activeSnapshot]);
 
+  // Tier 7.35 gates: ONLY snapshot status (lock gating is Tier 7.36 elsewhere)
   const canEnterEdit = !!activeSnapshot && mode === "read";
   const canComplete = !!activeSnapshot && mode === "edit";
   const canDiscard = !!activeSnapshot && mode === "edit";
@@ -20,7 +26,10 @@ export default function StudioModeBar({ activeSnapshot, onSetActiveSnapshotId })
     setBusy(true);
     setErr(null);
     try {
-      const res = await startEdit({ snapshotId: activeSnapshot.id, getAccessToken });
+      const res = await startEdit({
+        snapshotId: activeSnapshot.id,
+        getAccessToken,
+      });
       onSetActiveSnapshotId?.(res.draft_snapshot_id);
     } catch (e) {
       setErr(e?.message || String(e));
@@ -34,7 +43,10 @@ export default function StudioModeBar({ activeSnapshot, onSetActiveSnapshotId })
     setBusy(true);
     setErr(null);
     try {
-      const res = await completeDraft({ snapshotId: activeSnapshot.id, getAccessToken });
+      const res = await completeDraft({
+        snapshotId: activeSnapshot.id,
+        getAccessToken,
+      });
       onSetActiveSnapshotId?.(res.completed_snapshot_id);
     } catch (e) {
       setErr(e?.message || String(e));
@@ -48,7 +60,10 @@ export default function StudioModeBar({ activeSnapshot, onSetActiveSnapshotId })
     setBusy(true);
     setErr(null);
     try {
-      const res = await discardDraft({ snapshotId: activeSnapshot.id, getAccessToken });
+      const res = await discardDraft({
+        snapshotId: activeSnapshot.id,
+        getAccessToken,
+      });
       onSetActiveSnapshotId?.(res.parent_snapshot_id);
     } catch (e) {
       setErr(e?.message || String(e));
@@ -70,6 +85,7 @@ export default function StudioModeBar({ activeSnapshot, onSetActiveSnapshotId })
         className="border rounded px-3 py-1 text-sm"
         disabled={!canEnterEdit || busy}
         onClick={doStartEdit}
+        title={!canEnterEdit ? "Only completed snapshots can enter edit" : ""}
       >
         {busy ? "..." : "Enter Edit"}
       </button>

@@ -119,6 +119,40 @@ function applyOpacityToMaterial(material, opacity) {
   }
 }
 
+// ✅ Tier 7.37 helper (builtin checker texture)
+function makeCheckerTexture(size = 128, cells = 8) {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const cell = Math.max(1, Math.floor(size / cells));
+  for (let y = 0; y < cells; y++) {
+    for (let x = 0; x < cells; x++) {
+      const on = (x + y) % 2 === 0;
+      ctx.fillStyle = on ? "#ffffff" : "#111111";
+      ctx.fillRect(x * cell, y * cell, cell, cell);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function clamp01(x) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return 1.0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function degToRad(d) {
+  return (Number(d) * Math.PI) / 180;
+}
+
 /**
  * ✅ ADDITIVE SAFE:
  * - canEdit gates ONLY TransformControls (gizmo).
@@ -151,6 +185,15 @@ export default function ThreeSceneViewer({
     [sceneIndex]
   );
 
+  // ✅ Tier 7.37: read decals (support a few possible shapes safely)
+  const decals = useMemo(() => {
+    const d1 = sceneIndex?.decor_state?.decals;
+    const d2 = sceneIndex?.snapshot?.decor_state?.decals;
+    const d3 = sceneIndex?.activeSnapshot?.decor_state?.decals;
+    const list = d1 || d2 || d3 || [];
+    return Array.isArray(list) ? list.filter(Boolean) : [];
+  }, [sceneIndex]);
+
   // -------------------------------
   // ✅ Prevent WebGL churn:
   // keep rapidly-changing values in refs,
@@ -162,6 +205,9 @@ export default function ThreeSceneViewer({
 
   // ✅ NEW: canEdit ref (no remount)
   const canEditRef = useRef(!!canEdit);
+
+  // ✅ Tier 7.37 decals ref (no remount)
+  const decalsRef = useRef(decals);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -179,12 +225,17 @@ export default function ThreeSceneViewer({
     canEditRef.current = !!canEdit;
   }, [canEdit]);
 
+  useEffect(() => {
+    decalsRef.current = decals;
+  }, [decals]);
+
   // Expose minimal internal sync hooks for secondary effects (no remount).
   const viewerApiRef = useRef({
     syncSelection: null,
     syncPreview: null,
     syncMode: null,
     syncEditGate: null, // ✅ NEW
+    syncDecals: null, // ✅ Tier 7.37
   });
 
   useEffect(() => {
@@ -234,6 +285,11 @@ export default function ThreeSceneViewer({
     const root = new THREE.Group();
     root.name = "scene-root";
     scene.add(root);
+
+    // ✅ Tier 7.37: decals root (always deterministic)
+    const decalsRoot = new THREE.Group();
+    decalsRoot.name = "decals-root";
+    root.add(decalsRoot);
 
     // camera
     const rect = container.getBoundingClientRect();
@@ -371,6 +427,164 @@ export default function ThreeSceneViewer({
       });
 
       ghost = null;
+    }
+
+    // ✅ Tier 7.37: decals holder + textures cache (lifetime = viewer mount)
+    let decalPlanes = []; // { mesh, material, geometry, texture? }
+    const textureLoader = new THREE.TextureLoader();
+    const decalTextureCache = new Map(); // asset_ref -> THREE.Texture
+    const checkerTex = makeCheckerTexture(128, 8);
+
+    function clearDecals() {
+      // Remove planes and dispose safely
+      for (const item of decalPlanes) {
+        try {
+          if (item?.mesh?.parent) item.mesh.parent.remove(item.mesh);
+          item.geometry?.dispose?.();
+          item.material?.dispose?.();
+          // Textures in cache are disposed at unmount (below), not per-plane
+        } catch {}
+      }
+      decalPlanes = [];
+
+      // Clear decalsRoot children (defensive)
+      while (decalsRoot.children.length) decalsRoot.remove(decalsRoot.children[0]);
+    }
+
+    function normalizeDecal(d) {
+      const id = String(d?.id || "");
+      const enabled = d?.enabled !== false;
+      const targetId = String(d?.target_id || "");
+      const assetRef = String(d?.asset_ref || "");
+
+      const pos = d?.position || {};
+      const rot = d?.rotation_euler || {};
+      const scl = d?.scale || {};
+
+      const opacity = clamp01(d?.opacity ?? 1.0);
+      const zOff = Number.isFinite(Number(d?.z_offset)) ? Number(d.z_offset) : 0.001;
+
+      // plane size behavior:
+      // - we treat scale.x/scale.y as width/height multipliers; z ignored.
+      const sx = Number.isFinite(Number(scl.x)) ? Number(scl.x) : 1;
+      const sy = Number.isFinite(Number(scl.y)) ? Number(scl.y) : 1;
+      const sz = Number.isFinite(Number(scl.z)) ? Number(scl.z) : 1;
+
+      return {
+        id,
+        enabled,
+        targetId,
+        assetRef,
+        position: {
+          x: Number.isFinite(Number(pos.x)) ? Number(pos.x) : 0,
+          y: Number.isFinite(Number(pos.y)) ? Number(pos.y) : 0,
+          z: Number.isFinite(Number(pos.z)) ? Number(pos.z) : 0,
+        },
+        rotation_euler: {
+          x: Number.isFinite(Number(rot.x)) ? Number(rot.x) : 0,
+          y: Number.isFinite(Number(rot.y)) ? Number(rot.y) : 0,
+          z: Number.isFinite(Number(rot.z)) ? Number(rot.z) : 0,
+        },
+        scale: { x: sx, y: sy, z: sz },
+        opacity,
+        z_offset: zOff,
+      };
+    }
+
+    async function getDecalTexture(assetRef) {
+      if (!assetRef) return null;
+      if (decalTextureCache.has(assetRef)) return decalTextureCache.get(assetRef);
+
+      // builtin checker
+      if (assetRef === "builtin://checker") {
+        if (checkerTex) decalTextureCache.set(assetRef, checkerTex);
+        return checkerTex;
+      }
+
+      // If assetRef looks like a URL, use it directly. Otherwise try resolveAssetRef.
+      let url = assetRef;
+      if (!/^https?:\/\//i.test(assetRef)) {
+        try {
+          const resolved = await resolveAssetRef(assetRef);
+          if (resolved) url = resolved;
+        } catch {
+          // keep url as assetRef
+        }
+      }
+
+      // Load texture (async)
+      try {
+        const tex = await textureLoader.loadAsync(url);
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.needsUpdate = true;
+        decalTextureCache.set(assetRef, tex);
+        return tex;
+      } catch (e) {
+        console.warn("[ThreeSceneViewer] decal texture load failed:", {
+          assetRef,
+          url,
+          error: String(e?.message || e),
+        });
+        // fall back to checker if available
+        if (checkerTex) {
+          decalTextureCache.set(assetRef, checkerTex);
+          return checkerTex;
+        }
+        return null;
+      }
+    }
+
+    // ✅ Tier 7.37: render decals deterministically (stable order by id)
+    async function syncDecals() {
+      clearDecals();
+
+      const raw = decalsRef.current || [];
+      if (!raw.length) return;
+
+      // deterministic ordering
+      const sorted = raw
+        .map(normalizeDecal)
+        .filter((d) => d.id && d.enabled && d.targetId)
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+      for (const d of sorted) {
+        if (disposed) return;
+
+        const objectKey = String(d.targetId).split("::")[0];
+        const group = objectGroups.get(objectKey);
+        if (!group) continue;
+        if (group.visible === false) continue;
+
+        // ✅ Minimal: plane always faces outward relative to group local space.
+        // (Later tiers can project to mesh surface; 7.37 is intentionally simple.)
+        const tex = await getDecalTexture(d.assetRef);
+        if (disposed) return;
+
+        const geom = new THREE.PlaneGeometry(0.5, 0.5); // base size; scale controls actual size
+        const mat = new THREE.MeshBasicMaterial({
+          map: tex || null,
+          transparent: true,
+          opacity: d.opacity,
+          depthWrite: false,
+        });
+
+        const plane = new THREE.Mesh(geom, mat);
+        plane.name = `decal:${d.id}`;
+        plane.renderOrder = 1000; // keep decals on top (simple)
+        plane.position.set(d.position.x, d.position.y, d.position.z + d.z_offset);
+        plane.rotation.set(
+          degToRad(d.rotation_euler.x),
+          degToRad(d.rotation_euler.y),
+          degToRad(d.rotation_euler.z)
+        );
+        plane.scale.set(d.scale.x, d.scale.y, d.scale.z);
+
+        // attach to object group for now
+        group.add(plane);
+
+        decalPlanes.push({ mesh: plane, geometry: geom, material: mat });
+      }
     }
 
     // picking sets
@@ -541,10 +755,16 @@ export default function ThreeSceneViewer({
 
       // clear root
       clearGhost();
+      clearSelectionBox();
+      clearDecals();
+
       transformControls.detach();
       transformControls.visible = false;
 
       while (root.children.length) root.remove(root.children[0]);
+
+      // ✅ re-add decals root after clearing root
+      root.add(decalsRoot);
 
       if (!objects.length) return;
 
@@ -662,6 +882,9 @@ export default function ThreeSceneViewer({
       applyPreviewGhost();
       syncTransformControlsToSelection();
       updateSelectionBox();
+
+      // ✅ Tier 7.37: render decals after objects exist
+      await syncDecals();
     }
 
     loadAll();
@@ -763,9 +986,15 @@ export default function ThreeSceneViewer({
     viewerApiRef.current.syncEditGate = () => {
       syncTransformControlsToSelection();
     };
+    // ✅ Tier 7.37: sync decals without remount
+    viewerApiRef.current.syncDecals = () => {
+      // fire-and-forget; internal guards prevent state corruption on unmount
+      syncDecals();
+    };
 
     viewerApiRef.current.syncSelection?.();
     viewerApiRef.current.syncPreview?.();
+    viewerApiRef.current.syncDecals?.();
 
     return () => {
       disposed = true;
@@ -775,9 +1004,22 @@ export default function ThreeSceneViewer({
       viewerApiRef.current.syncPreview = null;
       viewerApiRef.current.syncMode = null;
       viewerApiRef.current.syncEditGate = null;
+      viewerApiRef.current.syncDecals = null;
 
       clearGhost();
       clearSelectionBox();
+      clearDecals();
+
+      // dispose cached textures
+      for (const [k, tex] of decalTextureCache.entries()) {
+        if (k === "builtin://checker") continue; // checkerTex disposed below (or kept)
+        try {
+          tex?.dispose?.();
+        } catch {}
+      }
+      try {
+        checkerTex?.dispose?.();
+      } catch {}
 
       transformControls.removeEventListener(
         "dragging-changed",
@@ -831,6 +1073,11 @@ export default function ThreeSceneViewer({
   useEffect(() => {
     viewerApiRef.current?.syncEditGate?.();
   }, [canEdit]);
+
+  // ✅ Tier 7.37: when decals change, re-sync decals (no remount)
+  useEffect(() => {
+    viewerApiRef.current?.syncDecals?.();
+  }, [decals]);
 
   return (
     <div className="border rounded p-3 space-y-2">

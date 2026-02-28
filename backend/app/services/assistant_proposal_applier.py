@@ -61,9 +61,8 @@ def _kernel_tool_for(tool_name: str) -> str:
     # Phase T kernel tools are categories, not leaf operations
     if tool_name in _TRANSFORM_OPS:
         return "transform"
-    return tool_name
 
-    # ✅ ADD: tuning leaf tools map to tuning category
+    # ✅ FIX: tuning leaf tools map to tuning category (was unreachable before)
     if tool_name in _TUNING_OPS:
         return "tuning"
 

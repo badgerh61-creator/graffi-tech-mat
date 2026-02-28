@@ -5,8 +5,9 @@ from app.services.studio_kernel_guard import enforce_tool_authority
 from app.services.tool_registry import get_tool
 from app.services.audit import log_event
 
+# ✅ FIX: use canonical StudioSession gate (snapshot-bound)
+from app.services.studio_sessions import require_active_session
 
-from app.services.presence_sessions import require_active_session
 
 def execute_tool(*, db, user, snapshot, tool, params):
     tool_obj = get_tool(tool) if isinstance(tool, str) else tool
@@ -31,7 +32,7 @@ def execute_tool(*, db, user, snapshot, tool, params):
     )
 
     # 3️⃣ Execute (mutation boundary)
-    
+
     # ✅ Internal flag for layered enforcement compatibility
     setattr(snapshot, "_validated_by_executor", True)
     new_snapshot = tool_obj.execute(
@@ -54,4 +55,3 @@ def execute_tool(*, db, user, snapshot, tool, params):
     )
 
     return new_snapshot
-

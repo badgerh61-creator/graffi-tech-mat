@@ -316,6 +316,25 @@ export default function StudioEditor() {
   }, [activeSnapshot?.id]);
 
   // =====================================================
+  // ✅ Tier 7.37 ADD (viewer should always have decor_state)
+  // If sceneIndex endpoint doesn’t include decor_state yet, we stitch it in
+  // from the authoritative snapshot. (UI-only merge; no writes.)
+  // =====================================================
+  const sceneIndexForViewer = useMemo(() => {
+    if (!sceneIndex) return sceneIndex;
+    const decor_state =
+      sceneIndex?.decor_state ??
+      activeSnapshot?.decor_state ??
+      activeSnapshot?.body_state?.decor_state ??
+      null;
+
+    // If nothing to merge, keep original reference.
+    if (decor_state == null) return sceneIndex;
+
+    return { ...sceneIndex, decor_state };
+  }, [sceneIndex, activeSnapshot?.id]);
+
+  // =====================================================
   // ✅ Tier 7.36 — Lock status polling (draft only)
   // =====================================================
   useEffect(() => {
@@ -609,7 +628,7 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <ThreeSceneViewer
                 key={sceneRebindKey}
-                sceneIndex={sceneIndex}
+                sceneIndex={sceneIndexForViewer} // ✅ Tier 7.37 merge decor_state if needed
                 materialOverrides={materialOverrides} // ✅ Tier 6G.11
                 disabled={!activeSnapshot?.id}
                 canEdit={toolsEnabled} // ✅ draft + lock + role + station

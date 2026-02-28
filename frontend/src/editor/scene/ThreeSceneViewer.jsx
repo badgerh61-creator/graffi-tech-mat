@@ -119,7 +119,16 @@ function applyOpacityToMaterial(material, opacity) {
   }
 }
 
-export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
+/**
+ * ✅ ADDITIVE SAFE:
+ * - canEdit gates ONLY TransformControls (gizmo).
+ * - Picking/selection still works in READ.
+ */
+export default function ThreeSceneViewer({
+  sceneIndex,
+  disabled = false,
+  canEdit = true, // ✅ NEW (default true so older callers behave the same)
+}) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -151,6 +160,9 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
   const previewRef = useRef(preview);
   const gizmoModeRef = useRef(gizmoMode);
 
+  // ✅ NEW: canEdit ref (no remount)
+  const canEditRef = useRef(!!canEdit);
+
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -163,11 +175,16 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     gizmoModeRef.current = gizmoMode;
   }, [gizmoMode]);
 
+  useEffect(() => {
+    canEditRef.current = !!canEdit;
+  }, [canEdit]);
+
   // Expose minimal internal sync hooks for secondary effects (no remount).
   const viewerApiRef = useRef({
     syncSelection: null,
     syncPreview: null,
     syncMode: null,
+    syncEditGate: null, // ✅ NEW
   });
 
   useEffect(() => {
@@ -225,7 +242,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     // ✅ TransformControls (Step 1)
     const transformControls = new TransformControls(camera, renderer.domElement);
     transformControls.setMode(gizmoModeRef.current); // translate | rotate | scale
-    transformControls.enabled = !disabled;
+
+    // ✅ NEW: effective gizmo enabled gate
+    const gizmoEnabled = !disabled && !!canEditRef.current;
+    transformControls.enabled = gizmoEnabled;
+
     transformControls.visible = false; // becomes true once attached
     scene.add(transformControls);
 
@@ -418,7 +439,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       transformControls.setMode(mode);
 
-      if (disabled || !sid) {
+      // ✅ NEW: effective gizmo enabled gate (read-only still selectable)
+      const gizmoEnabledNow = !disabled && !!canEditRef.current;
+      transformControls.enabled = gizmoEnabledNow;
+
+      if (!gizmoEnabledNow || !sid) {
         transformControls.detach();
         transformControls.visible = false;
         return;
@@ -642,8 +667,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     loadAll();
 
     function onClick(e) {
-      if (disabled) return;
-
+      // IMPORTANT: keep selection available even in READ mode.
+      // Only the gizmo is gated by canEdit/disabled.
       const r = canvas.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * 2 - 1;
       const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
@@ -680,8 +705,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     }
 
     function onDoubleClick(e) {
-      if (disabled) return;
-
+      // Keep focus feature available in READ too.
       const r = canvas.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * 2 - 1;
       const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
@@ -735,6 +759,10 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     viewerApiRef.current.syncMode = () => {
       syncTransformControlsToSelection();
     };
+    // ✅ NEW: sync canEdit gate without remount
+    viewerApiRef.current.syncEditGate = () => {
+      syncTransformControlsToSelection();
+    };
 
     viewerApiRef.current.syncSelection?.();
     viewerApiRef.current.syncPreview?.();
@@ -746,6 +774,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       viewerApiRef.current.syncSelection = null;
       viewerApiRef.current.syncPreview = null;
       viewerApiRef.current.syncMode = null;
+      viewerApiRef.current.syncEditGate = null;
 
       clearGhost();
       clearSelectionBox();
@@ -797,6 +826,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
   useEffect(() => {
     viewerApiRef.current?.syncPreview?.();
   }, [preview]);
+
+  // ✅ NEW: when canEdit changes, just re-sync gizmo state
+  useEffect(() => {
+    viewerApiRef.current?.syncEditGate?.();
+  }, [canEdit]);
 
   return (
     <div className="border rounded p-3 space-y-2">

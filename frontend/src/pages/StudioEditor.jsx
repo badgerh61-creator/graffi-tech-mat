@@ -13,6 +13,11 @@ import { useDraftAutosave } from "../hooks/useDraftAutosave";
 // ✅ Tier 7.35 ADD (READ ↔ EDIT mode bar)
 import StudioModeBar from "../editor/modes/StudioModeBar";
 
+// ✅ Tier 7.36 ADD (session header + lock status + reasons)
+import EditSessionHeader from "../editor/modes/EditSessionHeader";
+import { fetchDraftLockStatus } from "../services/studio/lockStatusApi";
+import { useLockStatus, setLockStatus } from "../editor/modes/lockStatusStore";
+
 // ✅ Tier 7.1 ADD (selection + transform toolbar)
 import { useSelection } from "../editor/selection/useSelection";
 import TransformToolbar from "../editor/tools/TransformToolbar";
@@ -91,6 +96,22 @@ import ScenarioTemplatesPanel from "../editor/telemetry/ScenarioTemplatesPanel";
 // ✅ Tier 6S.7 ADD (batch runner panel)
 import BatchRunnerPanel from "../editor/telemetry/BatchRunnerPanel";
 
+const LOCK_POLL_MS = 1500;
+
+function normalizeLock(data) {
+  // Canonical: { state: "owned"|"taken"|"missing"|"unknown", owner_id?, owner_name? }
+  if (!data) return { state: "unknown" };
+  if (data.state) return data;
+
+  // tolerant normalization for other backend shapes
+  if (data.owned === true || data.is_owner === true) return { state: "owned" };
+  if (data.owner_id != null)
+    return { state: "taken", owner_id: data.owner_id, owner_name: data.owner_name };
+  if (data.locked === false || data.exists === false) return { state: "missing" };
+
+  return { state: "unknown" };
+}
+
 export default function StudioEditor() {
   const user = getCurrentUser();
 
@@ -120,6 +141,9 @@ export default function StudioEditor() {
 
   // ✅ Tier 7.9 ADD (canonical selection state)
   const { selectedId } = useSelectionStore();
+
+  // ✅ Tier 7.36 ADD (lock status store)
+  const { lock } = useLockStatus();
 
   // -------------------------------
   // ✅ Safety: avoid overlapping snapshot fetches
@@ -292,20 +316,64 @@ export default function StudioEditor() {
   }, [activeSnapshot?.id]);
 
   // =====================================================
-  // TIER 7.8 — GIZMO GATE (TEMP stubs for lock/station)
+  // ✅ Tier 7.36 — Lock status polling (draft only)
+  // =====================================================
+  useEffect(() => {
+    let alive = true;
+    let t = null;
+
+    async function tick() {
+      if (!activeSnapshot?.id) return;
+
+      // lock status only meaningful for draft snapshots
+      if (activeSnapshot.status !== "draft") {
+        setLockStatus({ state: "unknown" });
+        return;
+      }
+
+      try {
+        const token = getAccessToken?.();
+        const data = await fetchDraftLockStatus({
+          snapshotId: activeSnapshot.id,
+          getAccessToken: () => token,
+        });
+        if (!alive) return;
+        setLockStatus(normalizeLock(data));
+      } catch {
+        if (!alive) return;
+        setLockStatus({ state: "unknown" });
+      }
+    }
+
+    tick();
+    t = setInterval(tick, LOCK_POLL_MS);
+
+    return () => {
+      alive = false;
+      if (t) clearInterval(t);
+    };
+  }, [activeSnapshot?.id, activeSnapshot?.status]);
+
+  // =====================================================
+  // TIER 7.8 — GIZMO GATE (now uses lock status)
   // =====================================================
   // ✅ Prefer Tier 7.9 resolved target; fallback to Tier 7.1 selection if still used by old UI.
   const activeTargetId = resolvedTargetId ?? sel.selectedId ?? null;
 
-  const hasDraftLock = true; // TODO: replace with real lock state from Phase U UI
-  const station = "geometry"; // TODO: replace when station state is visible in UI
+  // ✅ Tier 7.36: real lock state (owned => edit allowed)
+  const hasDraftLock = lock?.state === "owned";
 
-  const gizmoEnabled =
-    isEditMode &&
-    hasDraftLock &&
-    station === "geometry" &&
-    activeSnapshot?.status === "draft" &&
-    !!activeTargetId;
+  // TODO: replace when station state is visible in UI
+  const station = "geometry";
+
+  // simple role gate (additive-safe; can be replaced by real capabilities)
+  const canEditByRole = (user?.role ?? "viewer") !== "viewer";
+  const canEditByStation = station === "geometry";
+
+  const toolsEnabled =
+    isEditMode && hasDraftLock && canEditByRole && canEditByStation && activeSnapshot?.status === "draft";
+
+  const gizmoEnabled = toolsEnabled && !!activeTargetId;
 
   const gizmoReason = !activeTargetId
     ? "select a target"
@@ -315,7 +383,9 @@ export default function StudioEditor() {
     ? "snapshot not draft"
     : !hasDraftLock
     ? "draft lock required"
-    : station !== "geometry"
+    : !canEditByRole
+    ? "role forbidden"
+    : !canEditByStation
     ? "wrong station"
     : null;
 
@@ -357,8 +427,20 @@ export default function StudioEditor() {
           </>
         }
       >
-        {/* ✅ Tier 7.35 — Mode bar (READ ↔ EDIT) */}
+        {/* ✅ Tier 7.36 — Session header (mode + lock + reasons) */}
         <div className="p-3 pt-3 pb-0">
+          <EditSessionHeader
+            project={{ id: projectId, name: "Project" }}
+            activeSnapshot={activeSnapshot}
+            lockStatus={lock}
+            loading={sceneIndex == null && !!activeSnapshot?.id}
+            canEditByRole={canEditByRole}
+            canEditByStation={canEditByStation}
+          />
+        </div>
+
+        {/* ✅ Tier 7.35 — Mode bar (READ ↔ EDIT) */}
+        <div className="p-3 pt-2 pb-0">
           <StudioModeBar
             activeSnapshot={activeSnapshot}
             onSetActiveSnapshotId={(id) => {
@@ -467,7 +549,7 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <TransformToolPanel
                 activeSnapshot={activeSnapshot}
-                disabled={!isEditMode}
+                disabled={!toolsEnabled}
                 onExecuted={(data) => {
                   console.log("Tool executed:", data);
                   fetchSnapshots().catch(console.error);
@@ -530,6 +612,7 @@ export default function StudioEditor() {
                 sceneIndex={sceneIndex}
                 materialOverrides={materialOverrides} // ✅ Tier 6G.11
                 disabled={!activeSnapshot?.id}
+                canEdit={toolsEnabled} // ✅ draft + lock + role + station
               />
             </div>
 

@@ -1,10 +1,28 @@
 // frontend/src/editor/scene/selectionResolve.js
 
 /**
- * Parse selectedId into { objectId, meshPath|null }.
- * Accepts "{objectId}::" or "{objectId}::{meshPath}".
+ * Selection ID formats (canonical, forward-compatible):
+ *
+ * Non-instance:
+ *   "{objectId}::"
+ *   "{objectId}::{meshPath}"
+ *
+ * Instance (6G.12):
+ *   "{objectId}@{instanceId}::"
+ *   "{objectId}@{instanceId}::{meshPath}"
+ *
+ * Where meshPath is "A/B/C" using buildMeshPath() rules.
  */
-export function parseSelectedId(selectedId) {
+
+/**
+ * 6G.9-compatible parser (minimal):
+ * Returns only { objectId, meshPath }.
+ *
+ * NOTE:
+ * - For instance keys, objectId returns the FULL objectKey (e.g. "wheel@inst-02")
+ *   because 6G.9 doesn’t need instance splitting.
+ */
+export function parseSelectedIdLite(selectedId) {
   if (!selectedId) return { objectId: null, meshPath: null };
 
   const s = String(selectedId);
@@ -16,6 +34,56 @@ export function parseSelectedId(selectedId) {
   const meshPath = rest ? rest : null;
 
   return { objectId, meshPath };
+}
+
+/**
+ * 6G.12 parser (full):
+ * Returns:
+ *  - objectKey: "wheel@inst-02" or "vehicle-1"
+ *  - objectId: "wheel" or "vehicle-1"
+ *  - instanceId: "inst-02" or null
+ *  - meshPath: "A/B/C" or null
+ *
+ * This becomes the canonical parseSelectedId export for 6G.12+.
+ */
+export function parseSelectedId(selectedId) {
+  if (!selectedId) {
+    return { objectKey: null, objectId: null, instanceId: null, meshPath: null };
+  }
+
+  const s = String(selectedId);
+  const idx = s.indexOf("::");
+  if (idx === -1) {
+    return { objectKey: null, objectId: null, instanceId: null, meshPath: null };
+  }
+
+  const objectKey = s.slice(0, idx) || null;
+  const rest = s.slice(idx + 2);
+  const meshPath = rest ? rest : null;
+
+  if (!objectKey) {
+    return { objectKey: null, objectId: null, instanceId: null, meshPath };
+  }
+
+  const at = objectKey.indexOf("@");
+  if (at === -1) {
+    return {
+      objectKey,
+      objectId: objectKey,
+      instanceId: null,
+      meshPath,
+    };
+  }
+
+  const objectId = objectKey.slice(0, at) || null;
+  const instanceId = objectKey.slice(at + 1) || null;
+
+  return {
+    objectKey,
+    objectId,
+    instanceId,
+    meshPath,
+  };
 }
 
 /**

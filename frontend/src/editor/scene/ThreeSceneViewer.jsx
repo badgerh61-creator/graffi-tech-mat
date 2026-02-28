@@ -22,7 +22,7 @@ import { useSceneLayers, ensureKind } from "./layersStore";
 import { clearMeshIndex, setMeshPathsForObject } from "./meshIndexStore";
 import { buildMeshPath } from "./meshPath";
 
-// ✅ 6G.9 selection bounding box helpers
+// ✅ 6G.12 parseSelectedId (full) + mesh lookup helper
 import { parseSelectedId, findNodeByMeshPath } from "./selectionResolve";
 
 // ✅ 7.27 preview ghost
@@ -229,7 +229,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     transformControls.visible = false; // becomes true once attached
     scene.add(transformControls);
 
-    // ✅ 6G.9 selection bounding box helper
+    // ✅ selection bounding box helper
     let selectionBoxHelper = null;
 
     function clearSelectionBox() {
@@ -246,10 +246,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       const sid = selectedIdRef.current;
       if (!sid) return;
 
-      const { objectId, meshPath } = parseSelectedId(sid);
-      if (!objectId) return;
+      // ✅ 6G.12 canonical parse shape
+      const { objectKey, meshPath } = parseSelectedId(sid);
+      if (!objectKey) return;
 
-      const group = objectGroups.get(String(objectId));
+      const group = objectGroups.get(String(objectKey));
       if (!group) return;
 
       // If hidden by layers, don't draw the box.
@@ -355,26 +356,32 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let pickables = [];
+
+    // ✅ 6G.12: primary mapping is Mesh -> objectKey (object or object@instance)
+    const meshToObjectKey = new Map(); // Mesh -> objectKey
+    // ✅ Legacy fallback (optional, safe)
     const meshToObjectId = new Map(); // Mesh -> objectId
 
     // ✅ 6G.7 object groups for framing + gizmo attach
-    const objectGroups = new Map(); // objectId -> THREE.Group
+    const objectGroups = new Map(); // objectKey -> THREE.Group
 
-    function resolveObjectIdFromHitMesh(hitMesh) {
+    function resolveObjectKeyFromHitMesh(hitMesh) {
       if (!hitMesh) return null;
 
-      let objectId = meshToObjectId.get(hitMesh);
-      if (objectId) return objectId;
+      const direct = meshToObjectKey.get(hitMesh);
+      if (direct) return direct;
+
+      const legacy = meshToObjectId.get(hitMesh);
+      if (legacy) return legacy;
 
       let p = hitMesh.parent;
-      while (p && !objectId) {
+      while (p) {
         if (typeof p.name === "string" && p.name.startsWith("obj:")) {
-          objectId = p.name.slice(4);
-          break;
+          return p.name.slice(4);
         }
         p = p.parent;
       }
-      return objectId || null;
+      return null;
     }
 
     function pickIdNodeForMeshPath(hitMesh) {
@@ -397,8 +404,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         return;
       }
 
-      const objectId = String(sid).split("::")[0];
-      const group = objectGroups.get(objectId);
+      const objectKey = String(sid).split("::")[0];
+      const group = objectGroups.get(objectKey);
 
       if (group) fitCameraToObject(camera, group);
       else fitCameraToScene(camera, root);
@@ -417,8 +424,8 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         return;
       }
 
-      const objectId = String(sid).split("::")[0];
-      const group = objectGroups.get(objectId);
+      const objectKey = String(sid).split("::")[0];
+      const group = objectGroups.get(objectKey);
 
       if (!group) {
         transformControls.detach();
@@ -446,12 +453,12 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       const targetId = pv.payload?.target_id || pv.target_id;
       if (!targetId) return;
 
-      const objectId = String(targetId).split("::")[0];
-      const group = objectGroups.get(objectId);
+      const objectKey = String(targetId).split("::")[0];
+      const group = objectGroups.get(objectKey);
       if (!group) return;
 
       ghost = group.clone(true);
-      ghost.name = `ghost:${group.name || objectId}`;
+      ghost.name = `ghost:${group.name || objectKey}`;
 
       const ghostOpacity = 0.35;
 
@@ -503,6 +510,7 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       setErr(null);
       pickables = [];
       meshToObjectId.clear();
+      meshToObjectKey.clear();
       objectGroups.clear();
       setLoadingCount(0);
 
@@ -526,33 +534,38 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
         const kind = String(obj.kind || "unknown");
         const cfg = layers.kinds[kind] || ensureKind(kind);
 
+        // ✅ 6G.12-ready: objectKey is what lives left of "::"
+        // For now non-instance == objectId. Instances will become "objId@instId".
+        const objectKey = objId;
+
         const group = new THREE.Group();
-        group.name = `obj:${objId}`;
+        group.name = `obj:${objectKey}`;
         group.userData.kind = kind;
 
         group.visible = !!cfg.visible;
 
         root.add(group);
-        objectGroups.set(objId, group);
+        objectGroups.set(objectKey, group);
 
         applyTransformToObject3D(group, obj.transform);
 
         const assetRef = obj.asset_ref ? String(obj.asset_ref).trim() : "";
 
         if (!assetRef) {
-          const placeholder = makePlaceholderMesh(objId);
+          const placeholder = makePlaceholderMesh(objectKey);
           group.add(placeholder);
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
           try {
             const mp = buildMeshPath(placeholder);
-            if (mp) setMeshPathsForObject(objId, [mp]);
+            if (mp) setMeshPathsForObject(objectKey, [mp]);
           } catch {}
 
           if (cfg.pickable) {
             pickables.push(placeholder);
-            meshToObjectId.set(placeholder, objId);
+            meshToObjectId.set(placeholder, objId); // legacy
+            meshToObjectKey.set(placeholder, objectKey); // new
           }
           continue;
         }
@@ -562,7 +575,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
           const url = await resolveAssetRef(assetRef);
           if (!url) throw new Error("asset_ref could not be resolved");
 
-          // ✅ DEBUG: show what URL we ended up trying to load
           console.log("[ThreeSceneViewer] Loading GLB:", { objId, assetRef, url });
 
           const gltf = await loader.loadAsync(url);
@@ -585,32 +597,33 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
             if (cfg.pickable) {
               pickables.push(node);
-              meshToObjectId.set(node, objId);
+              meshToObjectId.set(node, objId); // legacy
+              meshToObjectKey.set(node, objectKey); // new
             }
           });
 
-          setMeshPathsForObject(objId, meshPaths);
+          setMeshPathsForObject(objectKey, meshPaths);
         } catch (e) {
-          // ✅ DEBUG: make failures visible
           console.error("[ThreeSceneViewer] GLB load failed:", {
             objId,
             assetRef,
             error: String(e?.message || e),
           });
 
-          const placeholder = makePlaceholderMesh(`${objId} (failed)`);
+          const placeholder = makePlaceholderMesh(`${objectKey} (failed)`);
           group.add(placeholder);
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
           try {
             const mp = buildMeshPath(placeholder);
-            if (mp) setMeshPathsForObject(objId, [mp]);
+            if (mp) setMeshPathsForObject(objectKey, [mp]);
           } catch {}
 
           if (cfg.pickable) {
             pickables.push(placeholder);
-            meshToObjectId.set(placeholder, objId);
+            meshToObjectId.set(placeholder, objId); // legacy
+            meshToObjectKey.set(placeholder, objectKey); // new
           }
 
           setErr((prev) => prev || String(e?.message || e));
@@ -621,17 +634,11 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
 
       fitCameraToScene(camera, root);
 
-      // apply ghost if active
       applyPreviewGhost();
-
-      // attach gizmo if selection exists
       syncTransformControlsToSelection();
-
-      // ✅ 6G.9 selection bounding box
       updateSelectionBox();
     }
 
-    // Run initial load
     loadAll();
 
     function onClick(e) {
@@ -651,16 +658,19 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       }
 
       const hitMesh = hits[0].object;
-      const objectId = resolveObjectIdFromHitMesh(hitMesh);
+      const objectKey = resolveObjectKeyFromHitMesh(hitMesh);
 
-      if (!objectId) {
+      if (!objectKey) {
         clearSelection();
         return;
       }
 
       const idNode = pickIdNodeForMeshPath(hitMesh);
 
-      const id = buildPickedTargetId({ objectId, mesh: idNode });
+      // ✅ IMPORTANT: pickingId currently expects { objectId, mesh }.
+      // objectKey is the correct left side of "::" for 6G.12,
+      // so pass it through as objectId (backward compatible).
+      const id = buildPickedTargetId({ objectId: objectKey, mesh: idNode });
       if (!id) {
         clearSelection();
         return;
@@ -682,16 +692,16 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       if (!hits.length) return;
 
       const hitMesh = hits[0].object;
-      const objectId = resolveObjectIdFromHitMesh(hitMesh);
-      if (!objectId) return;
+      const objectKey = resolveObjectKeyFromHitMesh(hitMesh);
+      if (!objectKey) return;
 
       const idNode = pickIdNodeForMeshPath(hitMesh);
-      const id = buildPickedTargetId({ objectId, mesh: idNode });
+      const id = buildPickedTargetId({ objectId: objectKey, mesh: idNode });
       if (!id) return;
 
       setSelectedId(id);
 
-      const group = objectGroups.get(objectId);
+      const group = objectGroups.get(objectKey);
       if (group) fitCameraToObject(camera, group);
       else fitCameraToScene(camera, root);
     }
@@ -715,7 +725,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
     }
     tick();
 
-    // Publish sync hooks for secondary effects (no WebGL remount)
     viewerApiRef.current.syncSelection = () => {
       syncTransformControlsToSelection();
       updateSelectionBox();
@@ -727,7 +736,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       syncTransformControlsToSelection();
     };
 
-    // initial sync (safe)
     viewerApiRef.current.syncSelection?.();
     viewerApiRef.current.syncPreview?.();
 
@@ -735,7 +743,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       disposed = true;
       cancelAnimationFrame(raf);
 
-      // clear sync hooks
       viewerApiRef.current.syncSelection = null;
       viewerApiRef.current.syncPreview = null;
       viewerApiRef.current.syncMode = null;
@@ -774,10 +781,6 @@ export default function ThreeSceneViewer({ sceneIndex, disabled = false }) {
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
 
       renderer.dispose();
-
-      // Do NOT forceContextLoss during normal cleanup.
-      // It is useful for tests but causes churn during Vite HMR / fast reloads.
-      // try { renderer.forceContextLoss?.(); } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds)]);

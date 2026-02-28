@@ -1,4 +1,4 @@
-import { parseSelectedId, findNodeByMeshPath } from "../../src/editor/scene/selectionResolve";
+import { parseSelectedIdLite as parseSelectedId, findNodeByMeshPath } from "../../src/editor/scene/selectionResolve";
 
 function node(name) {
   return { name, children: [] };

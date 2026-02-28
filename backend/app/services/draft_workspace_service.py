@@ -1,3 +1,4 @@
+# backend/app/services/draft_workspace_service.py
 from __future__ import annotations
 
 from typing import Optional
@@ -100,11 +101,15 @@ def start_edit(*, db: Session, snapshot, user) -> int:
 
     parent_id = int(getattr(snapshot, "id"))
 
+    # If completed: clone -> lock cloned draft -> return draft id
     if status == "completed":
         draft = _clone_snapshot_as_child_draft(db=db, snapshot=snapshot, user_id=user_id)
-        draft_id = int(getattr(draft, "id"))
 
-        acquire_draft_lock(db=db, snapshot_id=draft_id, user_id=user_id)
+        # IMPORTANT: lock service expects snapshot + user (not ids)
+        acquire_draft_lock(db=db, snapshot=draft, user=user)
+        require_draft_owner(db=db, snapshot=draft, user=user)
+
+        draft_id = int(getattr(draft, "id"))
 
         _audit_if_available(
             db=db,
@@ -115,10 +120,11 @@ def start_edit(*, db: Session, snapshot, user) -> int:
         )
         return draft_id
 
-    # status == "draft"
+    # status == "draft": lock existing draft -> enforce ownership -> return same id
+    acquire_draft_lock(db=db, snapshot=snapshot, user=user)
+    require_draft_owner(db=db, snapshot=snapshot, user=user)
+
     draft_id = int(getattr(snapshot, "id"))
-    acquire_draft_lock(db=db, snapshot_id=draft_id, user_id=user_id)
-    require_draft_owner(db=db, snapshot_id=draft_id, user_id=user_id)
 
     _audit_if_available(
         db=db,
@@ -148,13 +154,14 @@ def complete_draft(*, db: Session, snapshot, user) -> int:
     if getattr(snapshot, "status", None) != "draft":
         raise HTTPException(409, "Only draft snapshots can be completed")
 
-    sid = int(getattr(snapshot, "id"))
-    require_draft_owner(db=db, snapshot_id=sid, user_id=user_id)
+    require_draft_owner(db=db, snapshot=snapshot, user=user)
 
     setattr(snapshot, "status", "completed")
     db.add(snapshot)
     db.commit()
     db.refresh(snapshot)
+
+    sid = int(getattr(snapshot, "id"))
 
     _audit_if_available(
         db=db,
@@ -183,17 +190,19 @@ def discard_draft(*, db: Session, snapshot, user) -> int:
     if getattr(snapshot, "status", None) != "draft":
         raise HTTPException(409, "Only draft snapshots can be discarded")
 
-    sid = int(getattr(snapshot, "id"))
-    require_draft_owner(db=db, snapshot_id=sid, user_id=user_id)
+    require_draft_owner(db=db, snapshot=snapshot, user=user)
 
     parent_id: Optional[int] = None
     if hasattr(snapshot, "parent_snapshot_id"):
         parent_id = getattr(snapshot, "parent_snapshot_id") or None
 
     try:
-        release_draft_lock(db=db, snapshot_id=sid, user_id=user_id)
+        # IMPORTANT: release expects snapshot + user (not ids)
+        release_draft_lock(db=db, snapshot=snapshot, user=user)
     except Exception:
         pass
+
+    sid = int(getattr(snapshot, "id"))
 
     _audit_if_available(
         db=db,

@@ -8,8 +8,10 @@ import { getCurrentUser, getAccessToken } from "../utils/auth";
 
 import SnapshotPreview from "../components/snapshots/SnapshotPreview";
 import DraftStatusBadge from "../components/snapshots/DraftStatusBadge";
-import FinalizeDraftButton from "../components/snapshots/FinalizeDraftButton";
 import { useDraftAutosave } from "../hooks/useDraftAutosave";
+
+// ✅ Tier 7.35 ADD (READ ↔ EDIT mode bar)
+import StudioModeBar from "../editor/modes/StudioModeBar";
 
 // ✅ Tier 7.1 ADD (selection + transform toolbar)
 import { useSelection } from "../editor/selection/useSelection";
@@ -55,6 +57,9 @@ import SceneLayersPanel from "../editor/scene/SceneLayersPanel";
 // ✅ Tier 6G.10 ADD (scene graph tree panel)
 import SceneGraphPanel from "../editor/scene/SceneGraphPanel";
 
+// ✅ Tier 6G.11 ADD (material override panel)
+import MaterialOverridesPanel from "../editor/materials/MaterialOverridesPanel";
+
 // ✅ Tier 7.28 ADD (Undo/Redo UI + local history)
 import UndoRedoBar from "../editor/history/UndoRedoBar";
 import { historyPush } from "../editor/history/historyStore";
@@ -99,7 +104,7 @@ export default function StudioEditor() {
   const [sceneIndex, setSceneIndex] = useState(null);
   const [sceneErr, setSceneErr] = useState(null);
 
-  // ✅ Tier 7.28 ADD — allow overriding which snapshot is active (for history jumps)
+  // ✅ Tier 7.28 ADD — allow overriding which snapshot is active (for history jumps + mode transitions)
   const [activeSnapshotOverrideId, setActiveSnapshotOverrideId] = useState(null);
 
   // ✅ Tier 6S.6 ADD — force refresh/re-mount of lab panel after scenario creation
@@ -125,16 +130,13 @@ export default function StudioEditor() {
   // SNAPSHOT FETCH (AUTHORITATIVE)
   // =====================================================
   const fetchSnapshots = useCallback(() => {
-    // Prevent overlap (helps during rapid navigation / HMR / rerenders)
     if (snapshotsFetchInFlight.current) return Promise.resolve();
     snapshotsFetchInFlight.current = true;
 
     const token = getAccessToken?.();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-    return fetch(`http://127.0.0.1:8000/projects/${projectId}/snapshots/`, {
-      headers,
-    })
+    return fetch(`http://127.0.0.1:8000/projects/${projectId}/snapshots/`, { headers })
       .then((res) => {
         if (!res.ok) throw new Error(`Snapshot fetch failed: ${res.status}`);
         return res.json();
@@ -162,20 +164,22 @@ export default function StudioEditor() {
   const draftSnapshot = snapshots.find((s) => s.status === "draft");
   const completedSnapshot = snapshots.find((s) => s.status === "completed");
 
-  // ✅ Tier 7.28 — if user navigated via undo/redo, honor override first
+  // ✅ Tier 7.28 — if user navigated via undo/redo/mode change, honor override first
   const overrideSnapshot = activeSnapshotOverrideId
     ? snapshots.find((s) => s.id === activeSnapshotOverrideId)
     : null;
 
   const activeSnapshot = overrideSnapshot ?? (draftSnapshot ?? completedSnapshot);
-  const isEditable = activeSnapshot?.status === "draft";
+
+  // ✅ Tier 7.35 — READ ↔ EDIT is derived from snapshot truth:
+  // EDIT == draft snapshot (tools/gizmo only allowed here)
+  const isEditMode = activeSnapshot?.status === "draft";
+  const isEditable = isEditMode; // keep existing variable name for additive safety
 
   // ✅ Tier 7.30 — find base snapshot (parent) for diff preview
   const baseSnapshot = useMemo(() => {
     if (!activeSnapshot?.parent_snapshot_id) return null;
-    return (
-      snapshots?.find((s) => s.id === activeSnapshot.parent_snapshot_id) || null
-    );
+    return snapshots?.find((s) => s.id === activeSnapshot.parent_snapshot_id) || null;
   }, [activeSnapshot?.id, activeSnapshot?.parent_snapshot_id, snapshots]);
 
   // ✅ Tier 7.28 — whenever activeSnapshot changes, push into local history stack
@@ -233,17 +237,18 @@ export default function StudioEditor() {
         setSceneIndex(idx);
 
         // ✅ Tier 6G.8 selection validity:
-        // if selectedId exists but its object_id is not present in the new scene, clear selection
         try {
           if (selectedId) {
-            const objectId = String(selectedId).split("::")[0];
+            const left = String(selectedId).split("::")[0];
+            const baseObjectId = String(left).split("@")[0];
+
             const ids =
               (idx?.objects || [])
                 .filter(Boolean)
                 .map((o) => String(o.id || "").trim())
                 .filter(Boolean) || [];
 
-            if (!ids.includes(objectId)) {
+            if (!ids.includes(baseObjectId)) {
               clearSelection?.();
             }
           }
@@ -277,10 +282,14 @@ export default function StudioEditor() {
   }, [projectId, activeSnapshot?.id]);
 
   // ✅ Tier 7.9 ADD (resolve active target deterministically)
-  const { targetId: resolvedTargetId } = resolveSelectedTarget(
-    activeSnapshot,
-    selectedId
-  );
+  const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
+
+  // =====================================================
+  // ✅ Tier 6G.11 — material overrides from snapshot (authoritative metadata)
+  // =====================================================
+  const materialOverrides = useMemo(() => {
+    return activeSnapshot?.body_state?.material_overrides || [];
+  }, [activeSnapshot?.id]);
 
   // =====================================================
   // TIER 7.8 — GIZMO GATE (TEMP stubs for lock/station)
@@ -292,7 +301,7 @@ export default function StudioEditor() {
   const station = "geometry"; // TODO: replace when station state is visible in UI
 
   const gizmoEnabled =
-    isEditable &&
+    isEditMode &&
     hasDraftLock &&
     station === "geometry" &&
     activeSnapshot?.status === "draft" &&
@@ -300,8 +309,8 @@ export default function StudioEditor() {
 
   const gizmoReason = !activeTargetId
     ? "select a target"
-    : !isEditable
-    ? "insufficient role"
+    : !isEditMode
+    ? "studio in READ mode"
     : activeSnapshot?.status !== "draft"
     ? "snapshot not draft"
     : !hasDraftLock
@@ -334,29 +343,31 @@ export default function StudioEditor() {
                 UI INDICATOR (HEADER)
                =============================== */}
             {isDirty && (
-              <span
-                style={{
-                  color: "#d33682",
-                  marginLeft: 8,
-                  fontSize: 12,
-                }}
-              >
+              <span style={{ color: "#d33682", marginLeft: 8, fontSize: 12 }}>
                 Unsaved changes
               </span>
             )}
 
-            <SnapshotPreview
-              snapshot={activeSnapshot}
-              onDraftCreated={fetchSnapshots}
-            />
+            <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
 
-            <FinalizeDraftButton
-              snapshot={activeSnapshot}
-              onFinalized={fetchSnapshots}
-            />
+            {/* NOTE:
+               Tier 7.35 replaces “FinalizeDraftButton” UX with StudioModeBar.
+               Keeping header clean avoids double-complete paths.
+            */}
           </>
         }
       >
+        {/* ✅ Tier 7.35 — Mode bar (READ ↔ EDIT) */}
+        <div className="p-3 pt-3 pb-0">
+          <StudioModeBar
+            activeSnapshot={activeSnapshot}
+            onSetActiveSnapshotId={(id) => {
+              // Use canonical navigation so selection/ghost never carries over
+              navigateToSnapshot(id);
+            }}
+          />
+        </div>
+
         {/* ✅ Tier 7.10 layout: left tools, right viewport + editor host */}
         <div className="grid grid-cols-[360px_1fr] gap-3 p-3">
           {/* LEFT: tool controls */}
@@ -380,21 +391,13 @@ export default function StudioEditor() {
 
             {/* ✅ Tier 7.30 ADD (Snapshot Diff Preview Panel) */}
             <div style={{ padding: 12 }}>
-              <SnapshotDiffPanel
-                baseSnapshot={baseSnapshot}
-                targetSnapshot={activeSnapshot}
-              />
+              <SnapshotDiffPanel baseSnapshot={baseSnapshot} targetSnapshot={activeSnapshot} />
             </div>
 
             {/* ✅ Tier 6G.1 ADD (Scene Index debug panel) */}
             <div style={{ padding: 12 }}>
-              {sceneErr ? (
-                <div className="text-red-600 text-sm">{sceneErr}</div>
-              ) : null}
-              <SceneIndexPanel
-                sceneIndex={sceneIndex}
-                snapshotId={activeSnapshot?.id}
-              />
+              {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
+              <SceneIndexPanel sceneIndex={sceneIndex} snapshotId={activeSnapshot?.id} />
             </div>
 
             {/* ✅ Tier 6G.6 ADD (Scene layers + pick filters + opacity) */}
@@ -405,6 +408,11 @@ export default function StudioEditor() {
             {/* ✅ Tier 6G.10 ADD (Scene Graph tree panel) */}
             <div style={{ padding: 12 }}>
               <SceneGraphPanel sceneIndex={sceneIndex} />
+            </div>
+
+            {/* ✅ Tier 6G.11 ADD (Material Overrides list panel) */}
+            <div style={{ padding: 12 }}>
+              <MaterialOverridesPanel snapshot={activeSnapshot} />
             </div>
 
             {/* ✅ Tier 6G.2 ADD (Attach asset to object, then refresh scene) */}
@@ -422,14 +430,7 @@ export default function StudioEditor() {
             </div>
 
             {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) — kept additive-safe */}
-            <div
-              style={{
-                padding: 12,
-                display: "flex",
-                gap: 10,
-                alignItems: "center",
-              }}
-            >
+            <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
               <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
 
               <TransformToolbar
@@ -466,7 +467,7 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <TransformToolPanel
                 activeSnapshot={activeSnapshot}
-                disabled={!isEditable}
+                disabled={!isEditMode}
                 onExecuted={(data) => {
                   console.log("Tool executed:", data);
                   fetchSnapshots().catch(console.error);
@@ -515,7 +516,7 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <ReferenceFramesPanel
                 activeSnapshotId={activeSnapshot?.id}
-                disabled={!isEditable}
+                disabled={false} // read-only panel; safe in READ
               />
             </div>
           </div>
@@ -527,6 +528,7 @@ export default function StudioEditor() {
               <ThreeSceneViewer
                 key={sceneRebindKey}
                 sceneIndex={sceneIndex}
+                materialOverrides={materialOverrides} // ✅ Tier 6G.11
                 disabled={!activeSnapshot?.id}
               />
             </div>
@@ -538,9 +540,9 @@ export default function StudioEditor() {
                 SCENE CHANGE SIGNAL
                =============================== */}
             <EditorLayoutHost
-              editable={isEditable}
+              editable={isEditMode}
               onSceneChange={() => {
-                if (!isEditable) return;
+                if (!isEditMode) return;
                 setSceneStateHash(Date.now().toString());
                 setIsDirty(true);
               }}

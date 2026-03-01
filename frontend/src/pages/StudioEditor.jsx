@@ -74,6 +74,9 @@ import MaterialOverridesPanel from "../editor/materials/MaterialOverridesPanel";
 // ✅ Tier 7.42 ADD (material inspector: read + governed edit)
 import MaterialInspectorPanel from "../editor/materials/MaterialInspectorPanel";
 
+// ✅ Tier 7.43 ADD (paint params: color/roughness/metalness/opacity)
+import PaintParamsPanel from "../editor/materials/PaintParamsPanel";
+
 // ✅ Tier 7.28 ADD (Undo/Redo UI + local history)
 import UndoRedoBar from "../editor/history/UndoRedoBar";
 import { historyPush } from "../editor/history/historyStore";
@@ -497,7 +500,7 @@ export default function StudioEditor() {
   });
 
   // =====================================================
-  // Commit helper (shared by panels like MaterialInspector)
+  // Commit helper (shared by panels like MaterialInspector / PaintParamsPanel)
   // =====================================================
   const commitToolPayload = useCallback(
     async (payload) => {
@@ -622,6 +625,17 @@ export default function StudioEditor() {
                 onCommitTool={(payload) => {
                   // If you already have a real commit path, wire it here:
                   // toolExecutionAdapter.evaluate/apply OR your GizmoCommitController bridge.
+                  commitToolPayload(payload);
+                }}
+              />
+            </div>
+
+            {/* ✅ Tier 7.43 ADD (Paint Params: color/roughness/metalness/opacity) */}
+            <div style={{ padding: 12 }}>
+              <PaintParamsPanel
+                snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => {
                   commitToolPayload(payload);
                 }}
               />

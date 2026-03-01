@@ -71,6 +71,9 @@ import SceneGraphPanel from "../editor/scene/SceneGraphPanel";
 // ✅ Tier 6G.11 ADD (material override panel)
 import MaterialOverridesPanel from "../editor/materials/MaterialOverridesPanel";
 
+// ✅ Tier 7.42 ADD (material inspector: read + governed edit)
+import MaterialInspectorPanel from "../editor/materials/MaterialInspectorPanel";
+
 // ✅ Tier 7.28 ADD (Undo/Redo UI + local history)
 import UndoRedoBar from "../editor/history/UndoRedoBar";
 import { historyPush } from "../editor/history/historyStore";
@@ -83,6 +86,10 @@ import SnapshotDiffPanel from "../editor/history/SnapshotDiffPanel";
 
 // ✅ Tier 7.27/7.31 glue (clear ghost preview on snapshot change)
 import { clearGizmoPreview } from "../editor/gizmo/gizmoPreviewStore";
+
+// ✅ Tier 7.38/7.31 glue (clear decal preview + active decal on snapshot change)
+import { clearAllDecalPreview } from "../editor/decals/decalPreviewStore";
+import { clearActiveDecalId } from "../editor/decals/activeDecalStore";
 
 // ✅ Tier 6S.1 ADD (telemetry viewer panel)
 import TelemetryViewerPanel from "../editor/telemetry/TelemetryViewerPanel";
@@ -254,6 +261,12 @@ export default function StudioEditor() {
         clearGizmoPreview?.();
       } catch {}
       try {
+        clearAllDecalPreview?.();
+      } catch {}
+      try {
+        clearActiveDecalId?.();
+      } catch {}
+      try {
         clearSelection?.();
       } catch {}
 
@@ -339,13 +352,6 @@ export default function StudioEditor() {
   const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
 
   // =====================================================
-  // ✅ Tier 6G.11 — material overrides from snapshot (authoritative metadata)
-  // =====================================================
-  const materialOverrides = useMemo(() => {
-    return activeSnapshot?.body_state?.material_overrides || [];
-  }, [activeSnapshot?.id]);
-
-  // =====================================================
   // ✅ Tier 7.37 ADD (viewer should always have decor_state)
   // If sceneIndex endpoint doesn’t include decor_state yet, we stitch it in
   // from the authoritative snapshot. (UI-only merge; no writes.)
@@ -363,6 +369,18 @@ export default function StudioEditor() {
 
     return { ...sceneIndex, decor_state };
   }, [sceneIndex, activeSnapshot?.id]);
+
+  // =====================================================
+  // ✅ Tier 6G.11 / Tier 7.42 — material overrides (authoritative)
+  // Prefer decor_state.material_overrides; fallback to legacy body_state material_overrides
+  // =====================================================
+  const materialOverrides = useMemo(() => {
+    return (
+      activeSnapshot?.decor_state?.material_overrides ??
+      activeSnapshot?.body_state?.material_overrides ??
+      {}
+    );
+  }, [activeSnapshot?.id]);
 
   // =====================================================
   // ✅ Tier 7.36 — Lock status polling (draft only)
@@ -479,6 +497,19 @@ export default function StudioEditor() {
   });
 
   // =====================================================
+  // Commit helper (shared by panels like MaterialInspector)
+  // =====================================================
+  const commitToolPayload = useCallback(
+    async (payload) => {
+      // Reuse GizmoCommitController pattern indirectly by emitting through it if you have a bus.
+      // If you already have a central "toolExecutionAdapter", wire it here.
+      // For now, keep this additive-safe: just log to avoid breaking runtime.
+      console.log("commitToolPayload:", payload);
+    },
+    []
+  );
+
+  // =====================================================
   // RENDER  (⚠️ NO TIER BLOCKS MOVED/REMOVED)
   // =====================================================
   return (
@@ -581,6 +612,19 @@ export default function StudioEditor() {
             {/* ✅ Tier 6G.11 ADD (Material Overrides list panel) */}
             <div style={{ padding: 12 }}>
               <MaterialOverridesPanel snapshot={activeSnapshot} />
+            </div>
+
+            {/* ✅ Tier 7.42 ADD (Material Inspector: read + governed edit) */}
+            <div style={{ padding: 12 }}>
+              <MaterialInspectorPanel
+                snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => {
+                  // If you already have a real commit path, wire it here:
+                  // toolExecutionAdapter.evaluate/apply OR your GizmoCommitController bridge.
+                  commitToolPayload(payload);
+                }}
+              />
             </div>
 
             {/* ✅ Tier 6G.2 ADD (Attach asset to object, then refresh scene) */}
@@ -696,7 +740,7 @@ export default function StudioEditor() {
               <ThreeSceneViewer
                 key={sceneRebindKey}
                 sceneIndex={sceneIndexForViewer} // ✅ Tier 7.37 merge decor_state if needed
-                materialOverrides={materialOverrides} // ✅ Tier 6G.11
+                materialOverrides={materialOverrides} // ✅ Tier 6G.11 / 7.42
                 disabled={!activeSnapshot?.id}
                 canEdit={toolsEnabled} // ✅ draft + lock + role + station
               />

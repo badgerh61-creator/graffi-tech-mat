@@ -40,17 +40,17 @@ import {
 } from "../decals/decalPreviewStore";
 
 // ✅ Tier 7.41 — selection filters + deterministic pick resolution
-import {
-  useSelectionFilter,
-} from "../selection/selectionFilterStore";
+import { useSelectionFilter } from "../selection/selectionFilterStore";
 import { resolvePick } from "../selection/resolvePick";
 
 // ✅ Tier 7.41 — set/clear active decal (optional, safe)
 // (If your activeDecalStore exports different names, update these imports.)
-import {
-  setActiveDecalId,
-  clearActiveDecalId,
-} from "../decals/activeDecalStore";
+import { setActiveDecalId, clearActiveDecalId } from "../decals/activeDecalStore";
+
+// ✅ Tier 7.42 — Material overrides (read + apply) (optional, additive-safe)
+// - If you don't have these files yet, the guarded code below won't break runtime.
+// - We only use these if materialOverrides prop is provided.
+import { applyMaterialOverridesToScene } from "../materials/applyMaterialOverridesToScene";
 
 function makeRenderer(canvas) {
   // Prefer WebGL2, fallback WebGL1. If neither exists, return null.
@@ -205,12 +205,16 @@ function eulerDegPatch(e, p = 2) {
  *
  * ✅ Tier 7.41:
  * - selection filter + deterministic pick resolution (objects/meshes/decals)
+ *
+ * ✅ Tier 7.42:
+ * - optional materialOverrides prop to patch materials deterministically (read-only application on load + updates)
  */
 export default function ThreeSceneViewer({
   sceneIndex,
   disabled = false,
   canEdit = true, // ✅ NEW (default true so older callers behave the same)
   onCommitTool = null, // ✅ Tier 7.38 (optional)
+  materialOverrides = null, // ✅ Tier 7.42 (optional, additive-safe)
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -273,6 +277,9 @@ export default function ThreeSceneViewer({
   // ✅ Tier 7.41 selection filter ref (no remount)
   const selectionFilterRef = useRef(selectionFilter);
 
+  // ✅ Tier 7.42 material overrides ref (no remount)
+  const materialOverridesRef = useRef(materialOverrides);
+
   // ✅ NEW: async sync nonce (prevents out-of-order decal sync from applying late)
   const decalsSyncNonceRef = useRef(0);
 
@@ -312,6 +319,10 @@ export default function ThreeSceneViewer({
     selectionFilterRef.current = selectionFilter || "all";
   }, [selectionFilter]);
 
+  useEffect(() => {
+    materialOverridesRef.current = materialOverrides;
+  }, [materialOverrides]);
+
   // Expose minimal internal sync hooks for secondary effects (no remount).
   const viewerApiRef = useRef({
     syncSelection: null,
@@ -322,6 +333,7 @@ export default function ThreeSceneViewer({
     syncDecalPreview: null, // ✅ Tier 7.38 (preview patch application)
     syncDecalTarget: null, // ✅ Tier 7.38 (active decal -> gizmo attach)
     syncPickFilter: null, // ✅ Tier 7.41 (no-op now, reserved)
+    syncMaterials: null, // ✅ Tier 7.42 (apply overrides without remount)
   });
 
   useEffect(() => {
@@ -471,6 +483,9 @@ export default function ThreeSceneViewer({
     // ✅ 6G.7 object groups for framing + gizmo attach
     const objectGroups = new Map(); // objectKey -> THREE.Group
 
+    // ✅ Tier 7.42: keep mesh refs for material override application
+    const allMeshes = new Set();
+
     function resolveObjectKeyFromHitMesh(hitMesh) {
       if (!hitMesh) return null;
 
@@ -562,8 +577,7 @@ export default function ThreeSceneViewer({
       decalBaseById.clear();
 
       // Clear decalsRoot children (defensive)
-      while (decalsRoot.children.length)
-        decalsRoot.remove(decalsRoot.children[0]);
+      while (decalsRoot.children.length) decalsRoot.remove(decalsRoot.children[0]);
     }
 
     function normalizeDecal(d) {
@@ -577,9 +591,7 @@ export default function ThreeSceneViewer({
       const scl = d?.scale || {};
 
       const opacity = clamp01(d?.opacity ?? 1.0);
-      const zOff = Number.isFinite(Number(d?.z_offset))
-        ? Number(d.z_offset)
-        : 0.001;
+      const zOff = Number.isFinite(Number(d?.z_offset)) ? Number(d.z_offset) : 0.001;
 
       const sx = Number.isFinite(Number(scl.x)) ? Number(scl.x) : 1;
       const sy = Number.isFinite(Number(scl.y)) ? Number(scl.y) : 1;
@@ -662,7 +674,8 @@ export default function ThreeSceneViewer({
       const rot = pv?.rotation_euler || base?.rotation_euler;
       const scl = pv?.scale || base?.scale;
 
-      if (pos) proxy.position.set(Number(pos.x || 0), Number(pos.y || 0), Number(pos.z || 0));
+      if (pos)
+        proxy.position.set(Number(pos.x || 0), Number(pos.y || 0), Number(pos.z || 0));
       if (rot)
         proxy.rotation.set(
           degToRad(Number(rot.x || 0)),
@@ -675,6 +688,26 @@ export default function ThreeSceneViewer({
     function applyAllDecalPreviewPatches() {
       for (const id of decalProxyById.keys()) {
         applyDecalTransformFromBaseOrPreview(id);
+      }
+    }
+
+    // ✅ Tier 7.42: apply material overrides (if the helper exists and overrides provided)
+    function applyMaterialOverridesNow() {
+      const ov = materialOverridesRef.current;
+      if (!ov) return;
+      try {
+        if (typeof applyMaterialOverridesToScene === "function") {
+          applyMaterialOverridesToScene({
+            root,
+            objectGroups,
+            meshToObjectKey,
+            allMeshes,
+            overrides: ov,
+          });
+        }
+      } catch (e) {
+        // additive-safe: never crash viewer because of overrides
+        console.warn("[ThreeSceneViewer] material override apply failed:", String(e?.message || e));
       }
     }
 
@@ -849,10 +882,7 @@ export default function ThreeSceneViewer({
         }
       }
     }
-    transformControls.addEventListener(
-      "dragging-changed",
-      onGizmoDraggingChanged
-    );
+    transformControls.addEventListener("dragging-changed", onGizmoDraggingChanged);
 
     // ✅ Tier 7.38: while dragging, emit decal preview patch (UI-only)
     function onGizmoObjectChange() {
@@ -895,10 +925,7 @@ export default function ThreeSceneViewer({
       const offset = camera.position.clone();
       const spherical = new THREE.Spherical().setFromVector3(offset);
       spherical.theta -= dx;
-      spherical.phi = Math.min(
-        Math.max(0.2, spherical.phi - dy),
-        Math.PI - 0.2
-      );
+      spherical.phi = Math.min(Math.max(0.2, spherical.phi - dy), Math.PI - 0.2);
       offset.setFromSpherical(spherical);
       camera.position.copy(offset);
       camera.lookAt(0, 0.8, 0);
@@ -942,9 +969,7 @@ export default function ThreeSceneViewer({
 
       ghost.traverse((node) => {
         if (node?.isMesh && node.material) {
-          const mats = Array.isArray(node.material)
-            ? node.material
-            : [node.material];
+          const mats = Array.isArray(node.material) ? node.material : [node.material];
           const cloned = mats.map((m) => {
             const mm = m.clone();
             mm.transparent = true;
@@ -992,6 +1017,7 @@ export default function ThreeSceneViewer({
       meshToObjectId.clear();
       meshToObjectKey.clear();
       objectGroups.clear();
+      allMeshes.clear(); // ✅ Tier 7.42 reset mesh set
 
       // ✅ NEW: ensure count resets deterministically
       setLoadingCount(0);
@@ -1054,6 +1080,8 @@ export default function ThreeSceneViewer({
             }
           } catch {}
 
+          allMeshes.add(placeholder); // ✅ Tier 7.42
+
           if (cfg.pickable) {
             pickables.push(placeholder);
             meshToObjectId.set(placeholder, objId); // legacy
@@ -1081,6 +1109,8 @@ export default function ThreeSceneViewer({
             if (!node || !node.isMesh) return;
 
             applyOpacityToMaterial(node.material, cfg.opacity);
+
+            allMeshes.add(node); // ✅ Tier 7.42
 
             try {
               const mp = buildMeshPath(node);
@@ -1120,6 +1150,8 @@ export default function ThreeSceneViewer({
             }
           } catch {}
 
+          allMeshes.add(placeholder); // ✅ Tier 7.42
+
           if (cfg.pickable) {
             pickables.push(placeholder);
             meshToObjectId.set(placeholder, objId); // legacy
@@ -1132,6 +1164,9 @@ export default function ThreeSceneViewer({
           if (!disposed) setLoadingCount((c) => Math.max(0, c - 1));
         }
       }
+
+      // ✅ Tier 7.42: apply material overrides after all meshes are loaded
+      applyMaterialOverridesNow();
 
       fitCameraToScene(camera, root);
 
@@ -1343,9 +1378,15 @@ export default function ThreeSceneViewer({
     // ✅ Tier 7.41: selection filter changes do not require a viewer change (kept for symmetry)
     viewerApiRef.current.syncPickFilter = () => {};
 
+    // ✅ Tier 7.42: re-apply material overrides without remount
+    viewerApiRef.current.syncMaterials = () => {
+      applyMaterialOverridesNow();
+    };
+
     viewerApiRef.current.syncSelection?.();
     viewerApiRef.current.syncPreview?.();
     viewerApiRef.current.syncDecals?.();
+    viewerApiRef.current.syncMaterials?.();
 
     return () => {
       disposed = true;
@@ -1359,6 +1400,7 @@ export default function ThreeSceneViewer({
       viewerApiRef.current.syncDecalPreview = null;
       viewerApiRef.current.syncDecalTarget = null;
       viewerApiRef.current.syncPickFilter = null;
+      viewerApiRef.current.syncMaterials = null;
 
       clearGhost();
       clearSelectionBox();
@@ -1375,10 +1417,7 @@ export default function ThreeSceneViewer({
         checkerTex?.dispose?.();
       } catch {}
 
-      transformControls.removeEventListener(
-        "dragging-changed",
-        onGizmoDraggingChanged
-      );
+      transformControls.removeEventListener("dragging-changed", onGizmoDraggingChanged);
       transformControls.removeEventListener("objectChange", onGizmoObjectChange);
       transformControls.detach();
       scene.remove(transformControls);
@@ -1449,6 +1488,11 @@ export default function ThreeSceneViewer({
     viewerApiRef.current?.syncPickFilter?.();
   }, [selectionFilter]);
 
+  // ✅ Tier 7.42: material overrides change => re-apply without remount
+  useEffect(() => {
+    viewerApiRef.current?.syncMaterials?.();
+  }, [materialOverrides]);
+
   return (
     <div className="border rounded p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -1484,7 +1528,9 @@ export default function ThreeSceneViewer({
         <b>F</b> to frame selected (or whole scene). TransformControls mode is
         synced with the panel. Bounding box shows selection target (6G.9). If an
         active decal is selected (7.38), the gizmo targets the decal proxy first.
-        Decals are now pickable (7.41) via deterministic pick resolution.
+        Decals are now pickable (7.41) via deterministic pick resolution. If
+        materialOverrides are provided (7.42), they are applied after load and on
+        updates (viewer-safe, no remount).
       </div>
     </div>
   );

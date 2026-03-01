@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+// frontend/src/editor/decals/DecalsPanel.jsx
+import React, { useMemo, useState } from "react";
 
 const BLENDS = ["normal", "multiply", "add"];
 
@@ -64,7 +65,9 @@ export default function DecalsPanel({
             onChange={(e) => setBlend(e.target.value)}
           >
             {BLENDS.map((b) => (
-              <option key={b} value={b}>{b}</option>
+              <option key={b} value={b}>
+                {b}
+              </option>
             ))}
           </select>
         </label>

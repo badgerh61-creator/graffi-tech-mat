@@ -31,6 +31,14 @@ import { useGizmoPreview } from "../gizmo/gizmoPreviewStore";
 // ✅ Step 6 — shared gizmo mode store
 import { useGizmoMode } from "../gizmo/gizmoModeStore";
 
+// ✅ Tier 7.38 — active decal + preview patch store
+import { useActiveDecal } from "../decals/activeDecalStore";
+import {
+  useDecalPreview,
+  setDecalPreviewPatch,
+  clearDecalPreviewPatch,
+} from "../decals/decalPreviewStore";
+
 function makeRenderer(canvas) {
   // Prefer WebGL2, fallback WebGL1. If neither exists, return null.
   const gl2 = canvas.getContext("webgl2", { antialias: true });
@@ -153,15 +161,40 @@ function degToRad(d) {
   return (Number(d) * Math.PI) / 180;
 }
 
+function radToDeg(r) {
+  return (Number(r) * 180) / Math.PI;
+}
+
+function round(n, p = 4) {
+  const f = Math.pow(10, p);
+  return Math.round((Number(n) || 0) * f) / f;
+}
+
+function vec3Patch(v, p = 4) {
+  return { x: round(v.x, p), y: round(v.y, p), z: round(v.z, p) };
+}
+
+function eulerDegPatch(e, p = 2) {
+  return {
+    x: round(radToDeg(e.x), p),
+    y: round(radToDeg(e.y), p),
+    z: round(radToDeg(e.z), p),
+  };
+}
+
 /**
  * ✅ ADDITIVE SAFE:
  * - canEdit gates ONLY TransformControls (gizmo).
  * - Picking/selection still works in READ.
+ *
+ * ✅ Tier 7.38:
+ * - optional onCommitTool for DECAL_UPDATE on drag end
  */
 export default function ThreeSceneViewer({
   sceneIndex,
   disabled = false,
   canEdit = true, // ✅ NEW (default true so older callers behave the same)
+  onCommitTool = null, // ✅ Tier 7.38 (optional)
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -176,6 +209,10 @@ export default function ThreeSceneViewer({
 
   // ✅ shared gizmo mode (translate/rotate/scale)
   const { mode: gizmoMode } = useGizmoMode();
+
+  // ✅ Tier 7.38 active decal + preview patches
+  const { decalId: activeDecalId } = useActiveDecal();
+  const decalPreview = useDecalPreview();
 
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
@@ -209,6 +246,11 @@ export default function ThreeSceneViewer({
   // ✅ Tier 7.37 decals ref (no remount)
   const decalsRef = useRef(decals);
 
+  // ✅ Tier 7.38 active decal + preview refs (no remount)
+  const activeDecalIdRef = useRef(activeDecalId);
+  const decalPreviewRef = useRef(decalPreview);
+  const onCommitToolRef = useRef(onCommitTool);
+
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -229,6 +271,18 @@ export default function ThreeSceneViewer({
     decalsRef.current = decals;
   }, [decals]);
 
+  useEffect(() => {
+    activeDecalIdRef.current = activeDecalId ? String(activeDecalId) : null;
+  }, [activeDecalId]);
+
+  useEffect(() => {
+    decalPreviewRef.current = decalPreview;
+  }, [decalPreview]);
+
+  useEffect(() => {
+    onCommitToolRef.current = onCommitTool;
+  }, [onCommitTool]);
+
   // Expose minimal internal sync hooks for secondary effects (no remount).
   const viewerApiRef = useRef({
     syncSelection: null,
@@ -236,6 +290,8 @@ export default function ThreeSceneViewer({
     syncMode: null,
     syncEditGate: null, // ✅ NEW
     syncDecals: null, // ✅ Tier 7.37
+    syncDecalPreview: null, // ✅ Tier 7.38 (preview patch application)
+    syncDecalTarget: null, // ✅ Tier 7.38 (active decal -> gizmo attach)
   });
 
   useEffect(() => {
@@ -357,11 +413,63 @@ export default function ThreeSceneViewer({
     function onGizmoDraggingChanged(e) {
       const dragging = !!e?.value;
       if (dragging) isDragging = false;
+
+      // ✅ Tier 7.38: commit DECAL_UPDATE once on release (if the gizmo is attached to an active decal proxy)
+      if (!dragging) {
+        const activeId = activeDecalIdRef.current;
+        const obj = transformControls.object;
+        if (!activeId || !obj) return;
+
+        const proxy = decalProxyById.get(String(activeId));
+        if (!proxy) return;
+
+        // only commit if we are actually attached to the decal proxy
+        if (obj !== proxy) return;
+
+        // clear preview patch and emit commit
+        clearDecalPreviewPatch(activeId);
+
+        const patch = {
+          position: vec3Patch(proxy.position, 4),
+          rotation_euler: eulerDegPatch(proxy.rotation, 2),
+          scale: vec3Patch(proxy.scale, 4),
+        };
+
+        const commit = onCommitToolRef.current;
+        if (typeof commit === "function") {
+          commit({
+            tool: "DECAL_UPDATE",
+            station: "decor",
+            payload: { decal_id: activeId, patch },
+          });
+        }
+      }
     }
     transformControls.addEventListener(
       "dragging-changed",
       onGizmoDraggingChanged
     );
+
+    // ✅ Tier 7.38: while dragging, emit decal preview patch (UI-only)
+    function onGizmoObjectChange() {
+      const activeId = activeDecalIdRef.current;
+      const obj = transformControls.object;
+      if (!activeId || !obj) return;
+
+      const proxy = decalProxyById.get(String(activeId));
+      if (!proxy) return;
+      if (obj !== proxy) return;
+
+      // only if actually dragging
+      if (!transformControls.dragging) return;
+
+      setDecalPreviewPatch(activeId, {
+        position: vec3Patch(proxy.position, 4),
+        rotation_euler: eulerDegPatch(proxy.rotation, 2),
+        scale: vec3Patch(proxy.scale, 4),
+      });
+    }
+    transformControls.addEventListener("objectChange", onGizmoObjectChange);
 
     function onPointerDown(e) {
       // ignore orbit start if clicking on gizmo handles
@@ -435,6 +543,10 @@ export default function ThreeSceneViewer({
     const decalTextureCache = new Map(); // asset_ref -> THREE.Texture
     const checkerTex = makeCheckerTexture(128, 8);
 
+    // ✅ Tier 7.38: decal proxy maps (so gizmo can attach deterministically)
+    const decalProxyById = new Map(); // decal_id -> THREE.Object3D proxy
+    const decalBaseById = new Map(); // decal_id -> normalized decal (for restoring when preview cleared)
+
     function clearDecals() {
       // Remove planes and dispose safely
       for (const item of decalPlanes) {
@@ -447,8 +559,12 @@ export default function ThreeSceneViewer({
       }
       decalPlanes = [];
 
+      decalProxyById.clear();
+      decalBaseById.clear();
+
       // Clear decalsRoot children (defensive)
-      while (decalsRoot.children.length) decalsRoot.remove(decalsRoot.children[0]);
+      while (decalsRoot.children.length)
+        decalsRoot.remove(decalsRoot.children[0]);
     }
 
     function normalizeDecal(d) {
@@ -462,10 +578,10 @@ export default function ThreeSceneViewer({
       const scl = d?.scale || {};
 
       const opacity = clamp01(d?.opacity ?? 1.0);
-      const zOff = Number.isFinite(Number(d?.z_offset)) ? Number(d.z_offset) : 0.001;
+      const zOff = Number.isFinite(Number(d?.z_offset))
+        ? Number(d.z_offset)
+        : 0.001;
 
-      // plane size behavior:
-      // - we treat scale.x/scale.y as width/height multipliers; z ignored.
       const sx = Number.isFinite(Number(scl.x)) ? Number(scl.x) : 1;
       const sy = Number.isFinite(Number(scl.y)) ? Number(scl.y) : 1;
       const sz = Number.isFinite(Number(scl.z)) ? Number(scl.z) : 1;
@@ -535,6 +651,30 @@ export default function ThreeSceneViewer({
       }
     }
 
+    function applyDecalTransformFromBaseOrPreview(decalId) {
+      const id = String(decalId || "");
+      const proxy = decalProxyById.get(id);
+      if (!proxy) return;
+
+      const pv = decalPreviewRef.current?.patchById?.[id] || null;
+      const base = decalBaseById.get(id) || null;
+
+      const pos = pv?.position || base?.position;
+      const rot = pv?.rotation_euler || base?.rotation_euler;
+      const scl = pv?.scale || base?.scale;
+
+      if (pos) proxy.position.set(pos.x, pos.y, pos.z);
+      if (rot)
+        proxy.rotation.set(degToRad(rot.x), degToRad(rot.y), degToRad(rot.z));
+      if (scl) proxy.scale.set(scl.x, scl.y, scl.z);
+    }
+
+    function applyAllDecalPreviewPatches() {
+      for (const id of decalProxyById.keys()) {
+        applyDecalTransformFromBaseOrPreview(id);
+      }
+    }
+
     // ✅ Tier 7.37: render decals deterministically (stable order by id)
     async function syncDecals() {
       clearDecals();
@@ -556,12 +696,24 @@ export default function ThreeSceneViewer({
         if (!group) continue;
         if (group.visible === false) continue;
 
-        // ✅ Minimal: plane always faces outward relative to group local space.
-        // (Later tiers can project to mesh surface; 7.37 is intentionally simple.)
         const tex = await getDecalTexture(d.assetRef);
         if (disposed) return;
 
-        const geom = new THREE.PlaneGeometry(0.5, 0.5); // base size; scale controls actual size
+        // ✅ Tier 7.38: proxy object that the gizmo attaches to
+        const proxy = new THREE.Object3D();
+        proxy.name = `decal-proxy:${d.id}`;
+
+        // base transform (preview may override later)
+        proxy.position.set(d.position.x, d.position.y, d.position.z);
+        proxy.rotation.set(
+          degToRad(d.rotation_euler.x),
+          degToRad(d.rotation_euler.y),
+          degToRad(d.rotation_euler.z)
+        );
+        proxy.scale.set(d.scale.x, d.scale.y, d.scale.z);
+
+        // ✅ visual plane under proxy
+        const geom = new THREE.PlaneGeometry(0.5, 0.5);
         const mat = new THREE.MeshBasicMaterial({
           map: tex || null,
           transparent: true,
@@ -571,20 +723,20 @@ export default function ThreeSceneViewer({
 
         const plane = new THREE.Mesh(geom, mat);
         plane.name = `decal:${d.id}`;
-        plane.renderOrder = 1000; // keep decals on top (simple)
-        plane.position.set(d.position.x, d.position.y, d.position.z + d.z_offset);
-        plane.rotation.set(
-          degToRad(d.rotation_euler.x),
-          degToRad(d.rotation_euler.y),
-          degToRad(d.rotation_euler.z)
-        );
-        plane.scale.set(d.scale.x, d.scale.y, d.scale.z);
+        plane.renderOrder = 1000;
+        plane.position.set(0, 0, d.z_offset);
 
-        // attach to object group for now
-        group.add(plane);
+        proxy.add(plane);
+        group.add(proxy);
 
         decalPlanes.push({ mesh: plane, geometry: geom, material: mat });
+
+        decalProxyById.set(d.id, proxy);
+        decalBaseById.set(d.id, d);
       }
+
+      // apply preview patches (if any) after build
+      applyAllDecalPreviewPatches();
     }
 
     // picking sets
@@ -646,18 +798,35 @@ export default function ThreeSceneViewer({
       else fitCameraToScene(camera, root);
     }
 
-    // ✅ Attach gizmo to selected object group (UI-only)
-    function syncTransformControlsToSelection() {
-      const sid = selectedIdRef.current;
+    // ✅ Attach gizmo:
+    // Priority: active decal proxy (7.38) -> selected object group (7.34)
+    function syncTransformControlsToTarget() {
       const mode = gizmoModeRef.current;
-
       transformControls.setMode(mode);
 
-      // ✅ NEW: effective gizmo enabled gate (read-only still selectable)
       const gizmoEnabledNow = !disabled && !!canEditRef.current;
       transformControls.enabled = gizmoEnabledNow;
 
-      if (!gizmoEnabledNow || !sid) {
+      if (!gizmoEnabledNow) {
+        transformControls.detach();
+        transformControls.visible = false;
+        return;
+      }
+
+      // 1) active decal
+      const activeId = activeDecalIdRef.current;
+      if (activeId) {
+        const proxy = decalProxyById.get(String(activeId));
+        if (proxy) {
+          transformControls.attach(proxy);
+          transformControls.visible = true;
+          return;
+        }
+      }
+
+      // 2) selected object
+      const sid = selectedIdRef.current;
+      if (!sid) {
         transformControls.detach();
         transformControls.visible = false;
         return;
@@ -666,14 +835,7 @@ export default function ThreeSceneViewer({
       const objectKey = String(sid).split("::")[0];
       const group = objectGroups.get(objectKey);
 
-      if (!group) {
-        transformControls.detach();
-        transformControls.visible = false;
-        return;
-      }
-
-      // If layer hides the object, don't show gizmo
-      if (group.visible === false) {
+      if (!group || group.visible === false) {
         transformControls.detach();
         transformControls.visible = false;
         return;
@@ -880,11 +1042,13 @@ export default function ThreeSceneViewer({
       fitCameraToScene(camera, root);
 
       applyPreviewGhost();
-      syncTransformControlsToSelection();
       updateSelectionBox();
 
-      // ✅ Tier 7.37: render decals after objects exist
+      // ✅ Tier 7.37/7.38: render decals after objects exist
       await syncDecals();
+
+      // ✅ ensure gizmo attaches to correct target after decals created
+      syncTransformControlsToTarget();
     }
 
     loadAll();
@@ -973,23 +1137,34 @@ export default function ThreeSceneViewer({
     tick();
 
     viewerApiRef.current.syncSelection = () => {
-      syncTransformControlsToSelection();
       updateSelectionBox();
+      // attach gizmo could depend on selection when no decal active
+      syncTransformControlsToTarget();
     };
     viewerApiRef.current.syncPreview = () => {
       applyPreviewGhost();
     };
     viewerApiRef.current.syncMode = () => {
-      syncTransformControlsToSelection();
+      syncTransformControlsToTarget();
     };
     // ✅ NEW: sync canEdit gate without remount
     viewerApiRef.current.syncEditGate = () => {
-      syncTransformControlsToSelection();
+      syncTransformControlsToTarget();
     };
     // ✅ Tier 7.37: sync decals without remount
     viewerApiRef.current.syncDecals = () => {
-      // fire-and-forget; internal guards prevent state corruption on unmount
-      syncDecals();
+      syncDecals().then(() => {
+        // ensure attach after rebuild
+        syncTransformControlsToTarget();
+      });
+    };
+    // ✅ Tier 7.38: apply preview patches without rebuilding decals
+    viewerApiRef.current.syncDecalPreview = () => {
+      applyAllDecalPreviewPatches();
+    };
+    // ✅ Tier 7.38: active decal changes (reattach)
+    viewerApiRef.current.syncDecalTarget = () => {
+      syncTransformControlsToTarget();
     };
 
     viewerApiRef.current.syncSelection?.();
@@ -1005,6 +1180,8 @@ export default function ThreeSceneViewer({
       viewerApiRef.current.syncMode = null;
       viewerApiRef.current.syncEditGate = null;
       viewerApiRef.current.syncDecals = null;
+      viewerApiRef.current.syncDecalPreview = null;
+      viewerApiRef.current.syncDecalTarget = null;
 
       clearGhost();
       clearSelectionBox();
@@ -1025,6 +1202,7 @@ export default function ThreeSceneViewer({
         "dragging-changed",
         onGizmoDraggingChanged
       );
+      transformControls.removeEventListener("objectChange", onGizmoObjectChange);
       transformControls.detach();
       scene.remove(transformControls);
 
@@ -1079,6 +1257,16 @@ export default function ThreeSceneViewer({
     viewerApiRef.current?.syncDecals?.();
   }, [decals]);
 
+  // ✅ Tier 7.38: when active decal changes, reattach gizmo target
+  useEffect(() => {
+    viewerApiRef.current?.syncDecalTarget?.();
+  }, [activeDecalId]);
+
+  // ✅ Tier 7.38: when preview patches change, apply transforms (no rebuild)
+  useEffect(() => {
+    viewerApiRef.current?.syncDecalPreview?.();
+  }, [decalPreview]);
+
   return (
     <div className="border rounded p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -1112,7 +1300,8 @@ export default function ThreeSceneViewer({
       <div className="text-xs opacity-70">
         Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to
         frame selected (or whole scene). TransformControls mode is synced with the
-        panel. Bounding box shows selection target (6G.9).
+        panel. Bounding box shows selection target (6G.9). If an active decal is
+        selected (7.38), the gizmo targets the decal proxy first.
       </div>
     </div>
   );

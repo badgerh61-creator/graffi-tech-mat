@@ -251,6 +251,9 @@ export default function ThreeSceneViewer({
   const decalPreviewRef = useRef(decalPreview);
   const onCommitToolRef = useRef(onCommitTool);
 
+  // ✅ NEW: async sync nonce (prevents out-of-order decal sync from applying late)
+  const decalsSyncNonceRef = useRef(0);
+
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -650,6 +653,9 @@ export default function ThreeSceneViewer({
 
     // ✅ Tier 7.37: render decals deterministically (stable order by id)
     async function syncDecals() {
+      // ✅ NEW: nonce gate for out-of-order async calls
+      const myNonce = ++decalsSyncNonceRef.current;
+
       clearDecals();
 
       const raw = decalsRef.current || [];
@@ -663,6 +669,7 @@ export default function ThreeSceneViewer({
 
       for (const d of sorted) {
         if (disposed) return;
+        if (myNonce !== decalsSyncNonceRef.current) return; // another sync started later
 
         const objectKey = String(d.targetId).split("::")[0];
         const group = objectGroups.get(objectKey);
@@ -671,6 +678,7 @@ export default function ThreeSceneViewer({
 
         const tex = await getDecalTexture(d.assetRef);
         if (disposed) return;
+        if (myNonce !== decalsSyncNonceRef.current) return; // another sync started later
 
         // ✅ Tier 7.38: proxy object that the gizmo attaches to
         const proxy = new THREE.Object3D();
@@ -708,6 +716,9 @@ export default function ThreeSceneViewer({
         decalProxyById.set(d.id, proxy);
         decalBaseById.set(d.id, d);
       }
+
+      if (disposed) return;
+      if (myNonce !== decalsSyncNonceRef.current) return;
 
       // apply preview patches (if any) after build
       applyAllDecalPreviewPatches();
@@ -941,11 +952,15 @@ export default function ThreeSceneViewer({
     }
 
     async function loadAll() {
+      if (disposed) return;
+
       setErr(null);
       pickables = [];
       meshToObjectId.clear();
       meshToObjectKey.clear();
       objectGroups.clear();
+
+      // ✅ NEW: ensure count resets deterministically
       setLoadingCount(0);
 
       // clear root
@@ -1068,7 +1083,8 @@ export default function ThreeSceneViewer({
 
           setErr((prev) => prev || String(e?.message || e));
         } finally {
-          setLoadingCount((c) => Math.max(0, c - 1));
+          // ✅ NEW: don’t let state go negative, and don’t update after dispose
+          if (!disposed) setLoadingCount((c) => Math.max(0, c - 1));
         }
       }
 
@@ -1089,6 +1105,8 @@ export default function ThreeSceneViewer({
     function onClick(e) {
       // IMPORTANT: keep selection available even in READ mode.
       // Only the gizmo is gated by canEdit/disabled.
+      if (contextLost) return;
+
       const r = canvas.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * 2 - 1;
       const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
@@ -1126,6 +1144,8 @@ export default function ThreeSceneViewer({
 
     function onDoubleClick(e) {
       // Keep focus feature available in READ too.
+      if (contextLost) return;
+
       const r = canvas.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * 2 - 1;
       const y = -(((e.clientY - r.top) / r.height) * 2 - 1);

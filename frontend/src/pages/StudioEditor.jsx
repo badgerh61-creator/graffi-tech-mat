@@ -18,6 +18,12 @@ import EditSessionHeader from "../editor/modes/EditSessionHeader";
 import { fetchDraftLockStatus } from "../services/studio/lockStatusApi";
 import { useLockStatus, setLockStatus } from "../editor/modes/lockStatusStore";
 
+// ✅ Tier 7.39 ADD (tool context bar)
+import ToolContextBar from "../editor/toolbar/ToolContextBar";
+
+// ✅ Tier 7.40 ADD (view modes dropdown)
+import ViewModeSelect from "../editor/view/ViewModeSelect";
+
 // ✅ Tier 7.1 ADD (selection + transform toolbar)
 import { useSelection } from "../editor/selection/useSelection";
 import TransformToolbar from "../editor/tools/TransformToolbar";
@@ -110,6 +116,20 @@ function normalizeLock(data) {
   if (data.locked === false || data.exists === false) return { state: "missing" };
 
   return { state: "unknown" };
+}
+
+const WHY_ORDER = [
+  "SNAPSHOT_MISSING",
+  "LOADING",
+  "NOT_DRAFT",
+  "NO_LOCK",
+  "ROLE_FORBIDDEN",
+  "STATION_FORBIDDEN",
+];
+
+function sortWhy(rs) {
+  const s = new Set(rs || []);
+  return WHY_ORDER.filter((k) => s.has(k));
 }
 
 export default function StudioEditor() {
@@ -422,6 +442,32 @@ export default function StudioEditor() {
     ? "wrong station"
     : null;
 
+  // ✅ Tier 7.36/7.39: deterministic why-blocked reasons
+  const whyBlockedReasons = useMemo(() => {
+    const rs = [];
+
+    if (!activeSnapshot?.id) rs.push("SNAPSHOT_MISSING");
+    if (sceneIndex == null && !!activeSnapshot?.id) rs.push("LOADING");
+
+    if (activeSnapshot?.id && activeSnapshot?.status !== "draft") rs.push("NOT_DRAFT");
+
+    if (activeSnapshot?.status === "draft") {
+      if (lock?.state !== "owned") rs.push("NO_LOCK");
+    }
+
+    if (!canEditByRole) rs.push("ROLE_FORBIDDEN");
+    if (!canEditByStation) rs.push("STATION_FORBIDDEN");
+
+    return sortWhy(rs);
+  }, [
+    activeSnapshot?.id,
+    activeSnapshot?.status,
+    sceneIndex,
+    lock?.state,
+    canEditByRole,
+    canEditByStation,
+  ]);
+
   // =====================================================
   // PHASE 4.4 — AUTOSAVE (DRAFT ONLY)
   // =====================================================
@@ -452,11 +498,6 @@ export default function StudioEditor() {
             )}
 
             <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
-
-            {/* NOTE:
-               Tier 7.35 replaces “FinalizeDraftButton” UX with StudioModeBar.
-               Keeping header clean avoids double-complete paths.
-            */}
           </>
         }
       >
@@ -470,6 +511,18 @@ export default function StudioEditor() {
             canEditByRole={canEditByRole}
             canEditByStation={canEditByStation}
           />
+        </div>
+
+        {/* ✅ Tier 7.39/7.40 — Tool Context Bar + View Modes */}
+        <div className="p-3 pt-2 pb-0 flex items-center gap-2">
+          <div className="flex-1">
+            <ToolContextBar
+              canEdit={toolsEnabled}
+              reasons={whyBlockedReasons}
+              lockLabelText={lock?.state === "owned" ? "LOCK: Owned" : ""}
+            />
+          </div>
+          <ViewModeSelect />
         </div>
 
         {/* ✅ Tier 7.35 — Mode bar (READ ↔ EDIT) */}

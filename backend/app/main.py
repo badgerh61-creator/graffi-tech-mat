@@ -35,7 +35,9 @@ from app.api.exports import router as exports_router
 from app.api.distributions import router as distributions_router
 from app.api.organizations import router as organizations_router
 from app.api.scenes import router as scenes_router
-from app.api.signed_urls import router as signed_url_router
+
+# ❌ Removed to eliminate duplicate signed-urls route
+# from app.api.signed_urls import router as signed_url_router
 
 # 🔑 SNAPSHOT ROUTERS (FIXED — NO SHADOWING)
 from app.api.mutations.snapshots import router as snapshot_mutations_router
@@ -92,6 +94,7 @@ from app.api.simulation_batch import router as simulation_batch_router
 from app.api.simulation_repro import router as simulation_repro_router
 from app.api.draft_workspace import router as draft_workspace_router
 from app.api.draft_lock_status import router as draft_lock_status_router
+
 
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
     """
@@ -154,11 +157,8 @@ def create_app() -> FastAPI:
         validate_settings()
         Base.metadata.create_all(bind=engine)
 
-        # ✅ additive-only safety signal (no behavior change)
         dupes = _detect_duplicate_routes(app)
         if dupes:
-            # Don’t crash prod by default; just log.
-            # If you want strict mode later, you can gate this via env.
             import logging
             logging.getLogger(__name__).warning(
                 "Duplicate routes detected: %s", dupes
@@ -203,37 +203,13 @@ def create_app() -> FastAPI:
     app.include_router(distributions_router)
 
     app.include_router(organizations_router)
-    app.include_router(signed_url_router)
+
+    # ❌ Removed to eliminate duplicate signed-urls route
+    # app.include_router(signed_url_router)
 
     # Snapshots (Phase 3 → 4.5)
     app.include_router(snapshots_router)
     app.include_router(snapshots_undo_redo_router)
-
-    # ✅ Phase H.8 (inline, additive, stable)
-    @app.get("/health")
-    def health():
-        # Liveness: must never touch DB
-        return {"status": "ok", "service": "api"}
-
-    @app.get("/ready")
-    def ready():
-        """
-        Readiness: may touch DB (read-only).
-        IMPORTANT: reference ops_checks dynamically so monkeypatch works.
-        """
-        from app.db.session import SessionLocal
-        from app.services import ops_checks
-
-        db = SessionLocal()
-        try:
-            result = ops_checks.compute_readiness(db=db)
-        finally:
-            db.close()
-
-        if not result.ready:
-            return {"status": "not_ready", "ready": False, "checks": result.checks}
-
-        return {"status": "ready", "ready": True, "checks": result.checks}
 
     # 🧭 Studio kernel exposure (Phase E)
     app.include_router(studio_state_router)          # E.1
@@ -256,12 +232,15 @@ def create_app() -> FastAPI:
     app.include_router(testing_results_router)
     app.include_router(testing_compare_router)
 
+    # ✅ Health lives in one place: health_router
+    # (Removed inline /health and /ready definitions)
     app.include_router(health_router)
+
     app.include_router(tools_router)
     app.include_router(reference_frames_router)
     app.include_router(selection_router)
     app.include_router(snapshot_history.router)
-    
+
     app.include_router(simulation_router)
     app.include_router(simulation_lab_router)
     app.include_router(simulation_templates_router)
@@ -269,7 +248,7 @@ def create_app() -> FastAPI:
     app.include_router(simulation_repro_router)
     app.include_router(draft_workspace_router)
     app.include_router(draft_lock_status_router)
-    
+
     return app
 
 

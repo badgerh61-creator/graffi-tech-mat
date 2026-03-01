@@ -1,3 +1,5 @@
+# backend/app/api/snapshots_legacy.py
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,7 +13,9 @@ from app.services.snapshot_drafts import (
 from app.services.snapshot_invalidation import invalidate_snapshot
 from app import crud
 
-router = APIRouter(prefix="/snapshots", tags=["snapshots-legacy"])
+# ✅ IMPORTANT:
+# - legacy router is now isolated under /legacy so it never collides with modern routes
+router = APIRouter(prefix="/legacy/snapshots", tags=["snapshots-legacy"])
 
 
 # -----------------------------
@@ -36,11 +40,12 @@ def create_draft(
 
 # -----------------------------
 # AUTOSAVE DRAFT (legacy)
-# POST + PUT REQUIRED
+# POST + PUT + PATCH REQUIRED
 # -----------------------------
 @router.post("/{snapshot_id}/autosave")
 @router.put("/{snapshot_id}/autosave")
-def autosave(
+@router.patch("/{snapshot_id}/autosave")
+def autosave_legacy(
     snapshot_id: int,
     payload: dict,
     db: Session = Depends(get_db),
@@ -49,6 +54,9 @@ def autosave(
     snapshot = crud.get_snapshot_by_id(db, snapshot_id)
     if snapshot is None:
         raise HTTPException(404, "Snapshot not found")
+
+    if "scene_state_hash" not in payload:
+        raise HTTPException(400, "scene_state_hash required")
 
     return autosave_draft(
         db=db,
@@ -101,29 +109,3 @@ def invalidate(
         snapshot=snapshot,
         user=user,
     )
-
-
-# -----------------------------
-# AUTOSAVE DRAFT (legacy)
-# POST + PUT + PATCH REQUIRED
-# -----------------------------
-@router.post("/{snapshot_id}/autosave")
-@router.put("/{snapshot_id}/autosave")
-@router.patch("/{snapshot_id}/autosave")   # ✅ ADD THIS
-def autosave(
-    snapshot_id: int,
-    payload: dict,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    snapshot = crud.get_snapshot_by_id(db, snapshot_id)
-    if snapshot is None:
-        raise HTTPException(404, "Snapshot not found")
-
-    return autosave_draft(
-        db=db,
-        snapshot=snapshot,
-        new_state_hash=payload["scene_state_hash"],
-        user=user,
-    )
-

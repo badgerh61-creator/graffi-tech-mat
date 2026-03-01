@@ -150,6 +150,15 @@ export default function StudioEditor() {
   // -------------------------------
   const snapshotsFetchInFlight = useRef(false);
 
+  // ✅ Safety: avoid updating state after unmount for async snapshot fetch
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   // =====================================================
   // SNAPSHOT FETCH (AUTHORITATIVE)
   // =====================================================
@@ -166,6 +175,7 @@ export default function StudioEditor() {
         return res.json();
       })
       .then((data) => {
+        if (!aliveRef.current) return;
         console.log("Snapshots:", data);
         setSnapshots(Array.isArray(data) ? data : []);
       })
@@ -390,7 +400,11 @@ export default function StudioEditor() {
   const canEditByStation = station === "geometry";
 
   const toolsEnabled =
-    isEditMode && hasDraftLock && canEditByRole && canEditByStation && activeSnapshot?.status === "draft";
+    isEditMode &&
+    hasDraftLock &&
+    canEditByRole &&
+    canEditByStation &&
+    activeSnapshot?.status === "draft";
 
   const gizmoEnabled = toolsEnabled && !!activeTargetId;
 

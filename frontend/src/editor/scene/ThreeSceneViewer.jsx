@@ -343,6 +343,8 @@ export default function ThreeSceneViewer({
     scene.add(root);
 
     // ✅ Tier 7.37: decals root (always deterministic)
+    // NOTE: decals are attached under the owning object group (so transforms inherit),
+    // but we keep this root as an anchor and for future "global decals" if needed.
     const decalsRoot = new THREE.Group();
     decalsRoot.name = "decals-root";
     root.add(decalsRoot);
@@ -361,6 +363,13 @@ export default function ThreeSceneViewer({
 
     transformControls.visible = false; // becomes true once attached
     scene.add(transformControls);
+
+    // ✅ Track gizmo dragging state deterministically (do NOT rely on transformControls.dragging existing)
+    let gizmoDragging = false;
+
+    // ✅ Guard against duplicate "release" commit (TransformControls can emit dragging-changed(false) more than once)
+    let dragSession = 0;
+    let committedForSession = false;
 
     // ✅ selection bounding box helper
     let selectionBoxHelper = null;
@@ -409,116 +418,76 @@ export default function ThreeSceneViewer({
       lastX = 0,
       lastY = 0;
 
-    // while gizmo is dragging: disable orbit drag
-    function onGizmoDraggingChanged(e) {
-      const dragging = !!e?.value;
-      if (dragging) isDragging = false;
+    // ✅ Tier 7.37: decals holder + textures cache (lifetime = viewer mount)
+    let decalPlanes = []; // { proxy?, mesh, material, geometry, texture? }
+    const textureLoader = new THREE.TextureLoader();
+    const decalTextureCache = new Map(); // asset_ref -> THREE.Texture
+    const checkerTex = makeCheckerTexture(128, 8);
 
-      // ✅ Tier 7.38: commit DECAL_UPDATE once on release (if the gizmo is attached to an active decal proxy)
-      if (!dragging) {
-        const activeId = activeDecalIdRef.current;
-        const obj = transformControls.object;
-        if (!activeId || !obj) return;
+    // ✅ Tier 7.38: decal proxy maps (so gizmo can attach deterministically)
+    const decalProxyById = new Map(); // decal_id -> THREE.Object3D proxy
+    const decalBaseById = new Map(); // decal_id -> normalized decal (for restoring when preview cleared)
 
-        const proxy = decalProxyById.get(String(activeId));
-        if (!proxy) return;
+    // picking sets
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let pickables = [];
 
-        // only commit if we are actually attached to the decal proxy
-        if (obj !== proxy) return;
+    // ✅ 6G.12: primary mapping is Mesh -> objectKey (object or object@instance)
+    const meshToObjectKey = new Map(); // Mesh -> objectKey
+    // ✅ Legacy fallback (optional, safe)
+    const meshToObjectId = new Map(); // Mesh -> objectId
 
-        // clear preview patch and emit commit
-        clearDecalPreviewPatch(activeId);
+    // ✅ 6G.7 object groups for framing + gizmo attach
+    const objectGroups = new Map(); // objectKey -> THREE.Group
 
-        const patch = {
-          position: vec3Patch(proxy.position, 4),
-          rotation_euler: eulerDegPatch(proxy.rotation, 2),
-          scale: vec3Patch(proxy.scale, 4),
-        };
+    function resolveObjectKeyFromHitMesh(hitMesh) {
+      if (!hitMesh) return null;
 
-        const commit = onCommitToolRef.current;
-        if (typeof commit === "function") {
-          commit({
-            tool: "DECAL_UPDATE",
-            station: "decor",
-            payload: { decal_id: activeId, patch },
-          });
+      const direct = meshToObjectKey.get(hitMesh);
+      if (direct) return direct;
+
+      const legacy = meshToObjectId.get(hitMesh);
+      if (legacy) return legacy;
+
+      let p = hitMesh.parent;
+      while (p) {
+        if (typeof p.name === "string" && p.name.startsWith("obj:")) {
+          return p.name.slice(4);
         }
+        p = p.parent;
       }
-    }
-    transformControls.addEventListener(
-      "dragging-changed",
-      onGizmoDraggingChanged
-    );
-
-    // ✅ Tier 7.38: while dragging, emit decal preview patch (UI-only)
-    function onGizmoObjectChange() {
-      const activeId = activeDecalIdRef.current;
-      const obj = transformControls.object;
-      if (!activeId || !obj) return;
-
-      const proxy = decalProxyById.get(String(activeId));
-      if (!proxy) return;
-      if (obj !== proxy) return;
-
-      // only if actually dragging
-      if (!transformControls.dragging) return;
-
-      setDecalPreviewPatch(activeId, {
-        position: vec3Patch(proxy.position, 4),
-        rotation_euler: eulerDegPatch(proxy.rotation, 2),
-        scale: vec3Patch(proxy.scale, 4),
-      });
-    }
-    transformControls.addEventListener("objectChange", onGizmoObjectChange);
-
-    function onPointerDown(e) {
-      // ignore orbit start if clicking on gizmo handles
-      if (transformControls.dragging) return;
-      isDragging = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
-    }
-    function onPointerUp() {
-      isDragging = false;
-    }
-    function onPointerMove(e) {
-      if (!isDragging) return;
-      const dx = (e.clientX - lastX) * 0.005;
-      const dy = (e.clientY - lastY) * 0.005;
-      lastX = e.clientX;
-      lastY = e.clientY;
-
-      const offset = camera.position.clone();
-      const spherical = new THREE.Spherical().setFromVector3(offset);
-      spherical.theta -= dx;
-      spherical.phi = Math.min(
-        Math.max(0.2, spherical.phi - dy),
-        Math.PI - 0.2
-      );
-      offset.setFromSpherical(spherical);
-      camera.position.copy(offset);
-      camera.lookAt(0, 0.8, 0);
+      return null;
     }
 
-    container.addEventListener("pointerdown", onPointerDown);
-    container.addEventListener("pointerup", onPointerUp);
-    container.addEventListener("pointerleave", onPointerUp);
-    container.addEventListener("pointermove", onPointerMove);
+    function pickIdNodeForMeshPath(hitMesh) {
+      if (!hitMesh) return null;
+      if (hitMesh.name && String(hitMesh.name).trim()) return hitMesh;
 
-    // resize
-    function resize() {
-      const r = container.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(r.width));
-      const h = Math.max(1, Math.floor(r.height));
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      let p = hitMesh.parent;
+      while (p) {
+        if (typeof p.name === "string" && p.name.startsWith("obj:")) break;
+        if (p.name && String(p.name).trim()) return p;
+        p = p.parent;
+      }
+      return hitMesh;
     }
-    resize();
-    const ro = new ResizeObserver(() => resize());
-    ro.observe(container);
 
-    // ✅ 7.27 ghost holder
+    function frameSelectedOrScene() {
+      const sid = selectedIdRef.current;
+      if (!sid) {
+        fitCameraToScene(camera, root);
+        return;
+      }
+
+      const objectKey = String(sid).split("::")[0];
+      const group = objectGroups.get(objectKey);
+
+      if (group) fitCameraToObject(camera, group);
+      else fitCameraToScene(camera, root);
+    }
+
+    // ✅ Tier 7.27 ghost holder
     let ghost = null;
 
     function clearGhost() {
@@ -537,20 +506,13 @@ export default function ThreeSceneViewer({
       ghost = null;
     }
 
-    // ✅ Tier 7.37: decals holder + textures cache (lifetime = viewer mount)
-    let decalPlanes = []; // { mesh, material, geometry, texture? }
-    const textureLoader = new THREE.TextureLoader();
-    const decalTextureCache = new Map(); // asset_ref -> THREE.Texture
-    const checkerTex = makeCheckerTexture(128, 8);
-
-    // ✅ Tier 7.38: decal proxy maps (so gizmo can attach deterministically)
-    const decalProxyById = new Map(); // decal_id -> THREE.Object3D proxy
-    const decalBaseById = new Map(); // decal_id -> normalized decal (for restoring when preview cleared)
-
     function clearDecals() {
-      // Remove planes and dispose safely
+      // Remove planes and dispose safely (and remove decal proxies from their parents)
       for (const item of decalPlanes) {
         try {
+          // remove full proxy (important) so we don't leave empty objects attached to groups
+          if (item?.proxy?.parent) item.proxy.parent.remove(item.proxy);
+          // defensive: if mesh still exists somewhere
           if (item?.mesh?.parent) item.mesh.parent.remove(item.mesh);
           item.geometry?.dispose?.();
           item.material?.dispose?.();
@@ -558,6 +520,13 @@ export default function ThreeSceneViewer({
         } catch {}
       }
       decalPlanes = [];
+
+      // Defensive: remove any remaining proxies by map (if planes array missed one)
+      for (const proxy of decalProxyById.values()) {
+        try {
+          if (proxy?.parent) proxy.parent.remove(proxy);
+        } catch {}
+      }
 
       decalProxyById.clear();
       decalBaseById.clear();
@@ -663,10 +632,14 @@ export default function ThreeSceneViewer({
       const rot = pv?.rotation_euler || base?.rotation_euler;
       const scl = pv?.scale || base?.scale;
 
-      if (pos) proxy.position.set(pos.x, pos.y, pos.z);
+      if (pos) proxy.position.set(Number(pos.x || 0), Number(pos.y || 0), Number(pos.z || 0));
       if (rot)
-        proxy.rotation.set(degToRad(rot.x), degToRad(rot.y), degToRad(rot.z));
-      if (scl) proxy.scale.set(scl.x, scl.y, scl.z);
+        proxy.rotation.set(
+          degToRad(Number(rot.x || 0)),
+          degToRad(Number(rot.y || 0)),
+          degToRad(Number(rot.z || 0))
+        );
+      if (scl) proxy.scale.set(Number(scl.x || 1), Number(scl.y || 1), Number(scl.z || 1));
     }
 
     function applyAllDecalPreviewPatches() {
@@ -729,7 +702,8 @@ export default function ThreeSceneViewer({
         proxy.add(plane);
         group.add(proxy);
 
-        decalPlanes.push({ mesh: plane, geometry: geom, material: mat });
+        // ✅ store proxy too so clearDecals removes it cleanly
+        decalPlanes.push({ proxy, mesh: plane, geometry: geom, material: mat });
 
         decalProxyById.set(d.id, proxy);
         decalBaseById.set(d.id, d);
@@ -737,65 +711,6 @@ export default function ThreeSceneViewer({
 
       // apply preview patches (if any) after build
       applyAllDecalPreviewPatches();
-    }
-
-    // picking sets
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    let pickables = [];
-
-    // ✅ 6G.12: primary mapping is Mesh -> objectKey (object or object@instance)
-    const meshToObjectKey = new Map(); // Mesh -> objectKey
-    // ✅ Legacy fallback (optional, safe)
-    const meshToObjectId = new Map(); // Mesh -> objectId
-
-    // ✅ 6G.7 object groups for framing + gizmo attach
-    const objectGroups = new Map(); // objectKey -> THREE.Group
-
-    function resolveObjectKeyFromHitMesh(hitMesh) {
-      if (!hitMesh) return null;
-
-      const direct = meshToObjectKey.get(hitMesh);
-      if (direct) return direct;
-
-      const legacy = meshToObjectId.get(hitMesh);
-      if (legacy) return legacy;
-
-      let p = hitMesh.parent;
-      while (p) {
-        if (typeof p.name === "string" && p.name.startsWith("obj:")) {
-          return p.name.slice(4);
-        }
-        p = p.parent;
-      }
-      return null;
-    }
-
-    function pickIdNodeForMeshPath(hitMesh) {
-      if (!hitMesh) return null;
-      if (hitMesh.name && String(hitMesh.name).trim()) return hitMesh;
-
-      let p = hitMesh.parent;
-      while (p) {
-        if (typeof p.name === "string" && p.name.startsWith("obj:")) break;
-        if (p.name && String(p.name).trim()) return p;
-        p = p.parent;
-      }
-      return hitMesh;
-    }
-
-    function frameSelectedOrScene() {
-      const sid = selectedIdRef.current;
-      if (!sid) {
-        fitCameraToScene(camera, root);
-        return;
-      }
-
-      const objectKey = String(sid).split("::")[0];
-      const group = objectGroups.get(objectKey);
-
-      if (group) fitCameraToObject(camera, group);
-      else fitCameraToScene(camera, root);
     }
 
     // ✅ Attach gizmo:
@@ -844,6 +759,124 @@ export default function ThreeSceneViewer({
       transformControls.attach(group);
       transformControls.visible = true;
     }
+
+    // while gizmo is dragging: disable orbit drag
+    function onGizmoDraggingChanged(e) {
+      const dragging = !!e?.value;
+      gizmoDragging = dragging;
+
+      if (dragging) {
+        isDragging = false;
+        dragSession += 1;
+        committedForSession = false;
+      }
+
+      // ✅ Tier 7.38: commit DECAL_UPDATE once on release (if the gizmo is attached to an active decal proxy)
+      if (!dragging) {
+        if (committedForSession) return;
+        committedForSession = true;
+
+        const activeId = activeDecalIdRef.current;
+        const obj = transformControls.object;
+        if (!activeId || !obj) return;
+
+        const proxy = decalProxyById.get(String(activeId));
+        if (!proxy) return;
+
+        // only commit if we are actually attached to the decal proxy
+        if (obj !== proxy) return;
+
+        // clear preview patch and emit commit
+        clearDecalPreviewPatch(activeId);
+
+        const patch = {
+          position: vec3Patch(proxy.position, 4),
+          rotation_euler: eulerDegPatch(proxy.rotation, 2),
+          scale: vec3Patch(proxy.scale, 4),
+        };
+
+        const commit = onCommitToolRef.current;
+        if (typeof commit === "function") {
+          commit({
+            tool: "DECAL_UPDATE",
+            station: "decor",
+            payload: { decal_id: activeId, patch },
+          });
+        }
+      }
+    }
+    transformControls.addEventListener(
+      "dragging-changed",
+      onGizmoDraggingChanged
+    );
+
+    // ✅ Tier 7.38: while dragging, emit decal preview patch (UI-only)
+    function onGizmoObjectChange() {
+      const activeId = activeDecalIdRef.current;
+      const obj = transformControls.object;
+      if (!activeId || !obj) return;
+
+      const proxy = decalProxyById.get(String(activeId));
+      if (!proxy) return;
+      if (obj !== proxy) return;
+
+      // only if actually dragging
+      if (!gizmoDragging) return;
+
+      setDecalPreviewPatch(activeId, {
+        position: vec3Patch(proxy.position, 4),
+        rotation_euler: eulerDegPatch(proxy.rotation, 2),
+        scale: vec3Patch(proxy.scale, 4),
+      });
+    }
+    transformControls.addEventListener("objectChange", onGizmoObjectChange);
+
+    function onPointerDown(e) {
+      // ignore orbit start if clicking on gizmo handles / during gizmo drag
+      if (gizmoDragging) return;
+      isDragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+    }
+    function onPointerUp() {
+      isDragging = false;
+    }
+    function onPointerMove(e) {
+      if (!isDragging) return;
+      const dx = (e.clientX - lastX) * 0.005;
+      const dy = (e.clientY - lastY) * 0.005;
+      lastX = e.clientX;
+      lastY = e.clientY;
+
+      const offset = camera.position.clone();
+      const spherical = new THREE.Spherical().setFromVector3(offset);
+      spherical.theta -= dx;
+      spherical.phi = Math.min(
+        Math.max(0.2, spherical.phi - dy),
+        Math.PI - 0.2
+      );
+      offset.setFromSpherical(spherical);
+      camera.position.copy(offset);
+      camera.lookAt(0, 0.8, 0);
+    }
+
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointerup", onPointerUp);
+    container.addEventListener("pointerleave", onPointerUp);
+    container.addEventListener("pointermove", onPointerMove);
+
+    // resize
+    function resize() {
+      const r = container.getBoundingClientRect();
+      const w = Math.max(1, Math.floor(r.width));
+      const h = Math.max(1, Math.floor(r.height));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(container);
 
     // ✅ 7.27 apply ghost from preview
     function applyPreviewGhost() {

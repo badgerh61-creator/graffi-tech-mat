@@ -1,20 +1,21 @@
 // frontend/src/editor/toolbar/ToolContextBar.jsx
-import React, { useMemo } from "react"; // ✅ ADD: React in scope for classic JSX runtime
+import React, { useMemo } from "react"; // ✅ React in scope for classic JSX runtime
 import { useSelection } from "../selection/selectionStore";
 import { useGizmoMode, setGizmoMode } from "../gizmo/gizmoModeStore";
 import { useSnap, setSnap } from "../transform/snapStore";
+
+// ✅ Tier 7.41 — selection filter dropdown
+import {
+  useSelectionFilter,
+  setSelectionFilter,
+} from "../selection/selectionFilterStore";
 
 function Button({ onClick, disabled, active, children, title }) {
   const cls = active
     ? "border rounded px-2 py-1 text-sm bg-gray-100"
     : "border rounded px-2 py-1 text-sm";
   return (
-    <button
-      className={cls}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-    >
+    <button className={cls} onClick={onClick} disabled={disabled} title={title}>
       {children}
     </button>
   );
@@ -44,9 +45,11 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
   const mode = useGizmoMode().mode;
   const snap = useSnap().snap;
 
+  // ✅ Tier 7.41
+  const filter = useSelectionFilter().filter;
+
   const selectionShort = useMemo(() => {
     if (!selectedId) return "none";
-    // show only object id part
     const parts = String(selectedId).split("::");
     return parts[0] + (parts[1] ? " :: " + parts[1] : "");
   }, [selectedId]);
@@ -57,6 +60,22 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
 
       <div className="text-xs opacity-70">
         Selection: <span className="font-mono">{selectionShort}</span>
+      </div>
+
+      {/* ✅ Tier 7.41 — Selection filter (always allowed, even in READ mode) */}
+      <div className="flex items-center gap-2 ml-2">
+        <div className="text-xs opacity-70">Select</div>
+        <select
+          className="border rounded px-2 py-1 text-sm"
+          value={filter}
+          onChange={(e) => setSelectionFilter(e.target.value)}
+          title="Selection Filter"
+        >
+          <option value="all">All</option>
+          <option value="objects">Objects</option>
+          <option value="meshes">Meshes</option>
+          <option value="decals">Decals</option>
+        </select>
       </div>
 
       <div className="flex items-center gap-1 ml-2">
@@ -142,7 +161,9 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
           <ReasonPills reasons={reasons} />
         </div>
       ) : (
-        <div className="text-xs opacity-70">{lockLabelText || "Editing enabled"}</div>
+        <div className="text-xs opacity-70">
+          {lockLabelText || "Editing enabled"}
+        </div>
       )}
     </div>
   );

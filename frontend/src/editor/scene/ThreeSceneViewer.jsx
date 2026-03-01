@@ -39,6 +39,19 @@ import {
   clearDecalPreviewPatch,
 } from "../decals/decalPreviewStore";
 
+// ✅ Tier 7.41 — selection filters + deterministic pick resolution
+import {
+  useSelectionFilter,
+} from "../selection/selectionFilterStore";
+import { resolvePick } from "../selection/resolvePick";
+
+// ✅ Tier 7.41 — set/clear active decal (optional, safe)
+// (If your activeDecalStore exports different names, update these imports.)
+import {
+  setActiveDecalId,
+  clearActiveDecalId,
+} from "../decals/activeDecalStore";
+
 function makeRenderer(canvas) {
   // Prefer WebGL2, fallback WebGL1. If neither exists, return null.
   const gl2 = canvas.getContext("webgl2", { antialias: true });
@@ -189,6 +202,9 @@ function eulerDegPatch(e, p = 2) {
  *
  * ✅ Tier 7.38:
  * - optional onCommitTool for DECAL_UPDATE on drag end
+ *
+ * ✅ Tier 7.41:
+ * - selection filter + deterministic pick resolution (objects/meshes/decals)
  */
 export default function ThreeSceneViewer({
   sceneIndex,
@@ -213,6 +229,9 @@ export default function ThreeSceneViewer({
   // ✅ Tier 7.38 active decal + preview patches
   const { decalId: activeDecalId } = useActiveDecal();
   const decalPreview = useDecalPreview();
+
+  // ✅ Tier 7.41 selection filter
+  const { filter: selectionFilter } = useSelectionFilter();
 
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
@@ -251,6 +270,9 @@ export default function ThreeSceneViewer({
   const decalPreviewRef = useRef(decalPreview);
   const onCommitToolRef = useRef(onCommitTool);
 
+  // ✅ Tier 7.41 selection filter ref (no remount)
+  const selectionFilterRef = useRef(selectionFilter);
+
   // ✅ NEW: async sync nonce (prevents out-of-order decal sync from applying late)
   const decalsSyncNonceRef = useRef(0);
 
@@ -286,6 +308,10 @@ export default function ThreeSceneViewer({
     onCommitToolRef.current = onCommitTool;
   }, [onCommitTool]);
 
+  useEffect(() => {
+    selectionFilterRef.current = selectionFilter || "all";
+  }, [selectionFilter]);
+
   // Expose minimal internal sync hooks for secondary effects (no remount).
   const viewerApiRef = useRef({
     syncSelection: null,
@@ -295,6 +321,7 @@ export default function ThreeSceneViewer({
     syncDecals: null, // ✅ Tier 7.37
     syncDecalPreview: null, // ✅ Tier 7.38 (preview patch application)
     syncDecalTarget: null, // ✅ Tier 7.38 (active decal -> gizmo attach)
+    syncPickFilter: null, // ✅ Tier 7.41 (no-op now, reserved)
   });
 
   useEffect(() => {
@@ -707,8 +734,14 @@ export default function ThreeSceneViewer({
         plane.renderOrder = 1000;
         plane.position.set(0, 0, d.z_offset);
 
+        // ✅ Tier 7.41: canonical pick id for decals
+        plane.userData.pickId = `decal:${d.id}`;
+
         proxy.add(plane);
         group.add(proxy);
+
+        // ✅ Tier 7.41: include decal planes in pickables so they can be selected when filter=decals/all
+        pickables.push(plane);
 
         // ✅ store proxy too so clearDecals removes it cleanly
         decalPlanes.push({ proxy, mesh: plane, geometry: geom, material: mat });
@@ -1012,9 +1045,13 @@ export default function ThreeSceneViewer({
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
+          // ✅ Tier 7.41: tag placeholder as mesh pick with a stable mesh_path if possible
           try {
             const mp = buildMeshPath(placeholder);
-            if (mp) setMeshPathsForObject(objectKey, [mp]);
+            if (mp) {
+              setMeshPathsForObject(objectKey, [mp]);
+              placeholder.userData.pickId = `mesh:${objectKey}::${mp}`;
+            }
           } catch {}
 
           if (cfg.pickable) {
@@ -1047,7 +1084,11 @@ export default function ThreeSceneViewer({
 
             try {
               const mp = buildMeshPath(node);
-              if (mp) meshPaths.push(mp);
+              if (mp) {
+                meshPaths.push(mp);
+                // ✅ Tier 7.41: canonical pickId for meshes
+                node.userData.pickId = `mesh:${objectKey}::${mp}`;
+              }
             } catch {}
 
             if (cfg.pickable) {
@@ -1070,9 +1111,13 @@ export default function ThreeSceneViewer({
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
+          // ✅ Tier 7.41: tag placeholder as mesh pick if possible
           try {
             const mp = buildMeshPath(placeholder);
-            if (mp) setMeshPathsForObject(objectKey, [mp]);
+            if (mp) {
+              setMeshPathsForObject(objectKey, [mp]);
+              placeholder.userData.pickId = `mesh:${objectKey}::${mp}`;
+            }
           } catch {}
 
           if (cfg.pickable) {
@@ -1102,6 +1147,44 @@ export default function ThreeSceneViewer({
 
     loadAll();
 
+    // ✅ Tier 7.41 helper: compute deterministic hit ids for resolvePick()
+    function buildPickIdListFromIntersects(intersects) {
+      const ids = [];
+
+      for (const h of intersects || []) {
+        const obj = h?.object;
+        if (!obj) continue;
+
+        // 1) direct pickId (mesh or decal)
+        const direct = obj.userData?.pickId;
+        if (direct) ids.push(String(direct));
+
+        // 2) derive objectKey from hit mesh for object selection
+        const objectKey = resolveObjectKeyFromHitMesh(obj);
+        if (objectKey) ids.push(`obj:${String(objectKey)}`);
+
+        // 3) fallback: compute mesh id via existing buildPickedTargetId (stable enough)
+        //    If mesh-path tagging exists, direct already covers it.
+        try {
+          const ok = objectKey ? String(objectKey) : null;
+          if (ok) {
+            const idNode = pickIdNodeForMeshPath(obj);
+            const legacySelectedId = buildPickedTargetId({
+              objectId: ok,
+              mesh: idNode,
+            });
+            // legacySelectedId is like "objectKey::meshPath". Convert to canonical mesh:... id.
+            if (legacySelectedId && String(legacySelectedId).includes("::")) {
+              ids.push(`mesh:${String(legacySelectedId)}`);
+            }
+          }
+        } catch {}
+      }
+
+      // remove empties
+      return ids.filter(Boolean);
+    }
+
     function onClick(e) {
       // IMPORTANT: keep selection available even in READ mode.
       // Only the gizmo is gated by canEdit/disabled.
@@ -1113,33 +1196,47 @@ export default function ThreeSceneViewer({
       mouse.set(x, y);
 
       raycaster.setFromCamera(mouse, camera);
-      const hits = raycaster.intersectObjects(pickables, true);
+      const intersects = raycaster.intersectObjects(pickables, true);
 
-      if (!hits.length) {
+      if (!intersects.length) {
+        clearSelection();
+        clearActiveDecalId?.();
+        return;
+      }
+
+      // ✅ Tier 7.41: resolve pick deterministically by filter
+      const hitIds = buildPickIdListFromIntersects(intersects);
+      const chosen = resolvePick(hitIds, selectionFilterRef.current || "all");
+
+      if (!chosen) {
+        clearSelection();
+        clearActiveDecalId?.();
+        return;
+      }
+
+      if (chosen.kind === "decal") {
+        setActiveDecalId?.(chosen.key);
         clearSelection();
         return;
       }
 
-      const hitMesh = hits[0].object;
-      const objectKey = resolveObjectKeyFromHitMesh(hitMesh);
+      // geometry selection => clear decal selection deterministically
+      clearActiveDecalId?.();
 
-      if (!objectKey) {
-        clearSelection();
+      if (chosen.kind === "mesh") {
+        // chosen.key is "<objectId>::<mesh_path>"
+        setSelectedId(chosen.key);
         return;
       }
 
-      const idNode = pickIdNodeForMeshPath(hitMesh);
-
-      // ✅ IMPORTANT: pickingId currently expects { objectId, mesh }.
-      // objectKey is the correct left side of "::" for 6G.12,
-      // so pass it through as objectId (backward compatible).
-      const id = buildPickedTargetId({ objectId: objectKey, mesh: idNode });
-      if (!id) {
-        clearSelection();
+      if (chosen.kind === "obj") {
+        // objectKey only
+        setSelectedId(chosen.key);
         return;
       }
 
-      setSelectedId(id);
+      // fallback (should not hit)
+      clearSelection();
     }
 
     function onDoubleClick(e) {
@@ -1152,22 +1249,46 @@ export default function ThreeSceneViewer({
       mouse.set(x, y);
 
       raycaster.setFromCamera(mouse, camera);
-      const hits = raycaster.intersectObjects(pickables, true);
-      if (!hits.length) return;
+      const intersects = raycaster.intersectObjects(pickables, true);
+      if (!intersects.length) return;
 
-      const hitMesh = hits[0].object;
-      const objectKey = resolveObjectKeyFromHitMesh(hitMesh);
-      if (!objectKey) return;
+      // ✅ Tier 7.41: resolve pick deterministically by filter
+      const hitIds = buildPickIdListFromIntersects(intersects);
+      const chosen = resolvePick(hitIds, selectionFilterRef.current || "all");
+      if (!chosen) return;
 
-      const idNode = pickIdNodeForMeshPath(hitMesh);
-      const id = buildPickedTargetId({ objectId: objectKey, mesh: idNode });
-      if (!id) return;
+      if (chosen.kind === "decal") {
+        setActiveDecalId?.(chosen.key);
+        clearSelection();
 
-      setSelectedId(id);
+        // focus owning object if known
+        const base = decalBaseById.get(String(chosen.key));
+        const ownerKey = base?.targetId ? String(base.targetId).split("::")[0] : null;
+        const group = ownerKey ? objectGroups.get(ownerKey) : null;
+        if (group) fitCameraToObject(camera, group);
+        else fitCameraToScene(camera, root);
 
-      const group = objectGroups.get(objectKey);
-      if (group) fitCameraToObject(camera, group);
-      else fitCameraToScene(camera, root);
+        return;
+      }
+
+      clearActiveDecalId?.();
+
+      if (chosen.kind === "mesh") {
+        setSelectedId(chosen.key);
+        const objectKey = String(chosen.key).split("::")[0];
+        const group = objectGroups.get(objectKey);
+        if (group) fitCameraToObject(camera, group);
+        else fitCameraToScene(camera, root);
+        return;
+      }
+
+      if (chosen.kind === "obj") {
+        setSelectedId(chosen.key);
+        const group = objectGroups.get(String(chosen.key));
+        if (group) fitCameraToObject(camera, group);
+        else fitCameraToScene(camera, root);
+        return;
+      }
     }
 
     function onKeyDown(e) {
@@ -1219,6 +1340,8 @@ export default function ThreeSceneViewer({
     viewerApiRef.current.syncDecalTarget = () => {
       syncTransformControlsToTarget();
     };
+    // ✅ Tier 7.41: selection filter changes do not require a viewer change (kept for symmetry)
+    viewerApiRef.current.syncPickFilter = () => {};
 
     viewerApiRef.current.syncSelection?.();
     viewerApiRef.current.syncPreview?.();
@@ -1235,6 +1358,7 @@ export default function ThreeSceneViewer({
       viewerApiRef.current.syncDecals = null;
       viewerApiRef.current.syncDecalPreview = null;
       viewerApiRef.current.syncDecalTarget = null;
+      viewerApiRef.current.syncPickFilter = null;
 
       clearGhost();
       clearSelectionBox();
@@ -1320,6 +1444,11 @@ export default function ThreeSceneViewer({
     viewerApiRef.current?.syncDecalPreview?.();
   }, [decalPreview]);
 
+  // ✅ Tier 7.41: selection filter change is viewer-safe (no remount)
+  useEffect(() => {
+    viewerApiRef.current?.syncPickFilter?.();
+  }, [selectionFilter]);
+
   return (
     <div className="border rounded p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -1351,10 +1480,11 @@ export default function ThreeSceneViewer({
       </div>
 
       <div className="text-xs opacity-70">
-        Click mesh/placeholder to select. Double-click to focus. Press <b>F</b> to
-        frame selected (or whole scene). TransformControls mode is synced with the
-        panel. Bounding box shows selection target (6G.9). If an active decal is
-        selected (7.38), the gizmo targets the decal proxy first.
+        Click to select (Tier 7.41 filter applies). Double-click to focus. Press{" "}
+        <b>F</b> to frame selected (or whole scene). TransformControls mode is
+        synced with the panel. Bounding box shows selection target (6G.9). If an
+        active decal is selected (7.38), the gizmo targets the decal proxy first.
+        Decals are now pickable (7.41) via deterministic pick resolution.
       </div>
     </div>
   );

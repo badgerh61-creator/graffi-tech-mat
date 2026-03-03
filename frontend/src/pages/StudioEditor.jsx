@@ -24,6 +24,9 @@ import ToolContextBar from "../editor/toolbar/ToolContextBar";
 // ✅ Tier 7.40 ADD (view modes dropdown)
 import ViewModeSelect from "../editor/view/ViewModeSelect";
 
+// ✅ Tier 7.45 ADD (HDR studio lighting controls)
+import LightingControls from "../editor/view/LightingControls";
+
 // ✅ Tier 7.1 ADD (selection + transform toolbar)
 import { useSelection } from "../editor/selection/useSelection";
 import TransformToolbar from "../editor/tools/TransformToolbar";
@@ -502,15 +505,11 @@ export default function StudioEditor() {
   // =====================================================
   // Commit helper (shared by panels like MaterialInspector / PaintParamsPanel)
   // =====================================================
-  const commitToolPayload = useCallback(
-    async (payload) => {
-      // Reuse GizmoCommitController pattern indirectly by emitting through it if you have a bus.
-      // If you already have a central "toolExecutionAdapter", wire it here.
-      // For now, keep this additive-safe: just log to avoid breaking runtime.
-      console.log("commitToolPayload:", payload);
-    },
-    []
-  );
+  const commitToolPayload = useCallback(async (payload) => {
+    // NOTE: Replace this with your real governed commit adapter if you have it.
+    // Keep as no-op/log so this file remains additive-safe.
+    console.log("commitToolPayload:", payload);
+  }, []);
 
   // =====================================================
   // RENDER  (⚠️ NO TIER BLOCKS MOVED/REMOVED)
@@ -547,7 +546,7 @@ export default function StudioEditor() {
           />
         </div>
 
-        {/* ✅ Tier 7.39/7.40 — Tool Context Bar + View Modes */}
+        {/* ✅ Tier 7.39/7.40 — Tool Context Bar + View Modes + ✅ Tier 7.45 Lighting Controls */}
         <div className="p-3 pt-2 pb-0 flex items-center gap-2">
           <div className="flex-1">
             <ToolContextBar
@@ -557,6 +556,11 @@ export default function StudioEditor() {
             />
           </div>
           <ViewModeSelect />
+        </div>
+
+        {/* ✅ Tier 7.45 — Studio lighting toggles (viewer-only) */}
+        <div className="p-3 pt-2 pb-0">
+          <LightingControls />
         </div>
 
         {/* ✅ Tier 7.35 — Mode bar (READ ↔ EDIT) */}
@@ -622,11 +626,7 @@ export default function StudioEditor() {
               <MaterialInspectorPanel
                 snapshot={activeSnapshot}
                 canEdit={toolsEnabled}
-                onCommitTool={(payload) => {
-                  // If you already have a real commit path, wire it here:
-                  // toolExecutionAdapter.evaluate/apply OR your GizmoCommitController bridge.
-                  commitToolPayload(payload);
-                }}
+                onCommitTool={(payload) => commitToolPayload(payload)}
               />
             </div>
 
@@ -635,9 +635,7 @@ export default function StudioEditor() {
               <PaintParamsPanel
                 snapshot={activeSnapshot}
                 canEdit={toolsEnabled}
-                onCommitTool={(payload) => {
-                  commitToolPayload(payload);
-                }}
+                onCommitTool={(payload) => commitToolPayload(payload)}
               />
             </div>
 

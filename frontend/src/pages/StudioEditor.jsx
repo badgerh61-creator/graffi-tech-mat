@@ -65,13 +65,13 @@ import AttachAssetPanel from "../editor/scene/AttachAssetPanel";
 // ✅ Tier 6G.3 ADD (real Three.js viewer + picking)
 import ThreeSceneViewer from "../editor/scene/ThreeSceneViewer";
 
-// ✅ Tier 6G.6 ADD (scene layers + pick filters)
+// ✅ 6G.6 ADD (scene layers + pick filters)
 import SceneLayersPanel from "../editor/scene/SceneLayersPanel";
 
-// ✅ Tier 6G.10 ADD (scene graph tree panel)
+// ✅ 6G.10 ADD (scene graph tree panel)
 import SceneGraphPanel from "../editor/scene/SceneGraphPanel";
 
-// ✅ Tier 6G.11 ADD (material override panel)
+// ✅ 6G.11 ADD (material override panel)
 import MaterialOverridesPanel from "../editor/materials/MaterialOverridesPanel";
 
 // ✅ Tier 7.42 ADD (material inspector: read + governed edit)
@@ -114,6 +114,9 @@ import ScenarioTemplatesPanel from "../editor/telemetry/ScenarioTemplatesPanel";
 
 // ✅ Tier 6S.7 ADD (batch runner panel)
 import BatchRunnerPanel from "../editor/telemetry/BatchRunnerPanel";
+
+// ✅ NEW (additive-safe): central governed tool execution adapter
+import { executeTool } from "../services/studio/toolExecutionAdapter";
 
 const LOCK_POLL_MS = 1500;
 
@@ -503,13 +506,52 @@ export default function StudioEditor() {
   });
 
   // =====================================================
-  // Commit helper (shared by panels like MaterialInspector / PaintParamsPanel)
+  // ✅ Governed Commit helper (shared by viewer + panels)
+  // - Does NOT remove any existing behavior
+  // - Uses your official evaluate/apply proposal path via executeTool()
   // =====================================================
-  const commitToolPayload = useCallback(async (payload) => {
-    // NOTE: Replace this with your real governed commit adapter if you have it.
-    // Keep as no-op/log so this file remains additive-safe.
-    console.log("commitToolPayload:", payload);
-  }, []);
+  const commitToolPayload = useCallback(
+    async (payload) => {
+      try {
+        // keep old behavior (log) but also execute
+        console.log("commitToolPayload:", payload);
+
+        if (!toolsEnabled) {
+          return { ok: false, error: { kind: "conflict", detail: "Tools disabled" } };
+        }
+
+        const station = payload?.station || "geometry";
+        const tool = payload?.tool;
+        const toolPayload = payload?.payload || {};
+
+        if (!tool) {
+          return { ok: false, error: { kind: "invalid", detail: "tool missing" } };
+        }
+
+        const res = await executeTool({
+          snapshotId: activeSnapshot?.id,
+          station,
+          tool,
+          payload: toolPayload,
+          mode: "proposals",
+          enablePreview: false,
+        });
+
+        // Best-effort refresh (non-breaking)
+        try {
+          await fetchSnapshots();
+        } catch {}
+        try {
+          refreshSceneIndex?.();
+        } catch {}
+
+        return res;
+      } catch (e) {
+        return { ok: false, error: { kind: "network", detail: String(e?.message || e) } };
+      }
+    },
+    [activeSnapshot?.id, toolsEnabled, fetchSnapshots, refreshSceneIndex]
+  );
 
   // =====================================================
   // RENDER  (⚠️ NO TIER BLOCKS MOVED/REMOVED)
@@ -755,6 +797,7 @@ export default function StudioEditor() {
                 materialOverrides={materialOverrides} // ✅ Tier 6G.11 / 7.42
                 disabled={!activeSnapshot?.id}
                 canEdit={toolsEnabled} // ✅ draft + lock + role + station
+                onCommitTool={(p) => commitToolPayload(p)} // ✅ decals/materials/etc (governed)
               />
             </div>
 

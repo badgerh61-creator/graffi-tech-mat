@@ -8,6 +8,7 @@ Tools adapt to existing execution primitives.
 """
 
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from app.services.transform_executor import apply_transform
 
@@ -20,6 +21,19 @@ from app.services.tuning_mutation import (
 # ✅ Tier 7.33: parametric components (executor helpers)
 from app.services.components.store import find_component, upsert_component
 from app.services.components.compiler import compile_component_ops
+
+# ✅ Tier 7.46: scene objects mutations
+from app.services.mutations.scene_objects import (
+    validate_add_model_ref,
+    validate_remove_object,
+    apply_add_model_ref,
+    apply_remove_object,
+)
+
+# ✅ Tier 7.46: asset permission check reuse (same as api/assets.py)
+from app.models.asset import Asset
+from app.models.model import ModelRecord
+from app import crud
 
 
 class Tool:
@@ -96,7 +110,11 @@ def _execute_apply_component(*, db, snapshot, user, params):
             continue
 
         # Compiler emits "TRANSLATE"/"ROTATE"/"SCALE" — registry uses "translate"/"rotate"/"scale"
-        leaf = str(op_tool).lower() if str(op_tool).upper() in ("TRANSLATE", "ROTATE", "SCALE") else str(op_tool)
+        leaf = (
+            str(op_tool).lower()
+            if str(op_tool).upper() in ("TRANSLATE", "ROTATE", "SCALE")
+            else str(op_tool)
+        )
 
         working = apply_transform(
             db=db,
@@ -108,6 +126,66 @@ def _execute_apply_component(*, db, snapshot, user, params):
         )
 
     return working
+
+
+# ✅ Tier 7.46: helper to enforce asset access (same access model as api/assets.py)
+def _require_asset_access(*, db: Session, user_id: int, asset_id: int) -> None:
+    asset = (
+        db.query(Asset)
+        .join(ModelRecord)
+        .filter(Asset.id == asset_id)
+        .first()
+    )
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+
+    model = crud.get_model_if_accessible(db, model_id=asset.model_id, user_id=user_id)
+    if not model:
+        raise HTTPException(403, "No access to asset")
+
+
+# ✅ Tier 7.46: leaf tool executor — adds a model_ref object into snapshot.body_state.objects
+def _execute_scene_add_model_ref(*, db, snapshot, user, params):
+    err = validate_add_model_ref(params or {})
+    if err:
+        raise HTTPException(422, err)
+
+    asset_id = int((params or {}).get("asset_id"))
+
+    # permissions: reuse asset->model access check
+    _require_asset_access(db=db, user_id=int(user.id), asset_id=asset_id)
+
+    # create new snapshot and mutate it
+    new_snapshot = snapshot.clone_for_mutation(created_by=user.id)
+    db.add(new_snapshot)
+    db.commit()
+    db.refresh(new_snapshot)
+
+    apply_add_model_ref(new_snapshot, params or {})
+
+    db.add(new_snapshot)
+    db.commit()
+    db.refresh(new_snapshot)
+    return new_snapshot
+
+
+# ✅ Tier 7.46: leaf tool executor — removes an object from snapshot.body_state.objects
+def _execute_scene_remove_object(*, db, snapshot, user, params):
+    err = validate_remove_object(params or {})
+    if err:
+        raise HTTPException(422, err)
+
+    new_snapshot = snapshot.clone_for_mutation(created_by=user.id)
+    db.add(new_snapshot)
+    db.commit()
+    db.refresh(new_snapshot)
+
+    apply_remove_object(new_snapshot, params or {})
+
+    db.add(new_snapshot)
+    db.commit()
+    db.refresh(new_snapshot)
+    return new_snapshot
 
 
 TOOLS = {
@@ -152,6 +230,22 @@ TOOLS = {
         name="APPLY_COMPONENT",
         is_mutating=True,
         executor=_execute_apply_component,  # ✅ custom
+    ),
+
+    # --------------------------
+    # Tier 7.46 — Scene Objects (Asset model refs)
+    # --------------------------
+
+    "SCENE_ADD_MODEL_REF": Tool(
+        name="SCENE_ADD_MODEL_REF",
+        is_mutating=True,
+        executor=_execute_scene_add_model_ref,  # ✅ custom
+    ),
+
+    "SCENE_REMOVE_OBJECT": Tool(
+        name="SCENE_REMOVE_OBJECT",
+        is_mutating=True,
+        executor=_execute_scene_remove_object,  # ✅ custom
     ),
 }
 

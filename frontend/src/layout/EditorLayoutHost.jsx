@@ -1,59 +1,61 @@
 // frontend/src/layout/EditorLayoutHost.jsx
-
 import React, { useMemo, useEffect } from "react";
 import PanelHost from "../panels/PanelHost";
 import WorkspaceHost from "../workspaces/WorkspaceHost";
 import DockDropZone from "./DockDropZone";
 import DragGhost from "./DragGhost";
 import { DEFAULT_EDITOR_LAYOUT } from "./defaultEditorLayout";
-import {
-  loadEditorLayout,
-  saveEditorLayout,
-} from "./editorLayoutStorage";
+import { loadEditorLayout, saveEditorLayout } from "./editorLayoutStorage";
 
-export default function EditorLayoutHost() {
-  /**
-   * 🔁 Week 10: hydrate layout safely
-   */
+export default function EditorLayoutHost({
+  editable = false,
+  onSceneChange,
+  panelContext = null, // ✅ NEW
+}) {
+  // Hydrate once, always safe
   const layout = useMemo(() => {
     const stored = loadEditorLayout();
 
-    return {
-      left: stored.docks.left.length
+    const left =
+      stored?.docks?.left?.length
         ? stored.docks.left
-        : DEFAULT_EDITOR_LAYOUT.left,
-      right: stored.docks.right.length
+        : DEFAULT_EDITOR_LAYOUT.docks.left;
+
+    const right =
+      stored?.docks?.right?.length
         ? stored.docks.right
-        : DEFAULT_EDITOR_LAYOUT.right,
-      bottom: stored.docks.bottom.length
+        : DEFAULT_EDITOR_LAYOUT.docks.right;
+
+    const bottom =
+      stored?.docks?.bottom?.length
         ? stored.docks.bottom
-        : DEFAULT_EDITOR_LAYOUT.bottom,
+        : DEFAULT_EDITOR_LAYOUT.docks.bottom;
+
+    return {
+      version: 1,
+      docks: { left, right, bottom },
+      center: "workspace",
     };
   }, []);
 
-  /**
-   * 🔁 Persist layout intent
-   * (no UI mutation yet)
-   */
+  // Persist the hydrated intent (one-time)
   useEffect(() => {
-    saveEditorLayout({
-      version: 1,
-      docks: {
-        left: layout.left,
-        right: layout.right,
-        bottom: layout.bottom,
-      },
-    });
+    saveEditorLayout(layout);
   }, [layout]);
+
+  useEffect(() => {
+    if (!editable) return;
+    if (typeof onSceneChange !== "function") return;
+    // no-op until you wire layout change events
+  }, [editable, onSceneChange]);
 
   return (
     <div className="editor-root">
-      {/* 🎨 Week 12: visual drag preview */}
       <DragGhost />
 
       <DockDropZone dock="left">
         <aside className="dock dock-left">
-          <PanelHost panelIds={layout.left} />
+          <PanelHost panelIds={layout.docks.left} panelContext={panelContext} />
         </aside>
       </DockDropZone>
 
@@ -63,16 +65,15 @@ export default function EditorLayoutHost() {
 
       <DockDropZone dock="right">
         <aside className="dock dock-right">
-          <PanelHost panelIds={layout.right} />
+          <PanelHost panelIds={layout.docks.right} panelContext={panelContext} />
         </aside>
       </DockDropZone>
 
       <DockDropZone dock="bottom">
         <footer className="dock dock-bottom">
-          <PanelHost panelIds={layout.bottom} />
+          <PanelHost panelIds={layout.docks.bottom} panelContext={panelContext} />
         </footer>
       </DockDropZone>
     </div>
   );
 }
-

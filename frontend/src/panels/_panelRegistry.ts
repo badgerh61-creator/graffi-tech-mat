@@ -1,23 +1,32 @@
-// src/panels/_panelRegistry.ts
+// frontend/src/panels/_panelRegistry.ts
 
 import type { ComponentType } from "react";
+
 import AssetBrowserPanel from "./asset-browser/AssetBrowserPanel";
 import { EnginePreviewPanel } from "./engine-preview/EnginePreviewPanel";
 import JobPanel from "./jobs/JobPanel";
 import EngineeringAssistantPanel from "../editor/panels/engineering/EngineeringAssistantPanel";
 
+// ✅ NEW dock panels
+import HistoryPanel from "../editor/panels/HistoryPanel";
+import ConstraintPanel from "../editor/panels/ConstraintPanel";
+
 export type PanelKey =
   | "asset-browser"
   | "engine-preview"
   | "jobs"
-  | "engineering-assistant";
+  | "engineering-assistant"
+  | "history"
+  | "constraints";
 
 export type PanelCapability =
   | "assets.view"
   | "assets.use"
   | "engine.preview"
   | "jobs.view"
-  | "engineering.assistant.use";
+  | "engineering.assistant.use"
+  | "history.view"
+  | "constraints.view";
 
 export interface PanelDefinition {
   id: PanelKey;
@@ -56,8 +65,18 @@ export const panelRegistry = Object.freeze<
     component: EngineeringAssistantPanel,
     requiredCapability: "engineering.assistant.use",
   }),
+
+  history: Object.freeze({
+    id: "history",
+    title: "History",
+    component: HistoryPanel,
+    requiredCapability: "history.view",
+  }),
+
+  constraints: Object.freeze({
+    id: "constraints",
+    title: "Constraints",
+    component: ConstraintPanel,
+    requiredCapability: "constraints.view",
+  }),
 });
-
-
-
-

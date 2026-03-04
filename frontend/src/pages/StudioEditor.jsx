@@ -392,6 +392,22 @@ export default function StudioEditor() {
   }, [activeSnapshot?.id]);
 
   // =====================================================
+  // ✅ NEW (UI-only): derive constraints for the Constraints panel
+  // Additive-safe: if nothing exists yet, panel gets [].
+  // Supports a few possible future backend shapes.
+  // =====================================================
+  const constraintsForPanel = useMemo(() => {
+    const a = activeSnapshot || {};
+    const d = a?.decor_state || a?.body_state?.decor_state || {};
+    const c1 = a?.constraints;
+    const c2 = a?.constraint_violations;
+    const c3 = d?.constraints;
+    const c4 = d?.violations;
+    const list = c1 || c2 || c3 || c4 || [];
+    return Array.isArray(list) ? list.filter(Boolean) : [];
+  }, [activeSnapshot?.id]);
+
+  // =====================================================
   // ✅ Tier 7.36 — Lock status polling (draft only)
   // =====================================================
   useEffect(() => {
@@ -809,6 +825,13 @@ export default function StudioEditor() {
                =============================== */}
             <EditorLayoutHost
               editable={isEditMode}
+              // ✅ NEW: provide history + constraints + safe navigation to docked panels (History/Constraints)
+              panelContext={{
+                history: snapshots,
+                activeSnapshotId: activeSnapshot?.id ?? null,
+                onNavigate: navigateToSnapshot,
+                constraints: constraintsForPanel,
+              }}
               onSceneChange={() => {
                 if (!isEditMode) return;
                 setSceneStateHash(Date.now().toString());

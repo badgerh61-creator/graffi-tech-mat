@@ -6,14 +6,16 @@ export default function HistoryPanel({
   activeSnapshotId,
   onNavigate,
 }) {
-  if (!history.length) return null;
+  if (!Array.isArray(history) || history.length === 0) return null;
+
+  const activeId = activeSnapshotId != null ? String(activeSnapshotId) : null;
 
   // Normalize parent key (parent OR parentId)
   const parentMap = Object.fromEntries(
-    history.map((s) => [s.id, s.parent ?? s.parentId ?? null])
+    history.map((s) => [String(s.id), s.parent ?? s.parentId ?? null])
   );
 
-  const activeParent = parentMap[activeSnapshotId];
+  const activeParent = activeId ? parentMap[activeId] : null;
 
   return (
     <div data-testid="history-panel">
@@ -25,17 +27,21 @@ export default function HistoryPanel({
       )}
 
       <ul>
-        {history.map((s) => (
-          <li
-            key={s.id}
-            data-testid={`snapshot-${s.id}`}
-            className={s.id === activeSnapshotId ? "active" : ""}
-          >
-            {s.id}
-          </li>
-        ))}
+        {history.map((s) => {
+          const sid = String(s.id);
+          const isActive = activeId != null && sid === activeId;
+
+          return (
+            <li
+              key={sid}
+              data-testid={`snapshot-${sid}`}
+              className={isActive ? "active" : ""}
+            >
+              {sid}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
 }
-

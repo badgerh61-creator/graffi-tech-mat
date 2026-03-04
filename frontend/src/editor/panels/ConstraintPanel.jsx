@@ -1,11 +1,12 @@
-// src/editor/panels/ConstraintPanel.jsx
+// frontend/src/editor/panels/ConstraintPanel.jsx
 import React from "react";
 
 export default function ConstraintPanel({ constraints = [] }) {
-  if (!constraints.length) return null;
+  // Contract: if none exist => no UI at all
+  if (!Array.isArray(constraints) || constraints.length === 0) return null;
 
   return (
-    <section>
+    <section data-testid="constraints-panel">
       <h3>Active Constraints</h3>
       <ul>
         {constraints.map((c) => (
@@ -20,4 +21,3 @@ export default function ConstraintPanel({ constraints = [] }) {
     </section>
   );
 }
-

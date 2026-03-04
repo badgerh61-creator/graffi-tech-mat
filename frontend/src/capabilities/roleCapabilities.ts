@@ -16,6 +16,10 @@ export const ROLE_CAPABILITIES = Object.freeze<
     "engine.preview": true,
     "jobs.view": true,
 
+    // ✅ NEW: allow viewing history + constraints in READ mode
+    "history.view": true,
+    "constraints.view": true,
+
     "engineering.assistant.use": false,
   }),
 
@@ -29,6 +33,10 @@ export const ROLE_CAPABILITIES = Object.freeze<
     "assets.use": true,
     "engine.preview": true,
     "jobs.view": true,
+
+    // ✅ NEW
+    "history.view": true,
+    "constraints.view": true,
 
     "decor.exterior.edit": true,
 
@@ -47,9 +55,12 @@ export const ROLE_CAPABILITIES = Object.freeze<
     "engine.preview": true,
     "jobs.view": true,
 
+    // ✅ NEW
+    "history.view": true,
+    "constraints.view": true,
+
     "decor.exterior.edit": true,
 
     "engineering.assistant.use": true,
   }),
 });
-

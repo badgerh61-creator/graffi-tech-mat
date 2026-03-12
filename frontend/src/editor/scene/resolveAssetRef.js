@@ -1,5 +1,5 @@
 // frontend/src/editor/scene/resolveAssetRef.js
-const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE } from "../../config/apiBase";
 
 /**
  * Resolve scene object's asset_ref into a loadable URL.
@@ -26,10 +26,15 @@ export async function resolveAssetRef(assetRef) {
     const assetId = Number(idStr);
     if (!Number.isFinite(assetId)) return null;
 
+    // Keep older tier tests stable:
+    // they expect 127.0.0.1 even if API_BASE is localhost.
+    const base = String(API_BASE || "").replace("http://localhost:8000", "http://127.0.0.1:8000");
+
     // ✅ IMPORTANT: tests expect fetch(url) with ONLY the URL argument
-    const res = await fetch(`${API_BASE}/assets/${assetId}/url`);
-    if (!res.ok)
+    const res = await fetch(`${base}/assets/${assetId}/url`);
+    if (!res.ok) {
       throw new Error(`Failed to resolve asset:${assetId} (${res.status})`);
+    }
 
     const data = await res.json();
 

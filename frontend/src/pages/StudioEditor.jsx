@@ -1,10 +1,12 @@
+import { API_BASE } from "../config/apiBase";
+
 // frontend/src/pages/StudioEditor.jsx
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 
 import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
 import { CapabilityProvider } from "../capabilities";
-import { getCurrentUser, getAccessToken } from "../utils/auth";
+import { getCurrentUser, getAccessToken } from "../utils/auth.ts";
 
 import SnapshotPreview from "../components/snapshots/SnapshotPreview";
 import DraftStatusBadge from "../components/snapshots/DraftStatusBadge";
@@ -80,6 +82,15 @@ import MaterialInspectorPanel from "../editor/materials/MaterialInspectorPanel";
 // ✅ Tier 7.43 ADD (paint params: color/roughness/metalness/opacity)
 import PaintParamsPanel from "../editor/materials/PaintParamsPanel";
 
+// ✅ Tier 7.44 ADD (decal asset browser)
+import DecalAssetBrowserPanel from "../editor/decals/DecalAssetBrowserPanel";
+
+// ✅ Tier 7.46 ADD (model asset picker)
+import ModelAssetPickerPanel from "../editor/assets/ModelAssetPickerPanel";
+
+// ✅ Tier 7.47 ADD (scene outliner)
+import SceneOutlinerPanel from "../editor/outliner/SceneOutlinerPanel";
+
 // ✅ Tier 7.28 ADD (Undo/Redo UI + local history)
 import UndoRedoBar from "../editor/history/UndoRedoBar";
 import { historyPush } from "../editor/history/historyStore";
@@ -127,8 +138,9 @@ function normalizeLock(data) {
 
   // tolerant normalization for other backend shapes
   if (data.owned === true || data.is_owner === true) return { state: "owned" };
-  if (data.owner_id != null)
+  if (data.owner_id != null) {
     return { state: "taken", owner_id: data.owner_id, owner_name: data.owner_name };
+  }
   if (data.locked === false || data.exists === false) return { state: "missing" };
 
   return { state: "unknown" };
@@ -205,7 +217,7 @@ export default function StudioEditor() {
     const token = getAccessToken?.();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-    return fetch(`http://127.0.0.1:8000/projects/${projectId}/snapshots/`, { headers })
+    return fetch(`${API_BASE}/projects/${projectId}/snapshots/`, { headers })
       .then((res) => {
         if (!res.ok) throw new Error(`Snapshot fetch failed: ${res.status}`);
         return res.json();
@@ -474,16 +486,16 @@ export default function StudioEditor() {
   const gizmoReason = !activeTargetId
     ? "select a target"
     : !isEditMode
-    ? "studio in READ mode"
-    : activeSnapshot?.status !== "draft"
-    ? "snapshot not draft"
-    : !hasDraftLock
-    ? "draft lock required"
-    : !canEditByRole
-    ? "role forbidden"
-    : !canEditByStation
-    ? "wrong station"
-    : null;
+      ? "studio in READ mode"
+      : activeSnapshot?.status !== "draft"
+        ? "snapshot not draft"
+        : !hasDraftLock
+          ? "draft lock required"
+          : !canEditByRole
+            ? "role forbidden"
+            : !canEditByStation
+              ? "wrong station"
+              : null;
 
   // ✅ Tier 7.36/7.39: deterministic why-blocked reasons
   const whyBlockedReasons = useMemo(() => {
@@ -536,7 +548,7 @@ export default function StudioEditor() {
           return { ok: false, error: { kind: "conflict", detail: "Tools disabled" } };
         }
 
-        const station = payload?.station || "geometry";
+        const nextStation = payload?.station || "geometry";
         const tool = payload?.tool;
         const toolPayload = payload?.payload || {};
 
@@ -546,7 +558,7 @@ export default function StudioEditor() {
 
         const res = await executeTool({
           snapshotId: activeSnapshot?.id,
-          station,
+          station: nextStation,
           tool,
           payload: toolPayload,
           mode: "proposals",
@@ -604,7 +616,7 @@ export default function StudioEditor() {
           />
         </div>
 
-        {/* ✅ Tier 7.39/7.40 — Tool Context Bar + View Modes + ✅ Tier 7.45 Lighting Controls */}
+        {/* ✅ Tier 7.39/7.40 — Tool Context Bar + View Modes */}
         <div className="p-3 pt-2 pb-0 flex items-center gap-2">
           <div className="flex-1">
             <ToolContextBar
@@ -674,6 +686,15 @@ export default function StudioEditor() {
               <SceneGraphPanel sceneIndex={sceneIndex} />
             </div>
 
+            {/* ✅ Tier 7.47 ADD (Scene Outliner: selection + visibility + layers + remove) */}
+            <div style={{ padding: 12 }}>
+              <SceneOutlinerPanel
+                snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
             {/* ✅ Tier 6G.11 ADD (Material Overrides list panel) */}
             <div style={{ padding: 12 }}>
               <MaterialOverridesPanel snapshot={activeSnapshot} />
@@ -692,6 +713,22 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <PaintParamsPanel
                 snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.44 ADD (Decal asset browser) */}
+            <div style={{ padding: 12 }}>
+              <DecalAssetBrowserPanel
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.46 ADD (Model asset picker) */}
+            <div style={{ padding: 12 }}>
+              <ModelAssetPickerPanel
                 canEdit={toolsEnabled}
                 onCommitTool={(payload) => commitToolPayload(payload)}
               />
@@ -733,7 +770,7 @@ export default function StudioEditor() {
                 activeTargetId={activeTargetId}
                 enabled={gizmoEnabled}
                 reasonDisabled={gizmoReason}
-                enablePreview={false} // set true only if /assistant/proposals/preview exists
+                enablePreview={false}
                 onApplied={(newId) => {
                   console.log("Applied new snapshot:", newId);
 
@@ -798,7 +835,7 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <ReferenceFramesPanel
                 activeSnapshotId={activeSnapshot?.id}
-                disabled={false} // read-only panel; safe in READ
+                disabled={false}
               />
             </div>
           </div>
@@ -809,11 +846,11 @@ export default function StudioEditor() {
             <div style={{ padding: 12 }}>
               <ThreeSceneViewer
                 key={sceneRebindKey}
-                sceneIndex={sceneIndexForViewer} // ✅ Tier 7.37 merge decor_state if needed
-                materialOverrides={materialOverrides} // ✅ Tier 6G.11 / 7.42
+                sceneIndex={sceneIndexForViewer}
+                materialOverrides={materialOverrides}
                 disabled={!activeSnapshot?.id}
-                canEdit={toolsEnabled} // ✅ draft + lock + role + station
-                onCommitTool={(p) => commitToolPayload(p)} // ✅ decals/materials/etc (governed)
+                canEdit={toolsEnabled}
+                onCommitTool={(p) => commitToolPayload(p)}
               />
             </div>
 
@@ -825,7 +862,6 @@ export default function StudioEditor() {
                =============================== */}
             <EditorLayoutHost
               editable={isEditMode}
-              // ✅ NEW: provide history + constraints + safe navigation to docked panels (History/Constraints)
               panelContext={{
                 history: snapshots,
                 activeSnapshotId: activeSnapshot?.id ?? null,

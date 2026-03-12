@@ -21,6 +21,17 @@ def _default_transform() -> Dict[str, Any]:
     }
 
 
+def _find_object(objs: List[Dict[str, Any]], object_id: str) -> Optional[Dict[str, Any]]:
+    for obj in objs:
+        if isinstance(obj, dict) and str(obj.get("id")) == str(object_id):
+            return obj
+    return None
+
+
+def _sorted_objects(objs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(objs, key=lambda o: str(o.get("id")))
+
+
 def validate_add_model_ref(params: Dict[str, Any]) -> Optional[str]:
     asset_id = params.get("asset_id")
     if asset_id is None:
@@ -36,6 +47,31 @@ def validate_remove_object(params: Dict[str, Any]) -> Optional[str]:
     oid = str(params.get("object_id") or "").strip()
     if not oid:
         return "object_id required"
+    return None
+
+
+def validate_set_object_enabled(params: Dict[str, Any]) -> Optional[str]:
+    oid = str(params.get("object_id") or "").strip()
+    if not oid:
+        return "object_id required"
+    if not isinstance(params.get("enabled"), bool):
+        return "enabled must be boolean"
+    return None
+
+
+def validate_set_object_layers(params: Dict[str, Any]) -> Optional[str]:
+    oid = str(params.get("object_id") or "").strip()
+    if not oid:
+        return "object_id required"
+
+    layers = params.get("layers")
+    if not isinstance(layers, list):
+        return "layers must be a list"
+
+    for layer in layers:
+        if not str(layer).strip():
+            return "layers must contain non-empty strings"
+
     return None
 
 
@@ -66,7 +102,7 @@ def apply_add_model_ref(snapshot, params: Dict[str, Any]) -> Dict[str, Any]:
         }
     )
 
-    body["objects"] = sorted(objs, key=lambda o: str(o.get("id")))
+    body["objects"] = _sorted_objects(objs)
     setattr(snapshot, "body_state", body)
 
     return {"ok": True, "object_id": oid, "asset_id": asset_id}
@@ -81,7 +117,47 @@ def apply_remove_object(snapshot, params: Dict[str, Any]) -> Dict[str, Any]:
     objs2 = [o for o in objs if str(o.get("id")) != oid]
     removed = before - len(objs2)
 
-    body["objects"] = sorted(objs2, key=lambda o: str(o.get("id")))
+    body["objects"] = _sorted_objects(objs2)
     setattr(snapshot, "body_state", body)
 
     return {"ok": True, "removed": removed, "object_id": oid}
+
+
+def apply_set_object_enabled(snapshot, params: Dict[str, Any]) -> Dict[str, Any]:
+    body = _ensure_body(snapshot)
+    objs: List[Dict[str, Any]] = body["objects"]
+
+    oid = str(params.get("object_id"))
+    enabled = bool(params.get("enabled"))
+
+    obj = _find_object(objs, oid)
+    if not obj:
+        return {"ok": False, "error": "object not found"}
+
+    obj["enabled"] = enabled
+    obj["version"] = int(obj.get("version") or 1)
+
+    body["objects"] = _sorted_objects(objs)
+    setattr(snapshot, "body_state", body)
+
+    return {"ok": True, "object_id": oid, "enabled": enabled}
+
+
+def apply_set_object_layers(snapshot, params: Dict[str, Any]) -> Dict[str, Any]:
+    body = _ensure_body(snapshot)
+    objs: List[Dict[str, Any]] = body["objects"]
+
+    oid = str(params.get("object_id"))
+    layers = sorted({str(x) for x in (params.get("layers") or []) if str(x).strip()})
+
+    obj = _find_object(objs, oid)
+    if not obj:
+        return {"ok": False, "error": "object not found"}
+
+    obj["layers"] = layers or ["default"]
+    obj["version"] = int(obj.get("version") or 1)
+
+    body["objects"] = _sorted_objects(objs)
+    setattr(snapshot, "body_state", body)
+
+    return {"ok": True, "object_id": oid, "layers": obj["layers"]}

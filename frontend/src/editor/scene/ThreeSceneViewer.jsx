@@ -225,6 +225,11 @@ function addStudioLighting(scene) {
  *
  * ✅ Tier 7.42:
  * - optional materialOverrides prop to patch materials deterministically (read-only application on load + updates)
+ *
+ * ✅ Tier 7.46 / 7.47:
+ * - supports authoritative body_state.objects model_ref entries
+ * - respects object.enabled === false
+ * - supports url fallback in addition to asset_ref
  */
 export default function ThreeSceneViewer({
   sceneIndex,
@@ -257,7 +262,15 @@ export default function ThreeSceneViewer({
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
-  const objects = useMemo(() => (sceneIndex?.objects || []).filter(Boolean), [sceneIndex]);
+  // ✅ Tier 7.46 / 7.47: tolerate multiple shapes without breaking older tiers
+  const objects = useMemo(() => {
+    const a = sceneIndex?.objects;
+    const b = sceneIndex?.body_state?.objects;
+    const c = sceneIndex?.snapshot?.body_state?.objects;
+    const d = sceneIndex?.activeSnapshot?.body_state?.objects;
+    const list = a || b || c || d || [];
+    return Array.isArray(list) ? list.filter(Boolean) : [];
+  }, [sceneIndex]);
 
   // ✅ Tier 7.37: read decals (support a few possible shapes safely)
   const decals = useMemo(() => {
@@ -588,7 +601,7 @@ export default function ThreeSceneViewer({
       const id = String(d?.id || "");
       const enabled = d?.enabled !== false;
       const targetId = String(d?.target_id || "");
-      const assetRef = String(d?.asset_ref || "");
+      const assetRef = String(d?.asset_ref || d?.url || "");
 
       const pos = d?.position || {};
       const rot = d?.rotation_euler || {};
@@ -674,12 +687,13 @@ export default function ThreeSceneViewer({
       const scl = pv?.scale || base?.scale;
 
       if (pos) proxy.position.set(Number(pos.x || 0), Number(pos.y || 0), Number(pos.z || 0));
-      if (rot)
+      if (rot) {
         proxy.rotation.set(
           degToRad(Number(rot.x || 0)),
           degToRad(Number(rot.y || 0)),
           degToRad(Number(rot.z || 0))
         );
+      }
       if (scl) proxy.scale.set(Number(scl.x || 1), Number(scl.y || 1), Number(scl.z || 1));
     }
 
@@ -1012,10 +1026,15 @@ export default function ThreeSceneViewer({
       for (const obj of objects) {
         if (disposed) return;
 
-        const objId = String(obj.id || "").trim();
+        const objId = String(obj?.id || "").trim();
         if (!objId) continue;
 
-        const kind = String(obj.kind || "unknown");
+        // ✅ Tier 7.47: visibility toggle in outliner is authoritative
+        if (obj?.enabled === false) {
+          continue;
+        }
+
+        const kind = String(obj?.kind || "unknown");
         const cfg = layers.kinds[kind] || ensureKind(kind);
 
         const objectKey = objId;
@@ -1023,15 +1042,23 @@ export default function ThreeSceneViewer({
         const group = new THREE.Group();
         group.name = `obj:${objectKey}`;
         group.userData.kind = kind;
+        group.userData.pickId = `obj:${objectKey}`;
 
-        group.visible = !!cfg.visible;
+        // combine outliner visibility with layer visibility deterministically
+        group.visible = !!cfg.visible && obj?.enabled !== false;
 
         root.add(group);
         objectGroups.set(objectKey, group);
 
-        applyTransformToObject3D(group, obj.transform);
+        applyTransformToObject3D(group, obj?.transform);
 
-        const assetRef = obj.asset_ref ? String(obj.asset_ref).trim() : "";
+        // ✅ Tier 7.46: support asset_ref (old), url (new), and leave asset_id-only entries
+        // as placeholder if URL resolution is not yet available in the viewer.
+        const assetRef = obj?.asset_ref
+          ? String(obj.asset_ref).trim()
+          : obj?.url
+            ? String(obj.url).trim()
+            : "";
 
         if (!assetRef) {
           const placeholder = makePlaceholderMesh(objectKey);
@@ -1059,10 +1086,14 @@ export default function ThreeSceneViewer({
 
         setLoadingCount((c) => c + 1);
         try {
-          const url = await resolveAssetRef(assetRef);
+          const url = /^https?:\/\//i.test(assetRef) ? assetRef : await resolveAssetRef(assetRef);
           if (!url) throw new Error("asset_ref could not be resolved");
 
-          console.log("[ThreeSceneViewer] Loading GLB:", { objId, assetRef, url });
+          console.log("[ThreeSceneViewer] Loading GLB:", {
+            objId,
+            assetRef,
+            url,
+          });
 
           const gltf = await loader.loadAsync(url);
           if (disposed) return;
@@ -1447,7 +1478,9 @@ export default function ThreeSceneViewer({
         shows selection target (6G.9). If an active decal is selected (7.38), the gizmo targets the
         decal proxy first. Decals are pickable (7.41) via deterministic pick resolution. If{" "}
         <code>materialOverrides</code> are provided (7.42), they are applied after load and on
-        updates (viewer-safe, no remount).
+        updates (viewer-safe, no remount). Scene outliner visibility is respected via{" "}
+        <code>object.enabled</code> (7.47). Model refs can load from <code>asset_ref</code> or{" "}
+        <code>url</code> (7.46).
       </div>
     </div>
   );

@@ -76,7 +76,6 @@ def apply_update_params(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
 
     tid = str(payload.get("target_id"))
     if tid not in overrides:
-        # Contract: update requires override exists
         return {"ok": False, "error": "override missing"}
 
     patch = payload.get("patch") or {}

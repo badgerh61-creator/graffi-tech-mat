@@ -14,11 +14,17 @@ from app.services.mutations.scene_objects import (
     apply_add_model_ref,
     validate_remove_object,
     apply_remove_object,
+    validate_set_object_enabled,
+    apply_set_object_enabled,
+    validate_set_object_layers,
+    apply_set_object_layers,
 )
 
-# Tool names (Tier 7.46)
+# Tool names (Tier 7.46 + 7.47)
 SCENE_ADD_MODEL_REF = "SCENE_ADD_MODEL_REF"
 SCENE_REMOVE_OBJECT = "SCENE_REMOVE_OBJECT"
+SCENE_SET_OBJECT_ENABLED = "SCENE_SET_OBJECT_ENABLED"
+SCENE_SET_OBJECT_LAYERS = "SCENE_SET_OBJECT_LAYERS"
 
 
 def _require_asset_access(*, db: Session, user_id: int, asset_id: int) -> None:
@@ -59,7 +65,18 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
         err = validate_remove_object(payload)
         if err:
             return {"ok": False, "error": err}
-        # removing object doesn't need extra db checks (snapshot-local)
+        return {"ok": True}
+
+    if tool == SCENE_SET_OBJECT_ENABLED:
+        err = validate_set_object_enabled(payload)
+        if err:
+            return {"ok": False, "error": err}
+        return {"ok": True}
+
+    if tool == SCENE_SET_OBJECT_LAYERS:
+        err = validate_set_object_layers(payload)
+        if err:
+            return {"ok": False, "error": err}
         return {"ok": True}
 
     return {"ok": False, "error": "unknown scene tool"}
@@ -74,5 +91,11 @@ def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[st
 
     if tool == SCENE_REMOVE_OBJECT:
         return apply_remove_object(snapshot, payload)
+
+    if tool == SCENE_SET_OBJECT_ENABLED:
+        return apply_set_object_enabled(snapshot, payload)
+
+    if tool == SCENE_SET_OBJECT_LAYERS:
+        return apply_set_object_layers(snapshot, payload)
 
     return {"ok": False, "error": "unknown scene tool"}

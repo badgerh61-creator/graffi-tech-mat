@@ -27,3 +27,5 @@ backend/*.db-journal
 backend/*.db-wal
 backend/*.db-shm
 
+# GTK temporary save files
+.goutputstream-*

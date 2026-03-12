@@ -1,3 +1,5 @@
+import { API_BASE } from "../../../config/apiBase";
+
 import { useEffect, useState } from "react";
 import { DecorPresetCard } from "./DecorPresetCard";
 
@@ -5,7 +7,7 @@ export default function DecorPresetLibrary() {
   const [presets, setPresets] = useState([]);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/decor-presets")
+    fetch(`${API_BASE}/decor-presets/`)
       .then((res) => res.json())
       .then((data) => setPresets(data.items));
   }, []);

@@ -1,8 +1,10 @@
+import { API_BASE } from "../../config/apiBase";
+
 import { getAccessToken } from "../../utils/auth";
 
 export async function resolveSelectionRemote({ hitCandidates, modifiers, previousSelection }) {
   const token = getAccessToken();
-  const res = await fetch("http://127.0.0.1:8000/selection/resolve", {
+  const res = await fetch(`${API_BASE}/selection/resolve`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

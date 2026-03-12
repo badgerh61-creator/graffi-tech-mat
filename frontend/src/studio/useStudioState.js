@@ -1,3 +1,7 @@
+import { API_BASE } from "../config/apiBase";
+
+import { API_BASE } from "../config/apiBase";
+
 // frontend/src/studio/useStudioState.js
 
 import { useEffect, useState } from "react";
@@ -12,7 +16,7 @@ export function useStudioState(projectId) {
 
     const token = getAccessToken();
 
-    fetch(`http://127.0.0.1:8000/studio/state?project_id=${projectId}`, {
+    fetch(`${API_BASE}/studio/state?project_id=${projectId}`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },

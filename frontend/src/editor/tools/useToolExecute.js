@@ -1,10 +1,12 @@
+import { API_BASE } from "../../config/apiBase";
+
 import { getAccessToken } from "../../utils/auth";
 
 export function useToolExecute() {
   async function execute({ snapshotId, station, tool, payload }) {
     const token = getAccessToken();
 
-    const res = await fetch("http://127.0.0.1:8000/tools/execute", {
+    const res = await fetch(`${API_BASE}/tools/execute`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

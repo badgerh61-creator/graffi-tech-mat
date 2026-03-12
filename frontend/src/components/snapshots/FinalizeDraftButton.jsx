@@ -1,3 +1,5 @@
+import { API_BASE } from "../../config/apiBase";
+
 import { getAccessToken } from "../../utils/auth";
 
 export default function FinalizeDraftButton({ snapshot, onFinalized }) {
@@ -9,7 +11,7 @@ export default function FinalizeDraftButton({ snapshot, onFinalized }) {
     const token = getAccessToken();
 
     const res = await fetch(
-      `http://127.0.0.1:8000/snapshots/${snapshot.id}/finalize`,
+      `${API_BASE}/snapshots/${snapshot.id}/finalize`,
       {
         method: "POST",
         headers: {

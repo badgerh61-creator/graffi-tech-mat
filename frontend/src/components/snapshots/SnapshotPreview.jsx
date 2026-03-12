@@ -1,3 +1,5 @@
+import { API_BASE } from "../../config/apiBase";
+
 import { useState } from "react";
 import { getAccessToken } from "../../utils/auth";
 
@@ -33,7 +35,7 @@ export default function SnapshotPreview({
       const token = getAccessToken();
 
       const res = await fetch(
-        `http://127.0.0.1:8000/snapshots/${snapshot.id}/draft`,
+        `${API_BASE}/snapshots/${snapshot.id}/draft`,
         {
           method: "POST",
           headers: {

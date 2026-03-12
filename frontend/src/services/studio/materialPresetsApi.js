@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE } from "../../config/apiBase";
 
 export async function fetchMaterialPresets() {
   const res = await fetch(`${API_BASE}/materials/presets`);

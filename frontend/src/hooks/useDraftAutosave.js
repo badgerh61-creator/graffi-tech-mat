@@ -1,3 +1,5 @@
+import { API_BASE } from "../config/apiBase";
+
 import { useEffect } from "react";
 import { getAccessToken } from "../utils/auth";
 
@@ -15,7 +17,7 @@ export function useDraftAutosave({
 
     const id = setInterval(() => {
       fetch(
-        `http://127.0.0.1:8000/snapshots/${snapshot.id}/autosave`,
+        `${API_BASE}/snapshots/${snapshot.id}/autosave`,
         {
           method: "PATCH",
           headers: {

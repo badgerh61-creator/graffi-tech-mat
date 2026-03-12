@@ -1,3 +1,5 @@
+import { API_BASE } from "../../config/apiBase";
+
 import { useEffect, useState } from "react";
 import { MaterialCard } from "./MaterialCard";
 
@@ -5,7 +7,7 @@ export default function MaterialBank() {
   const [materials, setMaterials] = useState([]);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/materials")
+    fetch(`${API_BASE}/materials`)
       .then((res) => res.json())
       .then((data) => {
         setMaterials(data.items);

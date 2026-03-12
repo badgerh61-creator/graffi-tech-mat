@@ -1,9 +1,11 @@
+import { API_BASE } from "../config/apiBase";
+
 // frontend/src/services/apiClient.ts
 
 import axios from "axios";
 
 export const apiClient = axios.create({
-  baseURL: "http://127.0.0.1:8000",
+  baseURL: API_BASE,
   withCredentials: false, // 🔴 IMPORTANT
 });
 

@@ -1,3 +1,5 @@
+import { API_BASE } from "../../../config/apiBase";
+
 import { useEffect, useState } from "react";
 import { getAccessToken } from "../../../utils/auth";
 
@@ -17,7 +19,7 @@ export default function EngineeringAssistantPanel() {
     setLoading(true);
     setError(null);
 
-    fetch(`http://127.0.0.1:8000/tuning/read/${projectId}`, { headers })
+    fetch(`${API_BASE}/tuning/read/${projectId}`, { headers })
       .then((res) => {
         if (res.status === 401) {
           throw new Error("Sign in required.");

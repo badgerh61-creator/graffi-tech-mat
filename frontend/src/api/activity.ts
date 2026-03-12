@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API_BASE =
-  import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+  import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 // 🚫 NO interceptors, NO auth, NO refresh
 const activityClient = axios.create({

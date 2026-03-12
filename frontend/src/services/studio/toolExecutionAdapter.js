@@ -6,7 +6,7 @@ import {
   applyProposal,
 } from "./assistantProposalsApi";
 
-const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE } from "../../config/apiBase";
 
 /**
  * Normalized ExecResult:

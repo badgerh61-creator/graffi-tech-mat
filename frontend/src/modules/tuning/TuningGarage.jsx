@@ -1,3 +1,5 @@
+import { API_BASE } from "../config/apiBase";
+
 import { useEffect, useState } from "react";
 import { getAccessToken } from "../../utils/auth";
 
@@ -9,7 +11,7 @@ export default function TuningGarage({ snapshotId }) {
 
     const token = getAccessToken();
 
-    fetch(`http://127.0.0.1:8000/snapshots/${snapshotId}/tuning`, {
+    fetch(`${API_BASE}/snapshots/${snapshotId}/tuning`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },

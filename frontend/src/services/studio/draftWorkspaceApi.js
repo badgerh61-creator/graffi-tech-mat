@@ -1,6 +1,6 @@
 // frontend/src/services/studio/draftWorkspaceApi.js
 
-const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE } from "../../config/apiBase";
 
 async function postJson(path, { getAccessToken } = {}) {
   const token = typeof getAccessToken === "function" ? getAccessToken() : null;

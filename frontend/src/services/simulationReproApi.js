@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE } from "../config/apiBase";
 const auth = (token) => (token ? { Authorization: `Bearer ${token}` } : {});
 
 export async function getRunRepro({ runId, token }) {

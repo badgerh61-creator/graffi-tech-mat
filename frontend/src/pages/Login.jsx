@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { setTokens, isAuthenticated } from "../utils/auth";
 
 const API_BASE =
-  import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+  import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 export default function Login() {
   const navigate = useNavigate();

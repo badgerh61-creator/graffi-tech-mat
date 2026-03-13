@@ -1,7 +1,7 @@
+// frontend/src/pages/StudioEditor.jsx
 import { API_BASE } from "../config/apiBase";
 
-// frontend/src/pages/StudioEditor.jsx
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 
 import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
@@ -138,43 +138,131 @@ import ObjectActionsPanel from "../editor/outliner/ObjectActionsPanel";
 // ✅ Tier 7.51 ADD (hierarchical outliner tree)
 import SceneOutlinerTreePanel from "../editor/outliner/SceneOutlinerTreePanel";
 
-// ✅ Tier 7.53 ADD (slot-aware materials)
-import MaterialSlotInspectorPanel from "../editor/materials/MaterialSlotInspectorPanel";
-
-// ✅ Tier 7.54 ADD (viewport decal placement)
-import DecalPlacementPanel from "../editor/decals/DecalPlacementPanel";
-
-// ✅ Tier 7.55 ADD (paint library)
-import PaintLibraryPanel from "../editor/materials/PaintLibraryPanel";
-
-// ✅ Tier 7.56 ADD (variant sets)
-import VariantSetsPanel from "../editor/variants/VariantSetsPanel";
-
-// ✅ Tier 7.57 ADD (asset placement palette)
-import AssetPlacementPalettePanel from "../editor/assets/AssetPlacementPalettePanel";
-
-// ✅ Tier 7.58 ADD (constraint UX)
-import ConstraintViolationsPanel from "../editor/constraints/ConstraintViolationsPanel";
-import ConstraintBlockedBanner from "../editor/constraints/ConstraintBlockedBanner";
-import {
-  setConstraintViolations,
-  clearConstraintViolations,
-} from "../editor/constraints/constraintViolationStore";
-
-// ✅ Tier 7.59 ADD (unified inspector shell)
-import UnifiedInspectorPanel from "../editor/inspector/UnifiedInspectorPanel";
-
-// ✅ Tier 7.60 ADD (multi-select bulk actions)
-import BulkObjectActionsPanel from "../editor/outliner/BulkObjectActionsPanel";
-
 const LOCK_POLL_MS = 1500;
 
+// ------------------------------------------------------
+// Safe fallbacks for later-tier files that may not exist yet
+// ------------------------------------------------------
+
+function MaterialSlotInspectorPanelFallback(props) {
+  return <MaterialInspectorPanel {...props} />;
+}
+
+function DecalPlacementPanelFallback() {
+  return (
+    <div className="border rounded p-3 text-xs opacity-70">
+      Decal placement controls are not mounted yet in this repo state.
+    </div>
+  );
+}
+
+function PaintLibraryPanelFallback(props) {
+  return <PaintParamsPanel {...props} />;
+}
+
+function VariantSetsPanelFallback() {
+  return (
+    <div className="border rounded p-3 text-xs opacity-70">
+      Variant sets panel is not mounted yet in this repo state.
+    </div>
+  );
+}
+
+function AssetPlacementPalettePanelFallback(props) {
+  return <ModelAssetPickerPanel {...props} />;
+}
+
+function ConstraintBlockedBannerFallback() {
+  return null;
+}
+
+function ConstraintViolationsPanelFallback({ constraints = [] }) {
+  if (!constraints.length) return null;
+
+  return (
+    <div className="border rounded p-3 space-y-2">
+      <div className="text-sm font-semibold">Constraints</div>
+      {constraints.map((c, i) => (
+        <div key={`${c?.constraint_id || "c"}:${i}`} className="border rounded p-2 text-xs">
+          <div className="font-semibold">{c?.kind || "constraint"}</div>
+          <div className="opacity-80">{c?.message || "Constraint feedback available."}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BulkObjectActionsPanelFallback() {
+  return (
+    <div className="border rounded p-3 text-xs opacity-70">
+      Bulk multi-select actions are not mounted yet in this repo state.
+    </div>
+  );
+}
+
+function UnifiedInspectorPanelFallback({
+  snapshot,
+  toolsEnabled,
+  lockState,
+  onCommitTool,
+  constraints,
+}) {
+  return (
+    <div className="border rounded p-3 space-y-3">
+      <div className="text-sm font-semibold">Inspector</div>
+
+      <div className="border rounded p-3 space-y-1 text-xs opacity-80">
+        <div>
+          Snapshot: <span className="font-mono">{snapshot?.id ?? "—"}</span>
+        </div>
+        <div>
+          Status: <span className="font-mono">{snapshot?.status ?? "—"}</span>
+        </div>
+        <div>
+          Edit: <span className="font-mono">{toolsEnabled ? "enabled" : "blocked"}</span>
+        </div>
+        <div>
+          Lock: <span className="font-mono">{lockState || "unknown"}</span>
+        </div>
+      </div>
+
+      <ObjectActionsPanel canEdit={toolsEnabled} onCommitTool={onCommitTool} />
+
+      <MaterialInspectorPanel
+        snapshot={snapshot}
+        canEdit={toolsEnabled}
+        onCommitTool={onCommitTool}
+      />
+
+      <PaintParamsPanel
+        snapshot={snapshot}
+        canEdit={toolsEnabled}
+        onCommitTool={onCommitTool}
+      />
+
+      <ConstraintViolationsPanelFallback constraints={constraints} />
+    </div>
+  );
+}
+
+// Wire safe local aliases
+const MaterialSlotInspectorPanel = MaterialSlotInspectorPanelFallback;
+const DecalPlacementPanel = DecalPlacementPanelFallback;
+const PaintLibraryPanel = PaintLibraryPanelFallback;
+const VariantSetsPanel = VariantSetsPanelFallback;
+const AssetPlacementPalettePanel = AssetPlacementPalettePanelFallback;
+const ConstraintBlockedBanner = ConstraintBlockedBannerFallback;
+const BulkObjectActionsPanel = BulkObjectActionsPanelFallback;
+const UnifiedInspectorPanel = UnifiedInspectorPanelFallback;
+
+// no-op store hooks until the real Tier 7.58 module is mounted
+function setConstraintViolations() {}
+function clearConstraintViolations() {}
+
 function normalizeLock(data) {
-  // Canonical: { state: "owned"|"taken"|"missing"|"unknown", owner_id?, owner_name? }
   if (!data) return { state: "unknown" };
   if (data.state) return data;
 
-  // tolerant normalization for other backend shapes
   if (data.owned === true || data.is_owner === true) return { state: "owned" };
   if (data.owner_id != null) {
     return { state: "taken", owner_id: data.owner_id, owner_name: data.owner_name };
@@ -201,45 +289,27 @@ function sortWhy(rs) {
 export default function StudioEditor() {
   const user = getCurrentUser();
 
-  // 🔧 TEMPORARY (Phase J)
   const projectId = 1;
 
   const [snapshots, setSnapshots] = useState([]);
   const [sceneStateHash, setSceneStateHash] = useState("__working__");
 
-  // ✅ Tier 6G.1 ADD (scene index state)
   const [sceneIndex, setSceneIndex] = useState(null);
   const [sceneErr, setSceneErr] = useState(null);
 
-  // ✅ Tier 7.28 ADD — allow overriding which snapshot is active (for history jumps + mode transitions)
   const [activeSnapshotOverrideId, setActiveSnapshotOverrideId] = useState(null);
-
-  // ✅ Tier 6S.6 ADD — force refresh/re-mount of lab panel after scenario creation
   const [labRefreshKey, setLabRefreshKey] = useState(0);
 
-  // ✅ Tier 7.48 ADD — viewer camera API ref
   const viewerApiRef = useRef(null);
 
-  // ===============================
-  // DIRTY STATE (EDITOR-LOCAL)
-  // ===============================
   const [isDirty, setIsDirty] = useState(false);
 
-  // ✅ Tier 7.1 ADD (legacy selection store)
   const sel = useSelection();
-
-  // ✅ Tier 7.9 ADD (canonical selection state)
   const { selectedId } = useSelectionStore();
-
-  // ✅ Tier 7.36 ADD (lock status store)
   const { lock } = useLockStatus();
 
-  // -------------------------------
-  // ✅ Safety: avoid overlapping snapshot fetches
-  // -------------------------------
   const snapshotsFetchInFlight = useRef(false);
 
-  // ✅ Safety: avoid updating state after unmount for async snapshot fetch
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
@@ -248,9 +318,6 @@ export default function StudioEditor() {
     };
   }, []);
 
-  // =====================================================
-  // SNAPSHOT FETCH (AUTHORITATIVE)
-  // =====================================================
   const fetchSnapshots = useCallback(() => {
     if (snapshotsFetchInFlight.current) return Promise.resolve();
     snapshotsFetchInFlight.current = true;
@@ -273,52 +340,37 @@ export default function StudioEditor() {
       });
   }, [projectId]);
 
-  // =====================================================
-  // INITIAL LOAD
-  // =====================================================
   useEffect(() => {
     if (!projectId) return;
     fetchSnapshots().catch(console.error);
   }, [projectId, fetchSnapshots]);
 
-  // =====================================================
-  // PHASE 3 — SNAPSHOT SELECTION (MANDATORY)
-  // =====================================================
   const draftSnapshot = snapshots.find((s) => s.status === "draft");
   const completedSnapshot = snapshots.find((s) => s.status === "completed");
 
-  // ✅ Tier 7.28 — if user navigated via undo/redo/mode change, honor override first
   const overrideSnapshot = activeSnapshotOverrideId
     ? snapshots.find((s) => s.id === activeSnapshotOverrideId)
     : null;
 
   const activeSnapshot = overrideSnapshot ?? (draftSnapshot ?? completedSnapshot);
 
-  // ✅ Tier 7.35 — READ ↔ EDIT is derived from snapshot truth:
-  // EDIT == draft snapshot (tools/gizmo only allowed here)
   const isEditMode = activeSnapshot?.status === "draft";
-  const isEditable = isEditMode; // keep existing variable name for additive safety
+  const isEditable = isEditMode;
 
-  // ✅ Tier 7.30 — find base snapshot (parent) for diff preview
   const baseSnapshot = useMemo(() => {
     if (!activeSnapshot?.parent_snapshot_id) return null;
     return snapshots?.find((s) => s.id === activeSnapshot.parent_snapshot_id) || null;
   }, [activeSnapshot?.id, activeSnapshot?.parent_snapshot_id, snapshots]);
 
-  // ✅ Tier 7.28 — whenever activeSnapshot changes, push into local history stack
   useEffect(() => {
     if (activeSnapshot?.id) historyPush(activeSnapshot.id);
   }, [activeSnapshot?.id]);
 
-  // =====================================================
-  // Tier 7.31 — SAFE SNAPSHOT NAVIGATION (UI-only)
-  // =====================================================
   const navigateToSnapshot = useCallback(
     (id) => {
       const nextId = Number(id);
       if (!Number.isFinite(nextId)) return;
 
-      // Clear volatile UI state (must never drift across snapshot boundaries)
       try {
         clearGizmoPreview?.();
       } catch {}
@@ -335,27 +387,17 @@ export default function StudioEditor() {
         clearConstraintViolations?.();
       } catch {}
 
-      // allow jumping even if a draft exists
       setActiveSnapshotOverrideId(nextId);
-
-      // keep snapshot list/status in sync after navigation
       fetchSnapshots().catch(console.error);
     },
     [fetchSnapshots]
   );
 
-  // =====================================================
-  // ✅ Tier 6G.8 — Deterministic rebind key (forces viewer remount)
-  // =====================================================
   const sceneRebindKey = useMemo(() => {
     if (!activeSnapshot?.id) return "snap:none";
     return `snap:${activeSnapshot.id}`;
   }, [activeSnapshot?.id]);
 
-  // =====================================================
-  // ✅ Tier 6G.1 — Scene Index fetch (race-safe)
-  // ✅ Tier 6G.8 — Enforce selection validity after snapshot switch
-  // =====================================================
   useEffect(() => {
     if (!activeSnapshot?.id) return;
 
@@ -368,7 +410,6 @@ export default function StudioEditor() {
       .then((idx) => {
         setSceneIndex(idx);
 
-        // ✅ Tier 6G.8 selection validity:
         try {
           if (selectedId) {
             const left = String(selectedId).split("::")[0];
@@ -394,7 +435,6 @@ export default function StudioEditor() {
     return () => controller.abort();
   }, [projectId, activeSnapshot?.id, selectedId]);
 
-  // ✅ Tier 6G.2: allow attach panel to refresh the current snapshot’s scene index
   const refreshSceneIndex = useCallback(() => {
     if (!activeSnapshot?.id) return;
 
@@ -413,14 +453,8 @@ export default function StudioEditor() {
     return () => controller.abort();
   }, [projectId, activeSnapshot?.id]);
 
-  // ✅ Tier 7.9 ADD (resolve active target deterministically)
   const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
 
-  // =====================================================
-  // ✅ Tier 7.37 ADD (viewer should always have decor_state)
-  // If sceneIndex endpoint doesn’t include decor_state yet, we stitch it in
-  // from the authoritative snapshot. (UI-only merge; no writes.)
-  // =====================================================
   const sceneIndexForViewer = useMemo(() => {
     if (!sceneIndex) return sceneIndex;
     const decor_state =
@@ -429,16 +463,11 @@ export default function StudioEditor() {
       activeSnapshot?.body_state?.decor_state ??
       null;
 
-    // If nothing to merge, keep original reference.
     if (decor_state == null) return sceneIndex;
 
     return { ...sceneIndex, decor_state };
   }, [sceneIndex, activeSnapshot?.id]);
 
-  // =====================================================
-  // ✅ Tier 6G.11 / Tier 7.42 — material overrides (authoritative)
-  // Prefer decor_state.material_overrides; fallback to legacy body_state material_overrides
-  // =====================================================
   const materialOverrides = useMemo(() => {
     return (
       activeSnapshot?.decor_state?.material_overrides ??
@@ -447,11 +476,6 @@ export default function StudioEditor() {
     );
   }, [activeSnapshot?.id]);
 
-  // =====================================================
-  // ✅ NEW (UI-only): derive constraints for the Constraints panel
-  // Additive-safe: if nothing exists yet, panel gets [].
-  // Supports a few possible future backend shapes.
-  // =====================================================
   const constraintsForPanel = useMemo(() => {
     const a = activeSnapshot || {};
     const d = a?.decor_state || a?.body_state?.decor_state || {};
@@ -463,9 +487,6 @@ export default function StudioEditor() {
     return Array.isArray(list) ? list.filter(Boolean) : [];
   }, [activeSnapshot?.id]);
 
-  // =====================================================
-  // ✅ Tier 7.36 — Lock status polling (draft only)
-  // =====================================================
   useEffect(() => {
     let alive = true;
     let t = null;
@@ -473,7 +494,6 @@ export default function StudioEditor() {
     async function tick() {
       if (!activeSnapshot?.id) return;
 
-      // lock status only meaningful for draft snapshots
       if (activeSnapshot.status !== "draft") {
         setLockStatus({ state: "unknown" });
         return;
@@ -502,19 +522,10 @@ export default function StudioEditor() {
     };
   }, [activeSnapshot?.id, activeSnapshot?.status]);
 
-  // =====================================================
-  // TIER 7.8 — GIZMO GATE (now uses lock status)
-  // =====================================================
-  // ✅ Prefer Tier 7.9 resolved target; fallback to Tier 7.1 selection if still used by old UI.
   const activeTargetId = resolvedTargetId ?? sel.selectedId ?? null;
-
-  // ✅ Tier 7.36: real lock state (owned => edit allowed)
   const hasDraftLock = lock?.state === "owned";
-
-  // TODO: replace when station state is visible in UI
   const station = "geometry";
 
-  // simple role gate (additive-safe; can be replaced by real capabilities)
   const canEditByRole = (user?.role ?? "viewer") !== "viewer";
   const canEditByStation = station === "geometry";
 
@@ -541,7 +552,6 @@ export default function StudioEditor() {
               ? "wrong station"
               : null;
 
-  // ✅ Tier 7.36/7.39: deterministic why-blocked reasons
   const whyBlockedReasons = useMemo(() => {
     const rs = [];
 
@@ -567,9 +577,6 @@ export default function StudioEditor() {
     canEditByStation,
   ]);
 
-  // =====================================================
-  // PHASE 4.4 — AUTOSAVE (DRAFT ONLY)
-  // =====================================================
   useDraftAutosave({
     snapshot: activeSnapshot,
     sceneStateHash,
@@ -577,12 +584,6 @@ export default function StudioEditor() {
     onSaved: () => setIsDirty(false),
   });
 
-  // =====================================================
-  // ✅ Governed Commit helper (shared by viewer + panels)
-  // - Does NOT remove any existing behavior
-  // - Uses your official evaluate/apply proposal path via executeTool()
-  // - Tier 7.58: canonical constraint feedback handling
-  // =====================================================
   const commitToolPayload = useCallback(
     async (payload) => {
       try {
@@ -609,7 +610,6 @@ export default function StudioEditor() {
           enablePreview: false,
         });
 
-        // Tier 7.58 — populate / clear canonical violations store
         if (!res?.ok) {
           if (Array.isArray(res?.violations) && res.violations.length) {
             setConstraintViolations(res.violations);
@@ -620,7 +620,6 @@ export default function StudioEditor() {
           clearConstraintViolations();
         }
 
-        // Best-effort refresh (non-breaking)
         try {
           await fetchSnapshots();
         } catch {}
@@ -636,30 +635,21 @@ export default function StudioEditor() {
     [activeSnapshot?.id, toolsEnabled, fetchSnapshots, refreshSceneIndex]
   );
 
-  // =====================================================
-  // RENDER  (⚠️ NO EARLIER TIER BLOCKS REMOVED)
-  // =====================================================
   return (
     <CapabilityProvider role={user?.role ?? "viewer"}>
       <EditorShell
         headerRight={
           <>
             <DraftStatusBadge snapshot={activeSnapshot} />
-
-            {/* ===============================
-                UI INDICATOR (HEADER)
-               =============================== */}
             {isDirty && (
               <span style={{ color: "#d33682", marginLeft: 8, fontSize: 12 }}>
                 Unsaved changes
               </span>
             )}
-
             <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
           </>
         }
       >
-        {/* ✅ Tier 7.36 — Session header (mode + lock + reasons) */}
         <div className="p-3 pt-3 pb-0">
           <EditSessionHeader
             project={{ id: projectId, name: "Project" }}
@@ -671,12 +661,10 @@ export default function StudioEditor() {
           />
         </div>
 
-        {/* ✅ Tier 7.58 — blocked banner */}
         <div className="p-3 pt-2 pb-0">
           <ConstraintBlockedBanner />
         </div>
 
-        {/* ✅ Tier 7.39/7.40 — Tool Context Bar + View Modes */}
         <div className="p-3 pt-2 pb-0 flex items-center gap-2">
           <div className="flex-1">
             <ToolContextBar
@@ -688,7 +676,6 @@ export default function StudioEditor() {
           <ViewModeSelect />
         </div>
 
-        {/* ✅ Tier 7.48 — Camera toolbar */}
         <div className="p-3 pt-2 pb-0">
           <CameraToolbar
             onFrameSelected={() => viewerApiRef.current?.frameSelected?.()}
@@ -697,12 +684,10 @@ export default function StudioEditor() {
           />
         </div>
 
-        {/* ✅ Tier 7.45 — Studio lighting toggles (viewer-only) */}
         <div className="p-3 pt-2 pb-0">
           <LightingControls />
         </div>
 
-        {/* ✅ Tier 7.35 — Mode bar (READ ↔ EDIT) */}
         <div className="p-3 pt-2 pb-0">
           <StudioModeBar
             activeSnapshot={activeSnapshot}
@@ -713,9 +698,7 @@ export default function StudioEditor() {
         </div>
 
         <div className="grid grid-cols-[360px_1fr_420px] gap-3 p-3">
-          {/* LEFT: tool controls */}
           <div className="space-y-3">
-            {/* ✅ Tier 7.28 ADD (Undo/Redo bar) */}
             <div style={{ padding: 12 }}>
               <UndoRedoBar
                 projectId={projectId}
@@ -724,7 +707,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.29 ADD (Snapshot History Graph Panel) */}
             <div style={{ padding: 12 }}>
               <SnapshotHistoryGraphPanel
                 activeSnapshotId={activeSnapshot?.id}
@@ -732,28 +714,23 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.30 ADD (Snapshot Diff Preview Panel) */}
             <div style={{ padding: 12 }}>
               <SnapshotDiffPanel baseSnapshot={baseSnapshot} targetSnapshot={activeSnapshot} />
             </div>
 
-            {/* ✅ Tier 6G.1 ADD (Scene Index debug panel) */}
             <div style={{ padding: 12 }}>
               {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
               <SceneIndexPanel sceneIndex={sceneIndex} snapshotId={activeSnapshot?.id} />
             </div>
 
-            {/* ✅ Tier 6G.6 ADD (Scene layers + pick filters + opacity) */}
             <div style={{ padding: 12 }}>
               <SceneLayersPanel sceneIndex={sceneIndex} />
             </div>
 
-            {/* ✅ Tier 6G.10 ADD (Scene Graph tree panel) */}
             <div style={{ padding: 12 }}>
               <SceneGraphPanel sceneIndex={sceneIndex} />
             </div>
 
-            {/* ✅ Tier 7.47 ADD (legacy flat outliner kept additive-safe) */}
             <div style={{ padding: 12 }}>
               <SceneOutlinerPanel
                 snapshot={activeSnapshot}
@@ -762,7 +739,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.51 ADD (hierarchical tree outliner) */}
             <div style={{ padding: 12 }}>
               <SceneOutlinerTreePanel
                 snapshot={activeSnapshot}
@@ -771,7 +747,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.60 ADD (bulk actions for multi-select) */}
             <div style={{ padding: 12 }}>
               <BulkObjectActionsPanel
                 canEdit={toolsEnabled}
@@ -779,7 +754,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.50 ADD (duplicate / mirror actions) */}
             <div style={{ padding: 12 }}>
               <ObjectActionsPanel
                 canEdit={toolsEnabled}
@@ -787,12 +761,10 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 6G.11 ADD (Material Overrides list panel) */}
             <div style={{ padding: 12 }}>
               <MaterialOverridesPanel snapshot={activeSnapshot} />
             </div>
 
-            {/* ✅ Tier 7.42 ADD (Material Inspector: read + governed edit) */}
             <div style={{ padding: 12 }}>
               <MaterialInspectorPanel
                 snapshot={activeSnapshot}
@@ -801,7 +773,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.53 ADD (slot-aware material targeting) */}
             <div style={{ padding: 12 }}>
               <MaterialSlotInspectorPanel
                 snapshot={activeSnapshot}
@@ -810,7 +781,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.43 ADD (Paint Params: color/roughness/metalness/opacity) */}
             <div style={{ padding: 12 }}>
               <PaintParamsPanel
                 snapshot={activeSnapshot}
@@ -819,7 +789,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.55 ADD (Paint library + swatches) */}
             <div style={{ padding: 12 }}>
               <PaintLibraryPanel
                 snapshot={activeSnapshot}
@@ -828,7 +797,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.44 ADD (Decal asset browser) */}
             <div style={{ padding: 12 }}>
               <DecalAssetBrowserPanel
                 canEdit={toolsEnabled}
@@ -836,12 +804,10 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.54 ADD (viewport decal placement controls) */}
             <div style={{ padding: 12 }}>
               <DecalPlacementPanel />
             </div>
 
-            {/* ✅ Tier 7.46 ADD (legacy model asset picker kept additive-safe) */}
             <div style={{ padding: 12 }}>
               <ModelAssetPickerPanel
                 canEdit={toolsEnabled}
@@ -849,7 +815,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.57 ADD (asset placement palette) */}
             <div style={{ padding: 12 }}>
               <AssetPlacementPalettePanel
                 canEdit={toolsEnabled}
@@ -857,7 +822,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.56 ADD (variant sets) */}
             <div style={{ padding: 12 }}>
               <VariantSetsPanel
                 snapshot={activeSnapshot}
@@ -866,12 +830,10 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.58 ADD (constraint panel) */}
             <div style={{ padding: 12 }}>
-              <ConstraintViolationsPanel />
+              <ConstraintViolationsPanelFallback constraints={constraintsForPanel} />
             </div>
 
-            {/* ✅ Tier 6G.2 ADD (Attach asset to object, then refresh scene) */}
             <div style={{ padding: 12 }}>
               <AttachAssetPanel
                 projectId={projectId}
@@ -880,12 +842,10 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.17 ADD (typed selection HUD) */}
             <div style={{ padding: 12 }}>
               <SelectionHud />
             </div>
 
-            {/* ✅ Tier 7.1 ADD (temporary selection + toolbar) — kept additive-safe */}
             <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
               <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
 
@@ -900,7 +860,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.8 ADD (gizmo commit wiring via /assistant/proposals/*) */}
             <div style={{ padding: 12 }}>
               <GizmoCommitController
                 activeSnapshot={activeSnapshot}
@@ -911,7 +870,6 @@ export default function StudioEditor() {
                 onApplied={(newId) => {
                   console.log("Applied new snapshot:", newId);
 
-                  // after commit, clear override so normal draft/complete selection rules apply again
                   setActiveSnapshotOverrideId(null);
                   clearConstraintViolations?.();
 
@@ -920,7 +878,6 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.11 ADD (transform tool panel binds target_id from selectionStore) */}
             <div style={{ padding: 12 }}>
               <TransformToolPanel
                 activeSnapshot={activeSnapshot}
@@ -933,22 +890,18 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 6S.1 ADD (telemetry viewer panel) */}
             <div style={{ padding: 12 }}>
               <TelemetryViewerPanel activeSnapshot={activeSnapshot} />
             </div>
 
-            {/* ✅ Tier 6S.3 ADD (advanced telemetry overlay + toggles) */}
             <div style={{ padding: 12 }}>
               <TelemetryAdvancedPanel />
             </div>
 
-            {/* ✅ Tier 6S.4 ADD (telemetry compare + summary + CSV export) */}
             <div style={{ padding: 12 }}>
               <TelemetryComparePanel />
             </div>
 
-            {/* ✅ Tier 6S.6 ADD (scenario templates + presets) */}
             <div style={{ padding: 12 }}>
               <ScenarioTemplatesPanel
                 projectId={projectId}
@@ -956,12 +909,10 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 6S.7 ADD (batch runner: N templates/scenarios -> N artifacts + runs) */}
             <div style={{ padding: 12 }}>
               <BatchRunnerPanel activeSnapshot={activeSnapshot} />
             </div>
 
-            {/* ✅ Tier 6S.5 ADD (lab mode: scenarios + runs + compare matrix) */}
             <div style={{ padding: 12 }}>
               <TelemetryLabPanel
                 key={`lab:${labRefreshKey}`}
@@ -970,15 +921,12 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.2 ADD (read-only reference frames) */}
             <div style={{ padding: 12 }}>
               <ReferenceFramesPanel activeSnapshotId={activeSnapshot?.id} disabled={false} />
             </div>
           </div>
 
-          {/* CENTER: viewport + editor host */}
           <div className="space-y-3">
-            {/* ✅ Tier 6G.8: key forces clean remount on snapshot change (prevents ghosting) */}
             <div style={{ padding: 12 }}>
               <ThreeSceneViewer
                 key={sceneRebindKey}
@@ -993,12 +941,8 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Keep Tier 7.10 stub viewport as a fallback/debug surface */}
             <ViewportSurface disabled={!activeSnapshot} />
 
-            {/* ===============================
-                SCENE CHANGE SIGNAL
-               =============================== */}
             <EditorLayoutHost
               editable={isEditMode}
               panelContext={{
@@ -1015,7 +959,6 @@ export default function StudioEditor() {
             />
           </div>
 
-          {/* RIGHT: unified inspector */}
           <div className="space-y-3">
             <div style={{ padding: 12 }}>
               <UnifiedInspectorPanel
@@ -1023,6 +966,7 @@ export default function StudioEditor() {
                 toolsEnabled={toolsEnabled}
                 lockState={lock?.state || "unknown"}
                 onCommitTool={(payload) => commitToolPayload(payload)}
+                constraints={constraintsForPanel}
               />
             </div>
           </div>

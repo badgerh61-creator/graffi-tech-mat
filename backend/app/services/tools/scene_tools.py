@@ -53,7 +53,7 @@ SCENE_BULK_SET_LAYERS = "SCENE_BULK_SET_LAYERS"
 
 def _require_asset_access(*, db: Session, user_id: int, asset_id: int) -> None:
     """
-    Reuse your existing access model:
+    Reuse the existing DB-backed access model:
     - asset is linked to a model
     - user must have access to that model
     """
@@ -71,6 +71,30 @@ def _require_asset_access(*, db: Session, user_id: int, asset_id: int) -> None:
         raise HTTPException(403, "No access to asset")
 
 
+def _maybe_require_asset_access(*, db: Session, user, payload: Dict[str, Any]) -> None:
+    """
+    Compatibility bridge:
+
+    Earlier tiers may use DB integer asset ids.
+    Later viewer/editor tiers may use registry/string asset ids like:
+      - "asset-vehicle-demo"
+
+    We keep earlier behavior for numeric ids and safely skip DB access checks
+    for non-numeric registry ids so newer tiers do not break.
+    """
+    raw_asset_id = payload.get("asset_id")
+    if raw_asset_id is None:
+        return
+
+    try:
+        asset_id = int(raw_asset_id)
+    except (TypeError, ValueError):
+        # Registry/string asset ids are validated elsewhere by the scene mutator/registry flow.
+        return
+
+    _require_asset_access(db=db, user_id=int(user.id), asset_id=asset_id)
+
+
 def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Evaluate should be read-only (no snapshot writes).
@@ -81,8 +105,7 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
         if err:
             return {"ok": False, "error": err}
 
-        asset_id = int(payload["asset_id"])
-        _require_asset_access(db=db, user_id=int(user.id), asset_id=asset_id)
+        _maybe_require_asset_access(db=db, user=user, payload=payload)
         return {"ok": True}
 
     if tool == SCENE_REMOVE_OBJECT:

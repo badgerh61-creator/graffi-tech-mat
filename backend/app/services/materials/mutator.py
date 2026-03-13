@@ -15,7 +15,9 @@ def _ensure_decor(snapshot) -> Dict[str, Any]:
 
 
 def _slot_key(target_id: str, slot_name: str) -> str:
-    return f"{str(target_id)}::slot:{str(slot_name)}"
+    tid = str(target_id or "").strip()
+    slot = str(slot_name or "").strip()
+    return f"{tid}::slot:{slot}"
 
 
 def validate_set(payload: Dict[str, Any]) -> Optional[str]:
@@ -86,8 +88,8 @@ def apply_set(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     decor = _ensure_decor(snapshot)
     overrides: Dict[str, Any] = decor["material_overrides"]
 
-    tid = str(payload.get("target_id"))
-    preset = str(payload.get("preset"))
+    tid = str(payload.get("target_id")).strip()
+    preset = str(payload.get("preset")).strip()
 
     overrides[tid] = {
         "preset": preset,
@@ -104,7 +106,7 @@ def apply_clear(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     decor = _ensure_decor(snapshot)
     overrides: Dict[str, Any] = decor["material_overrides"]
 
-    tid = str(payload.get("target_id"))
+    tid = str(payload.get("target_id")).strip()
     if tid in overrides:
         del overrides[tid]
 
@@ -117,7 +119,7 @@ def apply_update_params(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     decor = _ensure_decor(snapshot)
     overrides: Dict[str, Any] = decor["material_overrides"]
 
-    tid = str(payload.get("target_id"))
+    tid = str(payload.get("target_id")).strip()
     if tid not in overrides:
         return {"ok": False, "error": "override missing"}
 
@@ -148,9 +150,9 @@ def apply_set_slot(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     decor = _ensure_decor(snapshot)
     overrides: Dict[str, Any] = decor["material_overrides"]
 
-    tid = str(payload.get("target_id"))
-    slot_name = str(payload.get("slot_name"))
-    preset = str(payload.get("preset"))
+    tid = str(payload.get("target_id")).strip()
+    slot_name = str(payload.get("slot_name")).strip()
+    preset = str(payload.get("preset")).strip()
 
     key = _slot_key(tid, slot_name)
     overrides[key] = {
@@ -168,8 +170,8 @@ def apply_clear_slot(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     decor = _ensure_decor(snapshot)
     overrides: Dict[str, Any] = decor["material_overrides"]
 
-    tid = str(payload.get("target_id"))
-    slot_name = str(payload.get("slot_name"))
+    tid = str(payload.get("target_id")).strip()
+    slot_name = str(payload.get("slot_name")).strip()
     key = _slot_key(tid, slot_name)
 
     if key in overrides:

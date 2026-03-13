@@ -255,6 +255,17 @@ function normalizeSnapState(raw) {
   };
 }
 
+function sortObjectsStable(list) {
+  return [...(list || [])].sort((a, b) =>
+    String(a?.id || "").localeCompare(String(b?.id || ""))
+  );
+}
+
+function normalizeParentId(v) {
+  const s = String(v || "").trim();
+  return s || null;
+}
+
 /**
  * ✅ ADDITIVE SAFE:
  * - canEdit gates ONLY TransformControls (gizmo).
@@ -283,6 +294,10 @@ function normalizeSnapState(raw) {
  * ✅ Tier 7.49:
  * - TransformControls snap + local/world orientation read from canonical snapStore
  * - no remount on snap changes
+ *
+ * ✅ Tier 7.51:
+ * - parent/child scene construction from object.parent_id
+ * - flat scenes still work unchanged
  */
 export default function ThreeSceneViewer({
   sceneIndex,
@@ -359,7 +374,6 @@ export default function ThreeSceneViewer({
     gizmoModeRef.current = gizmoMode;
   }, [gizmoMode]);
 
-  // ✅ Tier 7.49
   useEffect(() => {
     snapRef.current = normalizeSnapState(snapState);
   }, [snapState]);
@@ -1099,8 +1113,12 @@ export default function ThreeSceneViewer({
       if (!objects.length) return;
 
       const loader = new GLTFLoader();
+      const sortedObjects = sortObjectsStable(objects);
 
-      for (const obj of objects) {
+      // --------------------------------------------------
+      // PASS 1 — create all object groups deterministically
+      // --------------------------------------------------
+      for (const obj of sortedObjects) {
         if (disposed) return;
 
         const objId = String(obj?.id || "").trim();
@@ -1120,13 +1138,57 @@ export default function ThreeSceneViewer({
         group.userData.kind = kind;
         group.userData.pickId = `obj:${objectKey}`;
         group.userData.objectId = objectKey;
-
         group.visible = !!cfg.visible && obj?.enabled !== false;
 
-        root.add(group);
-        objectGroups.set(objectKey, group);
-
         applyTransformToObject3D(group, obj?.transform);
+
+        objectGroups.set(objectKey, group);
+      }
+
+      // --------------------------------------------------
+      // PASS 2 — attach hierarchy (Tier 7.51)
+      // --------------------------------------------------
+      for (const obj of sortedObjects) {
+        if (disposed) return;
+
+        const objId = String(obj?.id || "").trim();
+        if (!objId) continue;
+        if (obj?.enabled === false) continue;
+
+        const group = objectGroups.get(objId);
+        if (!group) continue;
+
+        const parentId = normalizeParentId(obj?.parent_id);
+        const parentGroup = parentId ? objectGroups.get(parentId) : null;
+
+        if (parentGroup && parentGroup !== group) {
+          parentGroup.add(group);
+        } else {
+          root.add(group);
+        }
+      }
+
+      // keep decals root attached at root level
+      if (decalsRoot.parent !== root) {
+        root.add(decalsRoot);
+      }
+
+      // --------------------------------------------------
+      // PASS 3 — load model refs / placeholders into groups
+      // --------------------------------------------------
+      for (const obj of sortedObjects) {
+        if (disposed) return;
+
+        const objId = String(obj?.id || "").trim();
+        if (!objId) continue;
+        if (obj?.enabled === false) continue;
+
+        const kind = String(obj?.kind || "unknown");
+        const cfg = layers.kinds[kind] || ensureKind(kind);
+
+        const objectKey = objId;
+        const group = objectGroups.get(objectKey);
+        if (!group) continue;
 
         const assetRef = obj?.asset_ref
           ? String(obj.asset_ref).trim()
@@ -1536,7 +1598,6 @@ export default function ThreeSceneViewer({
     viewerApiRef.current?.syncMode?.();
   }, [gizmoMode]);
 
-  // ✅ Tier 7.49
   useEffect(() => {
     viewerApiRef.current?.syncSnap?.();
   }, [snapState]);
@@ -1610,7 +1671,8 @@ export default function ThreeSceneViewer({
         load and on updates (viewer-safe, no remount). Scene outliner visibility is respected via{" "}
         <code>object.enabled</code> (7.47). Model refs can load from <code>asset_ref</code> or{" "}
         <code>url</code> (7.46). Snap settings now also drive TransformControls space and snap
-        increments (7.49) without remounting the viewer.
+        increments (7.49) without remounting the viewer. Parent/child object transforms are now
+        respected through scene graph attachment when <code>parent_id</code> exists (7.51).
       </div>
     </div>
   );

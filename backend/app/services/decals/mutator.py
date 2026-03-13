@@ -34,8 +34,9 @@ def _clamp01(x: float) -> float:
 
 def _get_asset_ref(payload: Dict[str, Any]) -> str:
     """
-    Tier 7.44 compatibility:
+    Compatibility:
     Accept both `asset_ref` and `asset_id` as aliases.
+    `asset_ref` remains authoritative internally.
     """
     return str(payload.get("asset_ref") or payload.get("asset_id") or "").strip()
 
@@ -50,7 +51,7 @@ def validate_create(payload: Dict[str, Any]) -> Optional[str]:
 
     asset_ref = _get_asset_ref(payload)
     if not asset_ref:
-        return "asset_ref required"
+        return "asset_ref or asset_id required"
     if not is_valid_asset(asset_ref):
         return "asset_ref invalid"
 
@@ -85,7 +86,6 @@ def validate_update(payload: Dict[str, Any]) -> Optional[str]:
         if blend not in ALLOWED_BLEND:
             return "blend invalid"
 
-    # allow patching asset_ref OR asset_id (alias)
     if "asset_ref" in patch or "asset_id" in patch:
         asset_ref = str(patch.get("asset_ref") or patch.get("asset_id") or "").strip()
         if not asset_ref:
@@ -137,11 +137,11 @@ def apply_create(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
         "enabled": True,
         "target_id": payload.get("target_id"),
 
-        # Registry reference (authoritative)
+        # authoritative registry reference
         "asset_ref": asset_ref,
-        # Back-compat alias (tests/UI may expect this)
+        # compatibility alias
         "asset_id": asset_ref,
-        # Cached resolved URL
+        # cached resolved URL
         "url": resolve_asset_url(asset_ref),
 
         "position": initial.get("position") or {"x": 0, "y": 0, "z": 0},
@@ -181,7 +181,6 @@ def apply_update(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
             d[k] = _clamp01(float(v))
             continue
 
-        # accept asset_ref or asset_id in patch
         if k in ("asset_ref", "asset_id"):
             ref = str(v).strip()
             if ref:
@@ -201,9 +200,9 @@ def apply_update(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def apply_set_asset(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Tier 7.44: set decal asset (and cached url) deterministically.
-    Accepts both `asset_ref` and `asset_id` (alias).
-    Stores BOTH keys for compatibility:
+    Deterministic asset assignment.
+    Accepts both `asset_ref` and `asset_id`.
+    Stores both keys for compatibility:
       - asset_ref (authoritative)
       - asset_id  (alias mirror)
     """

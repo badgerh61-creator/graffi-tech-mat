@@ -935,6 +935,7 @@ export default function StudioEditor() {
                 disabled={!activeSnapshot?.id}
                 canEdit={toolsEnabled}
                 onCommitTool={(p) => commitToolPayload(p)}
+                commitToolPayload={(p) => commitToolPayload(p)}
                 onViewerApiReady={(api) => {
                   viewerApiRef.current = api;
                 }}

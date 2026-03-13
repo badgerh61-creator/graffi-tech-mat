@@ -132,6 +132,41 @@ import BatchRunnerPanel from "../editor/telemetry/BatchRunnerPanel";
 // ✅ NEW (additive-safe): central governed tool execution adapter
 import { executeTool } from "../services/studio/toolExecutionAdapter";
 
+// ✅ Tier 7.50 ADD (duplicate / mirror)
+import ObjectActionsPanel from "../editor/outliner/ObjectActionsPanel";
+
+// ✅ Tier 7.51 ADD (hierarchical outliner tree)
+import SceneOutlinerTreePanel from "../editor/outliner/SceneOutlinerTreePanel";
+
+// ✅ Tier 7.53 ADD (slot-aware materials)
+import MaterialSlotInspectorPanel from "../editor/materials/MaterialSlotInspectorPanel";
+
+// ✅ Tier 7.54 ADD (viewport decal placement)
+import DecalPlacementPanel from "../editor/decals/DecalPlacementPanel";
+
+// ✅ Tier 7.55 ADD (paint library)
+import PaintLibraryPanel from "../editor/materials/PaintLibraryPanel";
+
+// ✅ Tier 7.56 ADD (variant sets)
+import VariantSetsPanel from "../editor/variants/VariantSetsPanel";
+
+// ✅ Tier 7.57 ADD (asset placement palette)
+import AssetPlacementPalettePanel from "../editor/assets/AssetPlacementPalettePanel";
+
+// ✅ Tier 7.58 ADD (constraint UX)
+import ConstraintViolationsPanel from "../editor/constraints/ConstraintViolationsPanel";
+import ConstraintBlockedBanner from "../editor/constraints/ConstraintBlockedBanner";
+import {
+  setConstraintViolations,
+  clearConstraintViolations,
+} from "../editor/constraints/constraintViolationStore";
+
+// ✅ Tier 7.59 ADD (unified inspector shell)
+import UnifiedInspectorPanel from "../editor/inspector/UnifiedInspectorPanel";
+
+// ✅ Tier 7.60 ADD (multi-select bulk actions)
+import BulkObjectActionsPanel from "../editor/outliner/BulkObjectActionsPanel";
+
 const LOCK_POLL_MS = 1500;
 
 function normalizeLock(data) {
@@ -295,6 +330,9 @@ export default function StudioEditor() {
       } catch {}
       try {
         clearSelection?.();
+      } catch {}
+      try {
+        clearConstraintViolations?.();
       } catch {}
 
       // allow jumping even if a draft exists
@@ -543,11 +581,11 @@ export default function StudioEditor() {
   // ✅ Governed Commit helper (shared by viewer + panels)
   // - Does NOT remove any existing behavior
   // - Uses your official evaluate/apply proposal path via executeTool()
+  // - Tier 7.58: canonical constraint feedback handling
   // =====================================================
   const commitToolPayload = useCallback(
     async (payload) => {
       try {
-        // keep old behavior (log) but also execute
         console.log("commitToolPayload:", payload);
 
         if (!toolsEnabled) {
@@ -571,6 +609,17 @@ export default function StudioEditor() {
           enablePreview: false,
         });
 
+        // Tier 7.58 — populate / clear canonical violations store
+        if (!res?.ok) {
+          if (Array.isArray(res?.violations) && res.violations.length) {
+            setConstraintViolations(res.violations);
+          } else {
+            clearConstraintViolations();
+          }
+        } else {
+          clearConstraintViolations();
+        }
+
         // Best-effort refresh (non-breaking)
         try {
           await fetchSnapshots();
@@ -588,7 +637,7 @@ export default function StudioEditor() {
   );
 
   // =====================================================
-  // RENDER  (⚠️ NO TIER BLOCKS MOVED/REMOVED)
+  // RENDER  (⚠️ NO EARLIER TIER BLOCKS REMOVED)
   // =====================================================
   return (
     <CapabilityProvider role={user?.role ?? "viewer"}>
@@ -622,6 +671,11 @@ export default function StudioEditor() {
           />
         </div>
 
+        {/* ✅ Tier 7.58 — blocked banner */}
+        <div className="p-3 pt-2 pb-0">
+          <ConstraintBlockedBanner />
+        </div>
+
         {/* ✅ Tier 7.39/7.40 — Tool Context Bar + View Modes */}
         <div className="p-3 pt-2 pb-0 flex items-center gap-2">
           <div className="flex-1">
@@ -653,14 +707,12 @@ export default function StudioEditor() {
           <StudioModeBar
             activeSnapshot={activeSnapshot}
             onSetActiveSnapshotId={(id) => {
-              // Use canonical navigation so selection/ghost never carries over
               navigateToSnapshot(id);
             }}
           />
         </div>
 
-        {/* ✅ Tier 7.10 layout: left tools, right viewport + editor host */}
-        <div className="grid grid-cols-[360px_1fr] gap-3 p-3">
+        <div className="grid grid-cols-[360px_1fr_420px] gap-3 p-3">
           {/* LEFT: tool controls */}
           <div className="space-y-3">
             {/* ✅ Tier 7.28 ADD (Undo/Redo bar) */}
@@ -701,10 +753,35 @@ export default function StudioEditor() {
               <SceneGraphPanel sceneIndex={sceneIndex} />
             </div>
 
-            {/* ✅ Tier 7.47 ADD (Scene Outliner: selection + visibility + layers + remove) */}
+            {/* ✅ Tier 7.47 ADD (legacy flat outliner kept additive-safe) */}
             <div style={{ padding: 12 }}>
               <SceneOutlinerPanel
                 snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.51 ADD (hierarchical tree outliner) */}
+            <div style={{ padding: 12 }}>
+              <SceneOutlinerTreePanel
+                snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.60 ADD (bulk actions for multi-select) */}
+            <div style={{ padding: 12 }}>
+              <BulkObjectActionsPanel
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.50 ADD (duplicate / mirror actions) */}
+            <div style={{ padding: 12 }}>
+              <ObjectActionsPanel
                 canEdit={toolsEnabled}
                 onCommitTool={(payload) => commitToolPayload(payload)}
               />
@@ -724,9 +801,27 @@ export default function StudioEditor() {
               />
             </div>
 
+            {/* ✅ Tier 7.53 ADD (slot-aware material targeting) */}
+            <div style={{ padding: 12 }}>
+              <MaterialSlotInspectorPanel
+                snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
             {/* ✅ Tier 7.43 ADD (Paint Params: color/roughness/metalness/opacity) */}
             <div style={{ padding: 12 }}>
               <PaintParamsPanel
+                snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.55 ADD (Paint library + swatches) */}
+            <div style={{ padding: 12 }}>
+              <PaintLibraryPanel
                 snapshot={activeSnapshot}
                 canEdit={toolsEnabled}
                 onCommitTool={(payload) => commitToolPayload(payload)}
@@ -741,12 +836,39 @@ export default function StudioEditor() {
               />
             </div>
 
-            {/* ✅ Tier 7.46 ADD (Model asset picker) */}
+            {/* ✅ Tier 7.54 ADD (viewport decal placement controls) */}
+            <div style={{ padding: 12 }}>
+              <DecalPlacementPanel />
+            </div>
+
+            {/* ✅ Tier 7.46 ADD (legacy model asset picker kept additive-safe) */}
             <div style={{ padding: 12 }}>
               <ModelAssetPickerPanel
                 canEdit={toolsEnabled}
                 onCommitTool={(payload) => commitToolPayload(payload)}
               />
+            </div>
+
+            {/* ✅ Tier 7.57 ADD (asset placement palette) */}
+            <div style={{ padding: 12 }}>
+              <AssetPlacementPalettePanel
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.56 ADD (variant sets) */}
+            <div style={{ padding: 12 }}>
+              <VariantSetsPanel
+                snapshot={activeSnapshot}
+                canEdit={toolsEnabled}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
+
+            {/* ✅ Tier 7.58 ADD (constraint panel) */}
+            <div style={{ padding: 12 }}>
+              <ConstraintViolationsPanel />
             </div>
 
             {/* ✅ Tier 6G.2 ADD (Attach asset to object, then refresh scene) */}
@@ -791,6 +913,7 @@ export default function StudioEditor() {
 
                   // after commit, clear override so normal draft/complete selection rules apply again
                   setActiveSnapshotOverrideId(null);
+                  clearConstraintViolations?.();
 
                   fetchSnapshots().catch(console.error);
                 }}
@@ -804,6 +927,7 @@ export default function StudioEditor() {
                 disabled={!toolsEnabled}
                 onExecuted={(data) => {
                   console.log("Tool executed:", data);
+                  clearConstraintViolations?.();
                   fetchSnapshots().catch(console.error);
                 }}
               />
@@ -848,14 +972,11 @@ export default function StudioEditor() {
 
             {/* ✅ Tier 7.2 ADD (read-only reference frames) */}
             <div style={{ padding: 12 }}>
-              <ReferenceFramesPanel
-                activeSnapshotId={activeSnapshot?.id}
-                disabled={false}
-              />
+              <ReferenceFramesPanel activeSnapshotId={activeSnapshot?.id} disabled={false} />
             </div>
           </div>
 
-          {/* RIGHT: viewport + editor host */}
+          {/* CENTER: viewport + editor host */}
           <div className="space-y-3">
             {/* ✅ Tier 6G.8: key forces clean remount on snapshot change (prevents ghosting) */}
             <div style={{ padding: 12 }}>
@@ -892,6 +1013,18 @@ export default function StudioEditor() {
                 setIsDirty(true);
               }}
             />
+          </div>
+
+          {/* RIGHT: unified inspector */}
+          <div className="space-y-3">
+            <div style={{ padding: 12 }}>
+              <UnifiedInspectorPanel
+                snapshot={activeSnapshot}
+                toolsEnabled={toolsEnabled}
+                lockState={lock?.state || "unknown"}
+                onCommitTool={(payload) => commitToolPayload(payload)}
+              />
+            </div>
           </div>
         </div>
       </EditorShell>

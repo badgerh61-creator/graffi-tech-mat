@@ -6,6 +6,9 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 // ✅ Step 1 — TransformControls (Three.js handles)
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 
+// ✅ Tier 7.48 — Orbit camera controls
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+
 import { resolveAssetRef } from "./resolveAssetRef";
 import { buildPickedTargetId } from "./pickingId";
 import { applyTransformToObject3D, makePlaceholderMesh } from "./applyTransform";
@@ -45,6 +48,13 @@ import { setActiveDecalId, clearActiveDecalId } from "../decals/activeDecalStore
 // ✅ Tier 7.42 — Material overrides (read + apply) (optional, additive-safe)
 import { applyMaterialOverridesToScene } from "../materials/applyMaterialOverridesToScene";
 
+// ✅ Tier 7.48 — camera helpers
+import { applyCameraPreset } from "../camera/applyCameraPreset";
+import {
+  computeVisibleSceneBounds,
+  computeSelectedBounds,
+} from "./sceneBounds";
+
 function makeRenderer(canvas) {
   // Prefer WebGL2, fallback WebGL1. If neither exists, return null.
   const gl2 = canvas.getContext("webgl2", { antialias: true });
@@ -77,7 +87,7 @@ function makeCamera(width, height) {
   return cam;
 }
 
-function fitCameraToScene(camera, root) {
+function fitCameraToScene(camera, root, controls = null) {
   const box = new THREE.Box3().setFromObject(root);
   if (box.isEmpty()) return;
 
@@ -91,12 +101,19 @@ function fitCameraToScene(camera, root) {
   const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.6;
 
   camera.position.set(center.x + distance, center.y + distance * 0.5, center.z + distance);
-  camera.lookAt(center);
+
+  if (controls) {
+    controls.target.copy(center);
+    controls.update();
+  } else {
+    camera.lookAt(center);
+  }
+
   camera.updateProjectionMatrix();
 }
 
 // ✅ 6G.7
-function fitCameraToObject(camera, object3d) {
+function fitCameraToObject(camera, object3d, controls = null) {
   const box = new THREE.Box3().setFromObject(object3d);
   if (box.isEmpty()) return;
 
@@ -110,7 +127,14 @@ function fitCameraToObject(camera, object3d) {
   const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.6;
 
   camera.position.set(center.x + distance, center.y + distance * 0.5, center.z + distance);
-  camera.lookAt(center);
+
+  if (controls) {
+    controls.target.copy(center);
+    controls.update();
+  } else {
+    camera.lookAt(center);
+  }
+
   camera.updateProjectionMatrix();
 }
 
@@ -230,6 +254,12 @@ function addStudioLighting(scene) {
  * - supports authoritative body_state.objects model_ref entries
  * - respects object.enabled === false
  * - supports url fallback in addition to asset_ref
+ *
+ * ✅ Tier 7.48:
+ * - optional onViewerApiReady exposes:
+ *   - frameSelected()
+ *   - frameScene()
+ *   - applyPreset(preset)
  */
 export default function ThreeSceneViewer({
   sceneIndex,
@@ -237,6 +267,7 @@ export default function ThreeSceneViewer({
   canEdit = true, // ✅ NEW (default true so older callers behave the same)
   onCommitTool = null, // ✅ Tier 7.38 (optional)
   materialOverrides = null, // ✅ Tier 7.42 (optional, additive-safe)
+  onViewerApiReady = null, // ✅ Tier 7.48
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -307,6 +338,9 @@ export default function ThreeSceneViewer({
   // ✅ Tier 7.42 material overrides ref (no remount)
   const materialOverridesRef = useRef(materialOverrides);
 
+  // ✅ Tier 7.48 viewer API callback ref (no remount)
+  const onViewerApiReadyRef = useRef(onViewerApiReady);
+
   // ✅ async sync nonce (prevents out-of-order decal sync from applying late)
   const decalsSyncNonceRef = useRef(0);
 
@@ -350,6 +384,10 @@ export default function ThreeSceneViewer({
     materialOverridesRef.current = materialOverrides;
   }, [materialOverrides]);
 
+  useEffect(() => {
+    onViewerApiReadyRef.current = onViewerApiReady;
+  }, [onViewerApiReady]);
+
   // Expose minimal internal sync hooks for secondary effects (no remount).
   const viewerApiRef = useRef({
     syncSelection: null,
@@ -361,6 +399,9 @@ export default function ThreeSceneViewer({
     syncDecalTarget: null,
     syncPickFilter: null,
     syncMaterials: null,
+    frameSelected: null,
+    frameScene: null,
+    applyPreset: null,
   });
 
   useEffect(() => {
@@ -417,6 +458,14 @@ export default function ThreeSceneViewer({
     // camera
     const rect = container.getBoundingClientRect();
     const camera = makeCamera(rect.width || 800, rect.height || 500);
+
+    // ✅ Tier 7.48 OrbitControls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.screenSpacePanning = true;
+    controls.target.set(0, 0.8, 0);
+    controls.update();
 
     // ✅ TransformControls (Step 1)
     const transformControls = new TransformControls(camera, renderer.domElement);
@@ -484,11 +533,6 @@ export default function ThreeSceneViewer({
       scene.add(selectionBoxHelper);
     }
 
-    // orbit drag
-    let isDragging = false,
-      lastX = 0,
-      lastY = 0;
-
     // ✅ Tier 7.37: decals holder + textures cache (lifetime = viewer mount)
     let decalPlanes = [];
     const textureLoader = new THREE.TextureLoader();
@@ -541,18 +585,68 @@ export default function ThreeSceneViewer({
       return hitMesh;
     }
 
+    // ✅ Tier 7.48 camera actions
+    function frameScene() {
+      const bounds = computeVisibleSceneBounds(root);
+      if (bounds.isEmpty()) {
+        fitCameraToScene(camera, root, controls);
+        return;
+      }
+
+      applyCameraPreset({
+        camera,
+        controls,
+        bounds,
+        preset: "iso",
+      });
+    }
+
+    function frameSelected() {
+      const bounds = computeSelectedBounds(root, selectedIdRef.current);
+      if (bounds.isEmpty()) {
+        frameScene();
+        return;
+      }
+
+      applyCameraPreset({
+        camera,
+        controls,
+        bounds,
+        preset: "iso",
+      });
+    }
+
+    function applyPreset(preset) {
+      const selectedBounds = computeSelectedBounds(root, selectedIdRef.current);
+      const bounds = selectedBounds.isEmpty()
+        ? computeVisibleSceneBounds(root)
+        : selectedBounds;
+
+      if (bounds.isEmpty()) {
+        fitCameraToScene(camera, root, controls);
+        return;
+      }
+
+      applyCameraPreset({
+        camera,
+        controls,
+        bounds,
+        preset,
+      });
+    }
+
     function frameSelectedOrScene() {
       const sid = selectedIdRef.current;
       if (!sid) {
-        fitCameraToScene(camera, root);
+        frameScene();
         return;
       }
 
       const objectKey = String(sid).split("::")[0];
       const group = objectGroups.get(objectKey);
 
-      if (group) fitCameraToObject(camera, group);
-      else fitCameraToScene(camera, root);
+      if (group) frameSelected();
+      else frameScene();
     }
 
     // ✅ Tier 7.27 ghost holder
@@ -839,8 +933,10 @@ export default function ThreeSceneViewer({
       const dragging = !!e?.value;
       gizmoDragging = dragging;
 
+      // ✅ Tier 7.48: disable orbit while transform gizmo is dragging
+      controls.enabled = !dragging;
+
       if (dragging) {
-        isDragging = false;
         dragSession += 1;
         committedForSession = false;
       }
@@ -896,36 +992,7 @@ export default function ThreeSceneViewer({
     }
     transformControls.addEventListener("objectChange", onGizmoObjectChange);
 
-    function onPointerDown(e) {
-      if (gizmoDragging) return;
-      isDragging = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
-    }
-    function onPointerUp() {
-      isDragging = false;
-    }
-    function onPointerMove(e) {
-      if (!isDragging) return;
-      const dx = (e.clientX - lastX) * 0.005;
-      const dy = (e.clientY - lastY) * 0.005;
-      lastX = e.clientX;
-      lastY = e.clientY;
-
-      const offset = camera.position.clone();
-      const spherical = new THREE.Spherical().setFromVector3(offset);
-      spherical.theta -= dx;
-      spherical.phi = Math.min(Math.max(0.2, spherical.phi - dy), Math.PI - 0.2);
-      offset.setFromSpherical(spherical);
-      camera.position.copy(offset);
-      camera.lookAt(0, 0.8, 0);
-    }
-
-    container.addEventListener("pointerdown", onPointerDown);
-    container.addEventListener("pointerup", onPointerUp);
-    container.addEventListener("pointerleave", onPointerUp);
-    container.addEventListener("pointermove", onPointerMove);
-
+    // ✅ Tier 7.48 resize
     function resize() {
       const r = container.getBoundingClientRect();
       const w = Math.max(1, Math.floor(r.width));
@@ -1043,6 +1110,7 @@ export default function ThreeSceneViewer({
         group.name = `obj:${objectKey}`;
         group.userData.kind = kind;
         group.userData.pickId = `obj:${objectKey}`;
+        group.userData.objectId = objectKey;
 
         // combine outliner visibility with layer visibility deterministically
         group.visible = !!cfg.visible && obj?.enabled !== false;
@@ -1062,6 +1130,7 @@ export default function ThreeSceneViewer({
 
         if (!assetRef) {
           const placeholder = makePlaceholderMesh(objectKey);
+          placeholder.userData.objectId = objectKey;
           group.add(placeholder);
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
@@ -1071,6 +1140,7 @@ export default function ThreeSceneViewer({
             if (mp) {
               setMeshPathsForObject(objectKey, [mp]);
               placeholder.userData.pickId = `mesh:${objectKey}::${mp}`;
+              placeholder.userData.meshPath = mp;
             }
           } catch {}
 
@@ -1106,6 +1176,7 @@ export default function ThreeSceneViewer({
           gltfRoot.traverse((node) => {
             if (!node || !node.isMesh) return;
 
+            node.userData.objectId = objectKey;
             applyOpacityToMaterial(node.material, cfg.opacity);
 
             allMeshes.add(node);
@@ -1115,6 +1186,7 @@ export default function ThreeSceneViewer({
               if (mp) {
                 meshPaths.push(mp);
                 node.userData.pickId = `mesh:${objectKey}::${mp}`;
+                node.userData.meshPath = mp;
               }
             } catch {}
 
@@ -1134,6 +1206,7 @@ export default function ThreeSceneViewer({
           });
 
           const placeholder = makePlaceholderMesh(`${objectKey} (failed)`);
+          placeholder.userData.objectId = objectKey;
           group.add(placeholder);
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
@@ -1143,6 +1216,7 @@ export default function ThreeSceneViewer({
             if (mp) {
               setMeshPathsForObject(objectKey, [mp]);
               placeholder.userData.pickId = `mesh:${objectKey}::${mp}`;
+              placeholder.userData.meshPath = mp;
             }
           } catch {}
 
@@ -1162,7 +1236,8 @@ export default function ThreeSceneViewer({
 
       applyMaterialOverridesNow();
 
-      fitCameraToScene(camera, root);
+      // ✅ Tier 7.48 deterministic initial framing
+      frameScene();
 
       applyPreviewGhost();
       updateSelectionBox();
@@ -1200,6 +1275,11 @@ export default function ThreeSceneViewer({
             }
           }
         } catch {}
+
+        // also include any explicit decal pick ids from planes
+        if (obj.userData?.pickId && String(obj.userData.pickId).startsWith("decal:")) {
+          ids.push(String(obj.userData.pickId));
+        }
       }
 
       return ids.filter(Boolean);
@@ -1275,8 +1355,8 @@ export default function ThreeSceneViewer({
         const base = decalBaseById.get(String(chosen.key));
         const ownerKey = base?.targetId ? String(base.targetId).split("::")[0] : null;
         const group = ownerKey ? objectGroups.get(ownerKey) : null;
-        if (group) fitCameraToObject(camera, group);
-        else fitCameraToScene(camera, root);
+        if (group) fitCameraToObject(camera, group, controls);
+        else frameScene();
 
         return;
       }
@@ -1285,25 +1365,28 @@ export default function ThreeSceneViewer({
 
       if (chosen.kind === "mesh") {
         setSelectedId(chosen.key);
-        const objectKey = String(chosen.key).split("::")[0];
-        const group = objectGroups.get(objectKey);
-        if (group) fitCameraToObject(camera, group);
-        else fitCameraToScene(camera, root);
+        frameSelected();
         return;
       }
 
       if (chosen.kind === "obj") {
         setSelectedId(chosen.key);
         const group = objectGroups.get(String(chosen.key));
-        if (group) fitCameraToObject(camera, group);
-        else fitCameraToScene(camera, root);
+        if (group) fitCameraToObject(camera, group, controls);
+        else frameScene();
         return;
       }
     }
 
     function onKeyDown(e) {
-      if (String(e.key || "").toLowerCase() === "f") {
-        frameSelectedOrScene();
+      const key = String(e.key || "").toLowerCase();
+
+      if (key === "f" && !e.shiftKey) {
+        e.preventDefault();
+        frameSelected();
+      } else if (key === "f" && e.shiftKey) {
+        e.preventDefault();
+        frameScene();
       }
     }
 
@@ -1315,6 +1398,7 @@ export default function ThreeSceneViewer({
     function tick() {
       raf = requestAnimationFrame(tick);
       if (contextLost) return;
+      controls.update();
       renderer.render(scene, camera);
     }
     tick();
@@ -1346,6 +1430,23 @@ export default function ThreeSceneViewer({
       applyMaterialOverridesNow();
     };
 
+    // ✅ Tier 7.48 viewer API
+    viewerApiRef.current.frameSelected = () => {
+      frameSelected();
+    };
+    viewerApiRef.current.frameScene = () => {
+      frameScene();
+    };
+    viewerApiRef.current.applyPreset = (preset) => {
+      applyPreset(preset);
+    };
+
+    onViewerApiReadyRef.current?.({
+      frameSelected: viewerApiRef.current.frameSelected,
+      frameScene: viewerApiRef.current.frameScene,
+      applyPreset: viewerApiRef.current.applyPreset,
+    });
+
     viewerApiRef.current.syncSelection?.();
     viewerApiRef.current.syncPreview?.();
     viewerApiRef.current.syncDecals?.();
@@ -1364,6 +1465,11 @@ export default function ThreeSceneViewer({
       viewerApiRef.current.syncDecalTarget = null;
       viewerApiRef.current.syncPickFilter = null;
       viewerApiRef.current.syncMaterials = null;
+      viewerApiRef.current.frameSelected = null;
+      viewerApiRef.current.frameScene = null;
+      viewerApiRef.current.applyPreset = null;
+
+      onViewerApiReadyRef.current?.(null);
 
       clearGhost();
       clearSelectionBox();
@@ -1384,14 +1490,11 @@ export default function ThreeSceneViewer({
       transformControls.detach();
       scene.remove(transformControls);
 
+      controls.dispose();
+
       canvas.removeEventListener("click", onClick);
       canvas.removeEventListener("dblclick", onDoubleClick);
       window.removeEventListener("keydown", onKeyDown);
-
-      container.removeEventListener("pointerdown", onPointerDown);
-      container.removeEventListener("pointerup", onPointerUp);
-      container.removeEventListener("pointerleave", onPointerUp);
-      container.removeEventListener("pointermove", onPointerMove);
 
       ro.disconnect();
 
@@ -1449,6 +1552,15 @@ export default function ThreeSceneViewer({
     viewerApiRef.current?.syncMaterials?.();
   }, [materialOverrides]);
 
+  // ✅ Tier 7.48 keep parent page API stable as callback prop changes
+  useEffect(() => {
+    onViewerApiReadyRef.current?.({
+      frameSelected: viewerApiRef.current?.frameSelected || null,
+      frameScene: viewerApiRef.current?.frameScene || null,
+      applyPreset: viewerApiRef.current?.applyPreset || null,
+    });
+  }, [onViewerApiReady, selectedId]);
+
   return (
     <div className="border rounded p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -1474,11 +1586,12 @@ export default function ThreeSceneViewer({
 
       <div className="text-xs opacity-70">
         Click to select (Tier 7.41 filter applies). Double-click to focus. Press <b>F</b> to frame
-        selected (or whole scene). TransformControls mode is synced with the panel. Bounding box
-        shows selection target (6G.9). If an active decal is selected (7.38), the gizmo targets the
-        decal proxy first. Decals are pickable (7.41) via deterministic pick resolution. If{" "}
-        <code>materialOverrides</code> are provided (7.42), they are applied after load and on
-        updates (viewer-safe, no remount). Scene outliner visibility is respected via{" "}
+        selected and <b>Shift+F</b> to frame the full scene. Orbit/pan/zoom now use{" "}
+        <code>OrbitControls</code> (7.48). TransformControls mode is synced with the panel.
+        Bounding box shows selection target (6G.9). If an active decal is selected (7.38), the
+        gizmo targets the decal proxy first. Decals are pickable (7.41) via deterministic pick
+        resolution. If <code>materialOverrides</code> are provided (7.42), they are applied after
+        load and on updates (viewer-safe, no remount). Scene outliner visibility is respected via{" "}
         <code>object.enabled</code> (7.47). Model refs can load from <code>asset_ref</code> or{" "}
         <code>url</code> (7.46).
       </div>

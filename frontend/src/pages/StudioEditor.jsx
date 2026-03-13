@@ -29,6 +29,9 @@ import ViewModeSelect from "../editor/view/ViewModeSelect";
 // ✅ Tier 7.45 ADD (HDR studio lighting controls)
 import LightingControls from "../editor/view/LightingControls";
 
+// ✅ Tier 7.48 ADD (camera toolbar)
+import CameraToolbar from "../editor/camera/CameraToolbar";
+
 // ✅ Tier 7.1 ADD (selection + transform toolbar)
 import { useSelection } from "../editor/selection/useSelection";
 import TransformToolbar from "../editor/tools/TransformToolbar";
@@ -178,6 +181,9 @@ export default function StudioEditor() {
 
   // ✅ Tier 6S.6 ADD — force refresh/re-mount of lab panel after scenario creation
   const [labRefreshKey, setLabRefreshKey] = useState(0);
+
+  // ✅ Tier 7.48 ADD — viewer camera API ref
+  const viewerApiRef = useRef(null);
 
   // ===============================
   // DIRTY STATE (EDITOR-LOCAL)
@@ -628,6 +634,15 @@ export default function StudioEditor() {
           <ViewModeSelect />
         </div>
 
+        {/* ✅ Tier 7.48 — Camera toolbar */}
+        <div className="p-3 pt-2 pb-0">
+          <CameraToolbar
+            onFrameSelected={() => viewerApiRef.current?.frameSelected?.()}
+            onFrameScene={() => viewerApiRef.current?.frameScene?.()}
+            onPreset={(preset) => viewerApiRef.current?.applyPreset?.(preset)}
+          />
+        </div>
+
         {/* ✅ Tier 7.45 — Studio lighting toggles (viewer-only) */}
         <div className="p-3 pt-2 pb-0">
           <LightingControls />
@@ -851,6 +866,9 @@ export default function StudioEditor() {
                 disabled={!activeSnapshot?.id}
                 canEdit={toolsEnabled}
                 onCommitTool={(p) => commitToolPayload(p)}
+                onViewerApiReady={(api) => {
+                  viewerApiRef.current = api;
+                }}
               />
             </div>
 

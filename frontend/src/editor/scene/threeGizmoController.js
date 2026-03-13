@@ -1,9 +1,11 @@
 import * as THREE from "three";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-
-function cloneVec3(v) {
-  return { x: v.x, y: v.y, z: v.z };
-}
+import {
+  snapTranslateDelta,
+  snapRotateDegrees,
+  snapScaleFactor,
+  applyAxisLockToAxis,
+} from "../transform/snapMath";
 
 function radToDeg(r) {
   return (r * 180) / Math.PI;
@@ -38,6 +40,85 @@ function isNearlyZero(n, eps = 1e-6) {
   return Math.abs(n) < eps;
 }
 
+function safeSnapState(raw) {
+  const snap = raw || {};
+  return {
+    enabled: !!snap.enabled,
+    step: Number.isFinite(Number(snap.step)) && Number(snap.step) > 0 ? Number(snap.step) : 0.1,
+    step_degrees:
+      Number.isFinite(Number(snap.step_degrees)) && Number(snap.step_degrees) > 0
+        ? Number(snap.step_degrees)
+        : 5,
+    step_factor:
+      Number.isFinite(Number(snap.step_factor)) && Number(snap.step_factor) > 0
+        ? Number(snap.step_factor)
+        : 0.1,
+    axis_lock: ["none", "x", "y", "z"].includes(String(snap.axis_lock))
+      ? String(snap.axis_lock)
+      : "none",
+    orientation: ["local", "world"].includes(String(snap.orientation))
+      ? String(snap.orientation)
+      : "local",
+  };
+}
+
+function chooseDominantRotationAxis(dx, dy, dz) {
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  const az = Math.abs(dz);
+
+  let axis = "y";
+  let degrees = dy;
+
+  if (ax >= ay && ax >= az) {
+    axis = "x";
+    degrees = dx;
+  } else if (az >= ax && az >= ay) {
+    axis = "z";
+    degrees = dz;
+  }
+
+  return { axis, degrees };
+}
+
+function chooseScaleAxisAndFactor(obj, start) {
+  const sx = obj.scale.x / (start.scale.x || 1);
+  const sy = obj.scale.y / (start.scale.y || 1);
+  const sz = obj.scale.z / (start.scale.z || 1);
+
+  const avg = (sx + sy + sz) / 3;
+  const spread = Math.max(
+    Math.abs(sx - avg),
+    Math.abs(sy - avg),
+    Math.abs(sz - avg)
+  );
+
+  let axis = "uniform";
+  let factor = avg;
+
+  if (spread > 0.05) {
+    const ax = Math.abs(sx - 1);
+    const ay = Math.abs(sy - 1);
+    const az = Math.abs(sz - 1);
+
+    axis = "x";
+    factor = sx;
+
+    if (ay >= ax && ay >= az) {
+      axis = "y";
+      factor = sy;
+    } else if (az >= ax && az >= ay) {
+      axis = "z";
+      factor = sz;
+    }
+  }
+
+  if (!Number.isFinite(factor)) factor = 1;
+  factor = Math.max(0.01, Math.min(100, factor));
+
+  return { axis, factor };
+}
+
 /**
  * Creates a TransformControls gizmo and wires it to:
  * - preview updates during drag
@@ -46,7 +127,7 @@ function isNearlyZero(n, eps = 1e-6) {
  * Required callbacks:
  * - getTargetGroup(): THREE.Object3D | null  (selected obj group)
  * - getMode(): "translate"|"rotate"|"scale"
- * - getSnap(): { enabled, step, step_degrees, step_factor }
+ * - getSnap(): { enabled, step, step_degrees, step_factor, axis_lock, orientation }
  * - onPreview(previewState|null)
  * - onCommit(toolPayload)   (single commit on release)
  */
@@ -97,46 +178,54 @@ export function createThreeGizmoController({
   }
 
   function applySnapFromState() {
-    const snap = getSnap?.() || {};
+    const snap = safeSnapState(getSnap?.());
+
+    controls.setSpace(snap.orientation === "world" ? "world" : "local");
+
     if (controls.mode === "translate") {
-      controls.setTranslationSnap(snap.enabled ? snap.step || null : null);
+      controls.setTranslationSnap(snap.enabled ? snap.step : null);
     } else if (controls.mode === "rotate") {
-      // rotate snap is in radians
       controls.setRotationSnap(
-        snap.enabled ? ((snap.step_degrees || 0) * Math.PI) / 180 : null
+        snap.enabled ? (snap.step_degrees * Math.PI) / 180 : null
       );
     } else if (controls.mode === "scale") {
-      controls.setScaleSnap(snap.enabled ? snap.step_factor || null : null);
+      controls.setScaleSnap(snap.enabled ? snap.step_factor : null);
     }
   }
 
   // call this when selection/mode/snap changes
   function sync() {
-    // Always update mode first (important if selection didn't change)
     controls.setMode(getMode?.() || "translate");
-
-    // Ensure attachment is correct (selection might have changed)
     attachIfPossible();
-
-    // Optional snapping (always refresh; avoids stale snap when toggled)
     applySnapFromState();
   }
 
   function commitTranslate(obj, snap) {
-    const delta = obj.position.clone().sub(start.pos);
-    const d = roundVec3(delta, 6);
+    const rawDelta = obj.position.clone().sub(start.pos);
+    const snapped = snapTranslateDelta(
+      { x: rawDelta.x, y: rawDelta.y, z: rawDelta.z },
+      snap
+    );
+    const d = roundVec3(snapped, 6);
 
-    // prevent no-op commits
     if (isNearlyZeroVec3(d, 1e-6)) return;
+
+    const axis = applyAxisLockToAxis("free", snap);
 
     const payload = {
       tool: "TRANSLATE",
       station: "geometry",
       payload: {
-        target_id: null, // caller should fill
-        axis: "free",
+        target_id: null,
+        axis,
         delta: d,
-        snap: { enabled: !!snap.enabled, step: snap.step || 0 },
+        orientation: snap.orientation || "local",
+        snap: {
+          enabled: !!snap.enabled,
+          step: snap.step || 0.1,
+          axis_lock: snap.axis_lock || "none",
+          orientation: snap.orientation || "local",
+        },
       },
     };
     onCommit?.(payload);
@@ -147,13 +236,13 @@ export function createThreeGizmoController({
     const dy = roundDeg(radToDeg(obj.rotation.y - start.rot.y), 4);
     const dz = roundDeg(radToDeg(obj.rotation.z - start.rot.z), 4);
 
-    // choose dominant axis change to keep payload canonical
-    const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
-    let axis = "y", degrees = dy;
-    if (ax >= ay && ax >= az) { axis = "x"; degrees = dx; }
-    else if (az >= ax && az >= ay) { axis = "z"; degrees = dz; }
+    const chosen = chooseDominantRotationAxis(dx, dy, dz);
+    const axis = applyAxisLockToAxis(chosen.axis, snap);
+    const rawDegreesForAxis =
+      axis === "x" ? dx : axis === "y" ? dy : axis === "z" ? dz : chosen.degrees;
 
-    // prevent no-op commits
+    const degrees = roundDeg(snapRotateDegrees(rawDegreesForAxis, snap), 4);
+
     if (isNearlyZero(degrees, 1e-6)) return;
 
     const payload = {
@@ -163,38 +252,23 @@ export function createThreeGizmoController({
         target_id: null,
         axis,
         degrees,
-        snap: { enabled: !!snap.enabled, step_degrees: snap.step_degrees || 0 },
+        orientation: snap.orientation || "local",
+        snap: {
+          enabled: !!snap.enabled,
+          step_degrees: snap.step_degrees || 5,
+          axis_lock: snap.axis_lock || "none",
+          orientation: snap.orientation || "local",
+        },
       },
     };
     onCommit?.(payload);
   }
 
   function commitScale(obj, snap) {
-    const sx = obj.scale.x / (start.scale.x || 1);
-    const sy = obj.scale.y / (start.scale.y || 1);
-    const sz = obj.scale.z / (start.scale.z || 1);
+    const chosen = chooseScaleAxisAndFactor(obj, start);
+    const axis = applyAxisLockToAxis(chosen.axis, snap);
+    const factor = round(snapScaleFactor(chosen.factor, snap), 6);
 
-    // choose uniform if nearly uniform
-    const avg = (sx + sy + sz) / 3;
-    const spread = Math.max(Math.abs(sx - avg), Math.abs(sy - avg), Math.abs(sz - avg));
-
-    let axis = "uniform";
-    let factor = avg;
-
-    if (spread > 0.05) {
-      // dominant axis scaling
-      const ax = Math.abs(sx - 1), ay = Math.abs(sy - 1), az = Math.abs(sz - 1);
-      axis = "x"; factor = sx;
-      if (ay >= ax && ay >= az) { axis = "y"; factor = sy; }
-      else if (az >= ax && az >= ay) { axis = "z"; factor = sz; }
-    }
-
-    // clamp + round
-    if (!Number.isFinite(factor)) factor = 1;
-    factor = Math.max(0.01, Math.min(100, factor));
-    factor = round(factor, 6);
-
-    // prevent no-op commits
     if (isNearlyZero(factor - 1, 1e-6)) return;
 
     const payload = {
@@ -204,13 +278,18 @@ export function createThreeGizmoController({
         target_id: null,
         axis,
         factor,
-        snap: { enabled: !!snap.enabled, step_factor: snap.step_factor || 0 },
+        orientation: snap.orientation || "local",
+        snap: {
+          enabled: !!snap.enabled,
+          step_factor: snap.step_factor || 0.1,
+          axis_lock: snap.axis_lock || "none",
+          orientation: snap.orientation || "local",
+        },
       },
     };
     onCommit?.(payload);
   }
 
-  // When dragging begins/ends
   const onDraggingChanged = (e) => {
     dragging = !!e.value;
 
@@ -218,48 +297,54 @@ export function createThreeGizmoController({
     if (!obj) return;
 
     if (dragging) {
-      // New drag session
       dragSessionId += 1;
       committedForSession = false;
-
       captureStart(obj);
     } else {
-      // drag ended => commit once
       if (committedForSession) return;
       committedForSession = true;
 
       onPreview?.(null);
 
       const mode = controls.mode;
-      const snap = getSnap?.() || {};
+      const snap = safeSnapState(getSnap?.());
 
-      // compute deltas
       if (mode === "translate") commitTranslate(obj, snap);
       if (mode === "rotate") commitRotate(obj, snap);
       if (mode === "scale") commitScale(obj, snap);
     }
   };
 
-  // While dragging, emit preview updates
   const onObjectChange = () => {
     if (!dragging) return;
     const obj = controls.object;
     if (!obj) return;
 
     const mode = controls.mode;
-    const snap = getSnap?.() || {};
+    const snap = safeSnapState(getSnap?.());
 
     if (mode === "translate") {
-      const delta = obj.position.clone().sub(start.pos);
-      const d = roundVec3(delta, 6);
+      const rawDelta = obj.position.clone().sub(start.pos);
+      const snapped = snapTranslateDelta(
+        { x: rawDelta.x, y: rawDelta.y, z: rawDelta.z },
+        snap
+      );
+      const d = roundVec3(snapped, 6);
+      const axis = applyAxisLockToAxis("free", snap);
 
       onPreview?.({
         tool: "TRANSLATE",
         payload: {
           target_id: null,
-          axis: "free",
+          axis,
           delta: d,
-          snap: { enabled: !!snap.enabled, step: snap.step || 0 },
+          orientation: snap.orientation || "local",
+          snap: {
+            enabled: !!snap.enabled,
+            step: snap.step || 0.1,
+            axis_lock: snap.axis_lock || "none",
+            orientation: snap.orientation || "local",
+          },
         },
       });
     }
@@ -269,10 +354,12 @@ export function createThreeGizmoController({
       const dy = roundDeg(radToDeg(obj.rotation.y - start.rot.y), 4);
       const dz = roundDeg(radToDeg(obj.rotation.z - start.rot.z), 4);
 
-      const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
-      let axis = "y", degrees = dy;
-      if (ax >= ay && ax >= az) { axis = "x"; degrees = dx; }
-      else if (az >= ax && az >= ay) { axis = "z"; degrees = dz; }
+      const chosen = chooseDominantRotationAxis(dx, dy, dz);
+      const axis = applyAxisLockToAxis(chosen.axis, snap);
+      const rawDegreesForAxis =
+        axis === "x" ? dx : axis === "y" ? dy : axis === "z" ? dz : chosen.degrees;
+
+      const degrees = roundDeg(snapRotateDegrees(rawDegreesForAxis, snap), 4);
 
       onPreview?.({
         tool: "ROTATE",
@@ -280,32 +367,21 @@ export function createThreeGizmoController({
           target_id: null,
           axis,
           degrees,
-          snap: { enabled: !!snap.enabled, step_degrees: snap.step_degrees || 0 },
+          orientation: snap.orientation || "local",
+          snap: {
+            enabled: !!snap.enabled,
+            step_degrees: snap.step_degrees || 5,
+            axis_lock: snap.axis_lock || "none",
+            orientation: snap.orientation || "local",
+          },
         },
       });
     }
 
     if (mode === "scale") {
-      const sx = obj.scale.x / (start.scale.x || 1);
-      const sy = obj.scale.y / (start.scale.y || 1);
-      const sz = obj.scale.z / (start.scale.z || 1);
-
-      const avg = (sx + sy + sz) / 3;
-      const spread = Math.max(Math.abs(sx - avg), Math.abs(sy - avg), Math.abs(sz - avg));
-
-      let axis = "uniform";
-      let factor = avg;
-
-      if (spread > 0.05) {
-        const ax = Math.abs(sx - 1), ay = Math.abs(sy - 1), az = Math.abs(sz - 1);
-        axis = "x"; factor = sx;
-        if (ay >= ax && ay >= az) { axis = "y"; factor = sy; }
-        else if (az >= ax && az >= ay) { axis = "z"; factor = sz; }
-      }
-
-      if (!Number.isFinite(factor)) factor = 1;
-      factor = Math.max(0.01, Math.min(100, factor));
-      factor = round(factor, 6);
+      const chosen = chooseScaleAxisAndFactor(obj, start);
+      const axis = applyAxisLockToAxis(chosen.axis, snap);
+      const factor = round(snapScaleFactor(chosen.factor, snap), 6);
 
       onPreview?.({
         tool: "SCALE",
@@ -313,7 +389,13 @@ export function createThreeGizmoController({
           target_id: null,
           axis,
           factor,
-          snap: { enabled: !!snap.enabled, step_factor: snap.step_factor || 0 },
+          orientation: snap.orientation || "local",
+          snap: {
+            enabled: !!snap.enabled,
+            step_factor: snap.step_factor || 0.1,
+            axis_lock: snap.axis_lock || "none",
+            orientation: snap.orientation || "local",
+          },
         },
       });
     }
@@ -322,17 +404,22 @@ export function createThreeGizmoController({
   controls.addEventListener("dragging-changed", onDraggingChanged);
   controls.addEventListener("objectChange", onObjectChange);
 
-  /**
-   * Optional: full cleanup (recommended for React unmount)
-   * - does NOT remove your detach()
-   * - does NOT remove anything else
-   */
   function dispose() {
-    try { controls.removeEventListener("dragging-changed", onDraggingChanged); } catch {}
-    try { controls.removeEventListener("objectChange", onObjectChange); } catch {}
-    try { controls.detach(); } catch {}
-    try { scene.remove(controls); } catch {}
-    try { controls.dispose?.(); } catch {}
+    try {
+      controls.removeEventListener("dragging-changed", onDraggingChanged);
+    } catch {}
+    try {
+      controls.removeEventListener("objectChange", onObjectChange);
+    } catch {}
+    try {
+      controls.detach();
+    } catch {}
+    try {
+      scene.remove(controls);
+    } catch {}
+    try {
+      controls.dispose?.();
+    } catch {}
   }
 
   return { controls, sync, detach, dispose };

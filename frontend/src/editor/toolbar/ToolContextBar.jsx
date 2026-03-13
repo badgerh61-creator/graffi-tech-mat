@@ -1,5 +1,5 @@
 // frontend/src/editor/toolbar/ToolContextBar.jsx
-import React, { useMemo } from "react"; // ✅ React in scope for classic JSX runtime
+import React, { useMemo } from "react";
 import { useSelection } from "../selection/selectionStore";
 import { useGizmoMode, setGizmoMode } from "../gizmo/gizmoModeStore";
 import { useSnap, setSnap } from "../transform/snapStore";
@@ -55,14 +55,14 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
   }, [selectedId]);
 
   return (
-    <div className="border rounded p-2 flex items-center gap-2">
+    <div className="border rounded p-2 flex items-center gap-2 flex-wrap">
       <div className="text-sm font-semibold">Tool</div>
 
       <div className="text-xs opacity-70">
         Selection: <span className="font-mono">{selectionShort}</span>
       </div>
 
-      {/* ✅ Tier 7.41 — Selection filter (always allowed, even in READ mode) */}
+      {/* ✅ Tier 7.41 — Selection filter */}
       <div className="flex items-center gap-2 ml-2">
         <div className="text-xs opacity-70">Select</div>
         <select
@@ -117,40 +117,80 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         </label>
 
         <div className="text-xs opacity-70">
-          Δ:{" "}
+          Move:
           <input
-            className="border rounded px-2 py-1 w-20"
+            className="border rounded px-2 py-1 w-20 ml-1"
             type="number"
             step="0.01"
             disabled={!canEdit || !snap.enabled}
             value={snap.step}
-            onChange={(e) => setSnap({ step: Number(e.target.value || 0) })}
+            onChange={(e) => setSnap({ step: Number(e.target.value || 0.1) })}
           />
         </div>
 
         <div className="text-xs opacity-70">
-          °:{" "}
+          Rotate:
           <input
-            className="border rounded px-2 py-1 w-20"
+            className="border rounded px-2 py-1 w-20 ml-1"
             type="number"
             step="1"
             disabled={!canEdit || !snap.enabled}
             value={snap.step_degrees}
-            onChange={(e) => setSnap({ step_degrees: Number(e.target.value || 0) })}
+            onChange={(e) =>
+              setSnap({ step_degrees: Number(e.target.value || 5) })
+            }
           />
         </div>
 
         <div className="text-xs opacity-70">
-          S:{" "}
+          Scale:
           <input
-            className="border rounded px-2 py-1 w-20"
+            className="border rounded px-2 py-1 w-20 ml-1"
             type="number"
             step="0.01"
             disabled={!canEdit || !snap.enabled}
             value={snap.step_factor}
-            onChange={(e) => setSnap({ step_factor: Number(e.target.value || 0) })}
+            onChange={(e) =>
+              setSnap({ step_factor: Number(e.target.value || 0.1) })
+            }
           />
         </div>
+      </div>
+
+      <div className="flex items-center gap-1 ml-3">
+        <span className="text-xs opacity-70">Axis</span>
+        {["none", "x", "y", "z"].map((axis) => {
+          const active = snap.axis_lock === axis;
+          return (
+            <button
+              key={axis}
+              className={
+                active
+                  ? "border rounded px-2 py-1 text-xs bg-gray-100"
+                  : "border rounded px-2 py-1 text-xs"
+              }
+              disabled={!canEdit}
+              onClick={() => setSnap({ axis_lock: axis })}
+              title={`Axis lock ${axis.toUpperCase()}`}
+            >
+              {axis.toUpperCase()}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-2 ml-3">
+        <span className="text-xs opacity-70">Space</span>
+        <select
+          className="border rounded px-2 py-1 text-sm"
+          disabled={!canEdit}
+          value={snap.orientation}
+          onChange={(e) => setSnap({ orientation: e.target.value })}
+          title="Transform Orientation"
+        >
+          <option value="local">Local</option>
+          <option value="world">World</option>
+        </select>
       </div>
 
       <div className="flex-1" />

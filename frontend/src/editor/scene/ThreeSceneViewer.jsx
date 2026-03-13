@@ -30,6 +30,9 @@ import { useGizmoPreview } from "../gizmo/gizmoPreviewStore";
 // ✅ Step 6 — shared gizmo mode store
 import { useGizmoMode } from "../gizmo/gizmoModeStore";
 
+// ✅ Tier 7.49 — canonical snap store
+import { useSnap } from "../transform/snapStore";
+
 // ✅ Tier 7.38 — active decal + preview patch store
 import { useActiveDecal } from "../decals/activeDecalStore";
 import {
@@ -56,7 +59,6 @@ import {
 } from "./sceneBounds";
 
 function makeRenderer(canvas) {
-  // Prefer WebGL2, fallback WebGL1. If neither exists, return null.
   const gl2 = canvas.getContext("webgl2", { antialias: true });
   const gl1 = gl2 ? null : canvas.getContext("webgl", { antialias: true });
   const gl = gl2 || gl1;
@@ -70,7 +72,6 @@ function makeRenderer(canvas) {
     preserveDrawingBuffer: false,
   });
 
-  // ✅ safer defaults for modern Three (studio-like look)
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   r.outputColorSpace = THREE.SRGBColorSpace;
   r.toneMapping = THREE.ACESFilmicToneMapping;
@@ -157,7 +158,6 @@ function applyOpacityToMaterial(material, opacity) {
   }
 }
 
-// ✅ Tier 7.37 helper (builtin checker texture)
 function makeCheckerTexture(size = 128, cells = 8) {
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -212,10 +212,7 @@ function eulerDegPatch(e, p = 2) {
   };
 }
 
-// ✅ NEW (additive-safe): “studio lighting” builder that keeps your old behavior but looks better.
-// No external deps, no HDR requirement.
 function addStudioLighting(scene) {
-  // Remove nothing; caller decides whether to call once per mount.
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9);
   hemi.name = "light:hemi";
   scene.add(hemi);
@@ -234,6 +231,28 @@ function addStudioLighting(scene) {
   rim.name = "light:rim";
   rim.position.set(0, 6, -8);
   scene.add(rim);
+}
+
+function normalizeSnapState(raw) {
+  const snap = raw || {};
+  return {
+    enabled: !!snap.enabled,
+    step: Number.isFinite(Number(snap.step)) && Number(snap.step) > 0 ? Number(snap.step) : 0.1,
+    step_degrees:
+      Number.isFinite(Number(snap.step_degrees)) && Number(snap.step_degrees) > 0
+        ? Number(snap.step_degrees)
+        : 5,
+    step_factor:
+      Number.isFinite(Number(snap.step_factor)) && Number(snap.step_factor) > 0
+        ? Number(snap.step_factor)
+        : 0.1,
+    axis_lock: ["none", "x", "y", "z"].includes(String(snap.axis_lock))
+      ? String(snap.axis_lock)
+      : "none",
+    orientation: ["local", "world"].includes(String(snap.orientation))
+      ? String(snap.orientation)
+      : "local",
+  };
 }
 
 /**
@@ -260,40 +279,39 @@ function addStudioLighting(scene) {
  *   - frameSelected()
  *   - frameScene()
  *   - applyPreset(preset)
+ *
+ * ✅ Tier 7.49:
+ * - TransformControls snap + local/world orientation read from canonical snapStore
+ * - no remount on snap changes
  */
 export default function ThreeSceneViewer({
   sceneIndex,
   disabled = false,
-  canEdit = true, // ✅ NEW (default true so older callers behave the same)
-  onCommitTool = null, // ✅ Tier 7.38 (optional)
-  materialOverrides = null, // ✅ Tier 7.42 (optional, additive-safe)
-  onViewerApiReady = null, // ✅ Tier 7.48
+  canEdit = true,
+  onCommitTool = null,
+  materialOverrides = null,
+  onViewerApiReady = null,
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
   const { selectedId } = useSelection();
 
-  // ✅ 6G.6 layers state
   const layers = useSceneLayers();
-
-  // ✅ 7.27 preview state
   const { preview } = useGizmoPreview();
-
-  // ✅ shared gizmo mode (translate/rotate/scale)
   const { mode: gizmoMode } = useGizmoMode();
 
-  // ✅ Tier 7.38 active decal + preview patches
+  // ✅ Tier 7.49
+  const snapState = useSnap().snap;
+
   const { decalId: activeDecalId } = useActiveDecal();
   const decalPreview = useDecalPreview();
 
-  // ✅ Tier 7.41 selection filter
   const { filter: selectionFilter } = useSelectionFilter();
 
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
-  // ✅ Tier 7.46 / 7.47: tolerate multiple shapes without breaking older tiers
   const objects = useMemo(() => {
     const a = sceneIndex?.objects;
     const b = sceneIndex?.body_state?.objects;
@@ -303,7 +321,6 @@ export default function ThreeSceneViewer({
     return Array.isArray(list) ? list.filter(Boolean) : [];
   }, [sceneIndex]);
 
-  // ✅ Tier 7.37: read decals (support a few possible shapes safely)
   const decals = useMemo(() => {
     const d1 = sceneIndex?.decor_state?.decals;
     const d2 = sceneIndex?.snapshot?.decor_state?.decals;
@@ -312,36 +329,22 @@ export default function ThreeSceneViewer({
     return Array.isArray(list) ? list.filter(Boolean) : [];
   }, [sceneIndex]);
 
-  // -------------------------------
-  // ✅ Prevent WebGL churn:
-  // keep rapidly-changing values in refs,
-  // so the main WebGL effect does NOT remount.
-  // -------------------------------
   const selectedIdRef = useRef(selectedId);
   const previewRef = useRef(preview);
   const gizmoModeRef = useRef(gizmoMode);
 
-  // ✅ canEdit ref (no remount)
+  // ✅ Tier 7.49 snap ref
+  const snapRef = useRef(normalizeSnapState(snapState));
+
   const canEditRef = useRef(!!canEdit);
-
-  // ✅ Tier 7.37 decals ref (no remount)
   const decalsRef = useRef(decals);
-
-  // ✅ Tier 7.38 active decal + preview refs (no remount)
   const activeDecalIdRef = useRef(activeDecalId);
   const decalPreviewRef = useRef(decalPreview);
   const onCommitToolRef = useRef(onCommitTool);
-
-  // ✅ Tier 7.41 selection filter ref (no remount)
   const selectionFilterRef = useRef(selectionFilter);
-
-  // ✅ Tier 7.42 material overrides ref (no remount)
   const materialOverridesRef = useRef(materialOverrides);
-
-  // ✅ Tier 7.48 viewer API callback ref (no remount)
   const onViewerApiReadyRef = useRef(onViewerApiReady);
 
-  // ✅ async sync nonce (prevents out-of-order decal sync from applying late)
   const decalsSyncNonceRef = useRef(0);
 
   useEffect(() => {
@@ -355,6 +358,11 @@ export default function ThreeSceneViewer({
   useEffect(() => {
     gizmoModeRef.current = gizmoMode;
   }, [gizmoMode]);
+
+  // ✅ Tier 7.49
+  useEffect(() => {
+    snapRef.current = normalizeSnapState(snapState);
+  }, [snapState]);
 
   useEffect(() => {
     canEditRef.current = !!canEdit;
@@ -388,7 +396,6 @@ export default function ThreeSceneViewer({
     onViewerApiReadyRef.current = onViewerApiReady;
   }, [onViewerApiReady]);
 
-  // Expose minimal internal sync hooks for secondary effects (no remount).
   const viewerApiRef = useRef({
     syncSelection: null,
     syncPreview: null,
@@ -399,6 +406,7 @@ export default function ThreeSceneViewer({
     syncDecalTarget: null,
     syncPickFilter: null,
     syncMaterials: null,
+    syncSnap: null,
     frameSelected: null,
     frameScene: null,
     applyPreset: null,
@@ -409,7 +417,6 @@ export default function ThreeSceneViewer({
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    // ✅ 6G.10: wipe mesh index whenever viewer remounts/rebinds
     clearMeshIndex();
 
     let disposed = false;
@@ -422,7 +429,6 @@ export default function ThreeSceneViewer({
       return () => {};
     }
 
-    // WebGL context loss safety
     let contextLost = false;
 
     function onContextLost(e) {
@@ -439,27 +445,22 @@ export default function ThreeSceneViewer({
     canvas.addEventListener("webglcontextlost", onContextLost, false);
     canvas.addEventListener("webglcontextrestored", onContextRestored, false);
 
-    // ✅ lighting + ground (upgraded studio-style, additive-safe)
     addStudioLighting(scene);
     const grid = new THREE.GridHelper(20, 20);
     grid.name = "grid";
     scene.add(grid);
 
-    // root group for all objects
     const root = new THREE.Group();
     root.name = "scene-root";
     scene.add(root);
 
-    // ✅ Tier 7.37: decals root (always deterministic)
     const decalsRoot = new THREE.Group();
     decalsRoot.name = "decals-root";
     root.add(decalsRoot);
 
-    // camera
     const rect = container.getBoundingClientRect();
     const camera = makeCamera(rect.width || 800, rect.height || 500);
 
-    // ✅ Tier 7.48 OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
@@ -467,25 +468,51 @@ export default function ThreeSceneViewer({
     controls.target.set(0, 0.8, 0);
     controls.update();
 
-    // ✅ TransformControls (Step 1)
     const transformControls = new TransformControls(camera, renderer.domElement);
     transformControls.setMode(gizmoModeRef.current);
 
-    // ✅ effective gizmo enabled gate
     const gizmoEnabled = !disabled && !!canEditRef.current;
     transformControls.enabled = gizmoEnabled;
-
     transformControls.visible = false;
     scene.add(transformControls);
 
-    // ✅ Track gizmo dragging state deterministically
-    let gizmoDragging = false;
+    function applySnapToTransformControls() {
+      const snap = normalizeSnapState(snapRef.current);
 
-    // ✅ Guard against duplicate "release" commit
+      transformControls.setSpace(snap.orientation === "world" ? "world" : "local");
+
+      if (transformControls.mode === "translate") {
+        transformControls.setTranslationSnap(snap.enabled ? snap.step : null);
+        transformControls.setRotationSnap(null);
+        transformControls.setScaleSnap(null);
+        return;
+      }
+
+      if (transformControls.mode === "rotate") {
+        transformControls.setTranslationSnap(null);
+        transformControls.setRotationSnap(
+          snap.enabled ? THREE.MathUtils.degToRad(snap.step_degrees) : null
+        );
+        transformControls.setScaleSnap(null);
+        return;
+      }
+
+      if (transformControls.mode === "scale") {
+        transformControls.setTranslationSnap(null);
+        transformControls.setRotationSnap(null);
+        transformControls.setScaleSnap(snap.enabled ? snap.step_factor : null);
+        return;
+      }
+
+      transformControls.setTranslationSnap(null);
+      transformControls.setRotationSnap(null);
+      transformControls.setScaleSnap(null);
+    }
+
+    let gizmoDragging = false;
     let dragSession = 0;
     let committedForSession = false;
 
-    // ✅ selection bounding box helper
     let selectionBoxHelper = null;
 
     function clearSelectionBox() {
@@ -496,10 +523,7 @@ export default function ThreeSceneViewer({
       selectionBoxHelper = null;
     }
 
-    // ✅ 6G.7 object groups for framing + gizmo attach
-    const objectGroups = new Map(); // objectKey -> THREE.Group
-
-    // ✅ Tier 7.42: keep mesh refs for material override application
+    const objectGroups = new Map();
     const allMeshes = new Set();
 
     function updateSelectionBox() {
@@ -508,14 +532,11 @@ export default function ThreeSceneViewer({
       const sid = selectedIdRef.current;
       if (!sid) return;
 
-      // ✅ 6G.12 canonical parse shape
       const { objectKey, meshPath } = parseSelectedId(sid);
       if (!objectKey) return;
 
       const group = objectGroups.get(String(objectKey));
       if (!group) return;
-
-      // If hidden by layers, don't draw the box.
       if (group.visible === false) return;
 
       let target = group;
@@ -533,24 +554,19 @@ export default function ThreeSceneViewer({
       scene.add(selectionBoxHelper);
     }
 
-    // ✅ Tier 7.37: decals holder + textures cache (lifetime = viewer mount)
     let decalPlanes = [];
     const textureLoader = new THREE.TextureLoader();
-    const decalTextureCache = new Map(); // asset_ref -> THREE.Texture
+    const decalTextureCache = new Map();
     const checkerTex = makeCheckerTexture(128, 8);
 
-    // ✅ Tier 7.38: decal proxy maps
-    const decalProxyById = new Map(); // decal_id -> THREE.Object3D proxy
-    const decalBaseById = new Map(); // decal_id -> normalized decal
+    const decalProxyById = new Map();
+    const decalBaseById = new Map();
 
-    // picking sets
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let pickables = [];
 
-    // ✅ 6G.12: primary mapping is Mesh -> objectKey
     const meshToObjectKey = new Map();
-    // ✅ Legacy fallback (optional, safe)
     const meshToObjectId = new Map();
 
     function resolveObjectKeyFromHitMesh(hitMesh) {
@@ -585,7 +601,6 @@ export default function ThreeSceneViewer({
       return hitMesh;
     }
 
-    // ✅ Tier 7.48 camera actions
     function frameScene() {
       const bounds = computeVisibleSceneBounds(root);
       if (bounds.isEmpty()) {
@@ -649,7 +664,6 @@ export default function ThreeSceneViewer({
       else frameScene();
     }
 
-    // ✅ Tier 7.27 ghost holder
     let ghost = null;
 
     function clearGhost() {
@@ -797,7 +811,6 @@ export default function ThreeSceneViewer({
       }
     }
 
-    // ✅ Tier 7.42: apply material overrides (if helper exists and overrides provided)
     function applyMaterialOverridesNow() {
       const ov = materialOverridesRef.current;
       if (!ov) return;
@@ -816,7 +829,6 @@ export default function ThreeSceneViewer({
       }
     }
 
-    // ✅ Tier 7.37: render decals deterministically (stable order by id)
     async function syncDecals() {
       const myNonce = ++decalsSyncNonceRef.current;
 
@@ -885,10 +897,10 @@ export default function ThreeSceneViewer({
       applyAllDecalPreviewPatches();
     }
 
-    // ✅ Attach gizmo: active decal proxy -> selected object group
     function syncTransformControlsToTarget() {
       const mode = gizmoModeRef.current;
       transformControls.setMode(mode);
+      applySnapToTransformControls();
 
       const gizmoEnabledNow = !disabled && !!canEditRef.current;
       transformControls.enabled = gizmoEnabledNow;
@@ -933,7 +945,6 @@ export default function ThreeSceneViewer({
       const dragging = !!e?.value;
       gizmoDragging = dragging;
 
-      // ✅ Tier 7.48: disable orbit while transform gizmo is dragging
       controls.enabled = !dragging;
 
       if (dragging) {
@@ -992,7 +1003,6 @@ export default function ThreeSceneViewer({
     }
     transformControls.addEventListener("objectChange", onGizmoObjectChange);
 
-    // ✅ Tier 7.48 resize
     function resize() {
       const r = container.getBoundingClientRect();
       const w = Math.max(1, Math.floor(r.width));
@@ -1096,7 +1106,6 @@ export default function ThreeSceneViewer({
         const objId = String(obj?.id || "").trim();
         if (!objId) continue;
 
-        // ✅ Tier 7.47: visibility toggle in outliner is authoritative
         if (obj?.enabled === false) {
           continue;
         }
@@ -1112,7 +1121,6 @@ export default function ThreeSceneViewer({
         group.userData.pickId = `obj:${objectKey}`;
         group.userData.objectId = objectKey;
 
-        // combine outliner visibility with layer visibility deterministically
         group.visible = !!cfg.visible && obj?.enabled !== false;
 
         root.add(group);
@@ -1120,8 +1128,6 @@ export default function ThreeSceneViewer({
 
         applyTransformToObject3D(group, obj?.transform);
 
-        // ✅ Tier 7.46: support asset_ref (old), url (new), and leave asset_id-only entries
-        // as placeholder if URL resolution is not yet available in the viewer.
         const assetRef = obj?.asset_ref
           ? String(obj.asset_ref).trim()
           : obj?.url
@@ -1235,16 +1241,14 @@ export default function ThreeSceneViewer({
       }
 
       applyMaterialOverridesNow();
-
-      // ✅ Tier 7.48 deterministic initial framing
       frameScene();
-
       applyPreviewGhost();
       updateSelectionBox();
 
       await syncDecals();
 
       syncTransformControlsToTarget();
+      applySnapToTransformControls();
     }
 
     loadAll();
@@ -1276,7 +1280,6 @@ export default function ThreeSceneViewer({
           }
         } catch {}
 
-        // also include any explicit decal pick ids from planes
         if (obj.userData?.pickId && String(obj.userData.pickId).startsWith("decal:")) {
           ids.push(String(obj.userData.pickId));
         }
@@ -1412,25 +1415,33 @@ export default function ThreeSceneViewer({
     };
     viewerApiRef.current.syncMode = () => {
       syncTransformControlsToTarget();
+      applySnapToTransformControls();
     };
     viewerApiRef.current.syncEditGate = () => {
       syncTransformControlsToTarget();
+      applySnapToTransformControls();
     };
     viewerApiRef.current.syncDecals = () => {
-      syncDecals().then(() => syncTransformControlsToTarget());
+      syncDecals().then(() => {
+        syncTransformControlsToTarget();
+        applySnapToTransformControls();
+      });
     };
     viewerApiRef.current.syncDecalPreview = () => {
       applyAllDecalPreviewPatches();
     };
     viewerApiRef.current.syncDecalTarget = () => {
       syncTransformControlsToTarget();
+      applySnapToTransformControls();
     };
     viewerApiRef.current.syncPickFilter = () => {};
     viewerApiRef.current.syncMaterials = () => {
       applyMaterialOverridesNow();
     };
+    viewerApiRef.current.syncSnap = () => {
+      applySnapToTransformControls();
+    };
 
-    // ✅ Tier 7.48 viewer API
     viewerApiRef.current.frameSelected = () => {
       frameSelected();
     };
@@ -1451,6 +1462,7 @@ export default function ThreeSceneViewer({
     viewerApiRef.current.syncPreview?.();
     viewerApiRef.current.syncDecals?.();
     viewerApiRef.current.syncMaterials?.();
+    viewerApiRef.current.syncSnap?.();
 
     return () => {
       disposed = true;
@@ -1465,6 +1477,7 @@ export default function ThreeSceneViewer({
       viewerApiRef.current.syncDecalTarget = null;
       viewerApiRef.current.syncPickFilter = null;
       viewerApiRef.current.syncMaterials = null;
+      viewerApiRef.current.syncSnap = null;
       viewerApiRef.current.frameSelected = null;
       viewerApiRef.current.frameScene = null;
       viewerApiRef.current.applyPreset = null;
@@ -1515,7 +1528,6 @@ export default function ThreeSceneViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds)]);
 
-  // Secondary sync effects: do NOT remount WebGL
   useEffect(() => {
     viewerApiRef.current?.syncSelection?.();
   }, [selectedId]);
@@ -1523,6 +1535,11 @@ export default function ThreeSceneViewer({
   useEffect(() => {
     viewerApiRef.current?.syncMode?.();
   }, [gizmoMode]);
+
+  // ✅ Tier 7.49
+  useEffect(() => {
+    viewerApiRef.current?.syncSnap?.();
+  }, [snapState]);
 
   useEffect(() => {
     viewerApiRef.current?.syncPreview?.();
@@ -1552,7 +1569,6 @@ export default function ThreeSceneViewer({
     viewerApiRef.current?.syncMaterials?.();
   }, [materialOverrides]);
 
-  // ✅ Tier 7.48 keep parent page API stable as callback prop changes
   useEffect(() => {
     onViewerApiReadyRef.current?.({
       frameSelected: viewerApiRef.current?.frameSelected || null,
@@ -1593,7 +1609,8 @@ export default function ThreeSceneViewer({
         resolution. If <code>materialOverrides</code> are provided (7.42), they are applied after
         load and on updates (viewer-safe, no remount). Scene outliner visibility is respected via{" "}
         <code>object.enabled</code> (7.47). Model refs can load from <code>asset_ref</code> or{" "}
-        <code>url</code> (7.46).
+        <code>url</code> (7.46). Snap settings now also drive TransformControls space and snap
+        increments (7.49) without remounting the viewer.
       </div>
     </div>
   );

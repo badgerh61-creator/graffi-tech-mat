@@ -51,6 +51,12 @@ import { setActiveDecalId, clearActiveDecalId } from "../decals/activeDecalStore
 // ✅ Tier 7.42 — Material overrides (read + apply) (optional, additive-safe)
 import { applyMaterialOverridesToScene } from "../materials/applyMaterialOverridesToScene";
 
+// ✅ Tier 7.53 — material slot discovery store
+import {
+  clearMaterialSlots,
+  setMaterialSlotsForTarget,
+} from "../materials/materialSlotStore";
+
 // ✅ Tier 7.48 — camera helpers
 import { applyCameraPreset } from "../camera/applyCameraPreset";
 import {
@@ -266,6 +272,22 @@ function normalizeParentId(v) {
   return s || null;
 }
 
+function publishMaterialSlotsForMesh(objectKey, meshPath, material) {
+  const ok = String(objectKey || "").trim();
+  const mp = String(meshPath || "").trim();
+  if (!ok || !mp) return;
+
+  const targetId = `${ok}::${mp}`;
+  const materials = Array.isArray(material) ? material : [material];
+
+  const slots = materials.map((m, i) => ({
+    name: String(m?.name || `slot_${i}`),
+    index: i,
+  }));
+
+  setMaterialSlotsForTarget(targetId, slots);
+}
+
 /**
  * ✅ ADDITIVE SAFE:
  * - canEdit gates ONLY TransformControls (gizmo).
@@ -298,6 +320,11 @@ function normalizeParentId(v) {
  * ✅ Tier 7.51:
  * - parent/child scene construction from object.parent_id
  * - flat scenes still work unchanged
+ *
+ * ✅ Tier 7.53:
+ * - viewer-derived material slot discovery published to materialSlotStore
+ * - no backend mutation
+ * - additive-safe for existing material override flows
  */
 export default function ThreeSceneViewer({
   sceneIndex,
@@ -432,6 +459,7 @@ export default function ThreeSceneViewer({
     if (!canvas || !container) return;
 
     clearMeshIndex();
+    clearMaterialSlots();
 
     let disposed = false;
 
@@ -1098,6 +1126,8 @@ export default function ThreeSceneViewer({
       objectGroups.clear();
       allMeshes.clear();
 
+      clearMaterialSlots();
+
       setLoadingCount(0);
 
       clearGhost();
@@ -1209,6 +1239,8 @@ export default function ThreeSceneViewer({
               setMeshPathsForObject(objectKey, [mp]);
               placeholder.userData.pickId = `mesh:${objectKey}::${mp}`;
               placeholder.userData.meshPath = mp;
+
+              publishMaterialSlotsForMesh(objectKey, mp, placeholder.material);
             }
           } catch {}
 
@@ -1255,6 +1287,8 @@ export default function ThreeSceneViewer({
                 meshPaths.push(mp);
                 node.userData.pickId = `mesh:${objectKey}::${mp}`;
                 node.userData.meshPath = mp;
+
+                publishMaterialSlotsForMesh(objectKey, mp, node.material);
               }
             } catch {}
 
@@ -1285,6 +1319,8 @@ export default function ThreeSceneViewer({
               setMeshPathsForObject(objectKey, [mp]);
               placeholder.userData.pickId = `mesh:${objectKey}::${mp}`;
               placeholder.userData.meshPath = mp;
+
+              publishMaterialSlotsForMesh(objectKey, mp, placeholder.material);
             }
           } catch {}
 
@@ -1549,6 +1585,7 @@ export default function ThreeSceneViewer({
       clearGhost();
       clearSelectionBox();
       clearDecals();
+      clearMaterialSlots();
 
       for (const [k, tex] of decalTextureCache.entries()) {
         if (k === "builtin://checker") continue;
@@ -1672,7 +1709,9 @@ export default function ThreeSceneViewer({
         <code>object.enabled</code> (7.47). Model refs can load from <code>asset_ref</code> or{" "}
         <code>url</code> (7.46). Snap settings now also drive TransformControls space and snap
         increments (7.49) without remounting the viewer. Parent/child object transforms are now
-        respected through scene graph attachment when <code>parent_id</code> exists (7.51).
+        respected through scene graph attachment when <code>parent_id</code> exists (7.51). Material
+        slot metadata is now also discovered per mesh and published to the slot inspector store
+        without mutating snapshots (7.53).
       </div>
     </div>
   );

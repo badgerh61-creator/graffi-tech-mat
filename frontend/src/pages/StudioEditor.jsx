@@ -234,6 +234,12 @@ function UnifiedInspectorPanelFallback({
         onCommitTool={onCommitTool}
       />
 
+      <MaterialSlotInspectorPanel
+        snapshot={snapshot}
+        canEdit={toolsEnabled}
+        onCommitTool={onCommitTool}
+      />
+
       <PaintParamsPanel
         snapshot={snapshot}
         canEdit={toolsEnabled}

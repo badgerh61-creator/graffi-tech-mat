@@ -14,6 +14,16 @@ import { buildPickedTargetId } from "./pickingId";
 import { applyTransformToObject3D, makePlaceholderMesh } from "./applyTransform";
 import { clearSelection, setSelectedId, useSelection } from "../selection/selectionStore";
 
+// ✅ Tier 7.60 — multi-select bridge/store
+import {
+  toggleMultiSelection,
+  setPrimarySelection,
+} from "../selection/multiSelectionStore";
+import {
+  syncPrimaryToSingleSelection,
+  clearAllSelectionState,
+} from "../selection/multiSelectionBridge";
+
 // ✅ 6G.6 layers
 import { useSceneLayers, ensureKind } from "./layersStore";
 
@@ -325,6 +335,12 @@ function publishMaterialSlotsForMesh(objectKey, meshPath, material) {
  * - viewer-derived material slot discovery published to materialSlotStore
  * - no backend mutation
  * - additive-safe for existing material override flows
+ *
+ * ✅ Tier 7.60:
+ * - viewport supports additive multi-object selection
+ * - plain click sets primary selection
+ * - shift/ctrl/cmd click toggles object selection
+ * - decal selection remains unchanged
  */
 export default function ThreeSceneViewer({
   sceneIndex,
@@ -1386,6 +1402,20 @@ export default function ThreeSceneViewer({
       return ids.filter(Boolean);
     }
 
+    function setPrimaryObjectSelection(objectId) {
+      const oid = String(objectId || "").trim();
+      if (!oid) return;
+      setPrimarySelection(oid);
+      syncPrimaryToSingleSelection(oid);
+    }
+
+    function toggleObjectSelection(objectId) {
+      const oid = String(objectId || "").trim();
+      if (!oid) return;
+      toggleMultiSelection(oid, true);
+      syncPrimaryToSingleSelection(oid);
+    }
+
     function onClick(e) {
       if (contextLost) return;
 
@@ -1398,7 +1428,7 @@ export default function ThreeSceneViewer({
       const intersects = raycaster.intersectObjects(pickables, true);
 
       if (!intersects.length) {
-        clearSelection();
+        clearAllSelectionState?.();
         clearActiveDecalId?.();
         return;
       }
@@ -1407,30 +1437,42 @@ export default function ThreeSceneViewer({
       const chosen = resolvePick(hitIds, selectionFilterRef.current || "all");
 
       if (!chosen) {
-        clearSelection();
+        clearAllSelectionState?.();
         clearActiveDecalId?.();
         return;
       }
 
       if (chosen.kind === "decal") {
         setActiveDecalId?.(chosen.key);
-        clearSelection();
+        clearAllSelectionState?.();
         return;
       }
 
       clearActiveDecalId?.();
 
+      const additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
+
       if (chosen.kind === "mesh") {
-        setSelectedId(chosen.key);
+        const objectId = String(chosen.key || "").split("::")[0];
+        if (additive) {
+          toggleObjectSelection(objectId);
+        } else {
+          setPrimaryObjectSelection(objectId);
+        }
         return;
       }
 
       if (chosen.kind === "obj") {
-        setSelectedId(chosen.key);
+        const objectId = String(chosen.key || "").split("::")[0];
+        if (additive) {
+          toggleObjectSelection(objectId);
+        } else {
+          setPrimaryObjectSelection(objectId);
+        }
         return;
       }
 
-      clearSelection();
+      clearAllSelectionState?.();
     }
 
     function onDoubleClick(e) {
@@ -1451,7 +1493,7 @@ export default function ThreeSceneViewer({
 
       if (chosen.kind === "decal") {
         setActiveDecalId?.(chosen.key);
-        clearSelection();
+        clearAllSelectionState?.();
 
         const base = decalBaseById.get(String(chosen.key));
         const ownerKey = base?.targetId ? String(base.targetId).split("::")[0] : null;
@@ -1465,14 +1507,16 @@ export default function ThreeSceneViewer({
       clearActiveDecalId?.();
 
       if (chosen.kind === "mesh") {
-        setSelectedId(chosen.key);
+        const objectId = String(chosen.key || "").split("::")[0];
+        setPrimaryObjectSelection(objectId);
         frameSelected();
         return;
       }
 
       if (chosen.kind === "obj") {
-        setSelectedId(chosen.key);
-        const group = objectGroups.get(String(chosen.key));
+        const objectId = String(chosen.key || "").split("::")[0];
+        setPrimaryObjectSelection(objectId);
+        const group = objectGroups.get(objectId);
         if (group) fitCameraToObject(camera, group, controls);
         else frameScene();
         return;
@@ -1711,7 +1755,8 @@ export default function ThreeSceneViewer({
         increments (7.49) without remounting the viewer. Parent/child object transforms are now
         respected through scene graph attachment when <code>parent_id</code> exists (7.51). Material
         slot metadata is now also discovered per mesh and published to the slot inspector store
-        without mutating snapshots (7.53).
+        without mutating snapshots (7.53). Viewport picking now supports additive multi-object
+        selection with shift/ctrl/cmd while keeping primary single-selection flows compatible (7.60).
       </div>
     </div>
   );

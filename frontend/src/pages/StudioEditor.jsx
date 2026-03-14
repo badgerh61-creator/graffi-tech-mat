@@ -58,6 +58,9 @@ import {
 } from "../editor/selection/selectionStore";
 import { resolveSelectedTarget } from "../editor/selection/resolveSelectedTarget";
 
+// ✅ Tier 7.60 ADD (clear single + multi-select together)
+import { clearAllSelectionState } from "../editor/selection/multiSelectionBridge";
+
 // ✅ Tier 7.10 ADD (viewport picking stub) — keep as fallback
 import ViewportSurface from "../editor/viewport/ViewportSurface";
 
@@ -487,7 +490,7 @@ export default function StudioEditor() {
       } catch {}
 
       try {
-        clearSelection?.();
+        clearAllSelectionState?.();
       } catch {}
 
       try {
@@ -529,7 +532,7 @@ export default function StudioEditor() {
                 .filter(Boolean) || [];
 
             if (!ids.includes(baseObjectId)) {
-              clearSelection?.();
+              clearAllSelectionState?.();
             }
           }
         } catch {}

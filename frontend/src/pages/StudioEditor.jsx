@@ -1,7 +1,14 @@
 // frontend/src/pages/StudioEditor.jsx
 import { API_BASE } from "../config/apiBase";
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  Suspense,
+} from "react";
 
 import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
@@ -141,6 +148,28 @@ import SceneOutlinerTreePanel from "../editor/outliner/SceneOutlinerTreePanel";
 const LOCK_POLL_MS = 1500;
 
 // ------------------------------------------------------
+// Optional late-tier module loader (safe if files are absent)
+// ------------------------------------------------------
+
+const optionalJsxModules = import.meta.glob("../editor/**/*.jsx");
+const optionalJsModules = import.meta.glob("../editor/**/*.js", { eager: true });
+
+function optionalLazy(path, FallbackComponent) {
+  const loader = optionalJsxModules[path];
+  return React.lazy(
+    loader
+      ? loader
+      : async () => ({
+          default: FallbackComponent,
+        })
+  );
+}
+
+function PanelSuspense({ children }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
+
+// ------------------------------------------------------
 // Safe fallbacks for later-tier files that may not exist yet
 // ------------------------------------------------------
 
@@ -183,9 +212,14 @@ function ConstraintViolationsPanelFallback({ constraints = [] }) {
     <div className="border rounded p-3 space-y-2">
       <div className="text-sm font-semibold">Constraints</div>
       {constraints.map((c, i) => (
-        <div key={`${c?.constraint_id || "c"}:${i}`} className="border rounded p-2 text-xs">
+        <div
+          key={`${c?.constraint_id || "c"}:${i}`}
+          className="border rounded p-2 text-xs"
+        >
           <div className="font-semibold">{c?.kind || "constraint"}</div>
-          <div className="opacity-80">{c?.message || "Constraint feedback available."}</div>
+          <div className="opacity-80">
+            {c?.message || "Constraint feedback available."}
+          </div>
         </div>
       ))}
     </div>
@@ -219,7 +253,10 @@ function UnifiedInspectorPanelFallback({
           Status: <span className="font-mono">{snapshot?.status ?? "—"}</span>
         </div>
         <div>
-          Edit: <span className="font-mono">{toolsEnabled ? "enabled" : "blocked"}</span>
+          Edit:{" "}
+          <span className="font-mono">
+            {toolsEnabled ? "enabled" : "blocked"}
+          </span>
         </div>
         <div>
           Lock: <span className="font-mono">{lockState || "unknown"}</span>
@@ -246,24 +283,71 @@ function UnifiedInspectorPanelFallback({
         onCommitTool={onCommitTool}
       />
 
-      <ConstraintViolationsPanelFallback constraints={constraints} />
+      <ConstraintViolationsPanel constraints={constraints} />
     </div>
   );
 }
 
-// Wire safe local aliases
-const MaterialSlotInspectorPanel = MaterialSlotInspectorPanelFallback;
-const DecalPlacementPanel = DecalPlacementPanelFallback;
-const PaintLibraryPanel = PaintLibraryPanelFallback;
-const VariantSetsPanel = VariantSetsPanelFallback;
-const AssetPlacementPalettePanel = AssetPlacementPalettePanelFallback;
-const ConstraintBlockedBanner = ConstraintBlockedBannerFallback;
-const BulkObjectActionsPanel = BulkObjectActionsPanelFallback;
-const UnifiedInspectorPanel = UnifiedInspectorPanelFallback;
+// ------------------------------------------------------
+// Optional late-tier component aliases
+// ------------------------------------------------------
 
-// no-op store hooks until the real Tier 7.58 module is mounted
-function setConstraintViolations() {}
-function clearConstraintViolations() {}
+const MaterialSlotInspectorPanel = optionalLazy(
+  "../editor/materials/MaterialSlotInspectorPanel.jsx",
+  MaterialSlotInspectorPanelFallback
+);
+
+const DecalPlacementPanel = optionalLazy(
+  "../editor/decals/DecalPlacementPanel.jsx",
+  DecalPlacementPanelFallback
+);
+
+const PaintLibraryPanel = optionalLazy(
+  "../editor/materials/PaintLibraryPanel.jsx",
+  PaintLibraryPanelFallback
+);
+
+const VariantSetsPanel = optionalLazy(
+  "../editor/variants/VariantSetsPanel.jsx",
+  VariantSetsPanelFallback
+);
+
+const AssetPlacementPalettePanel = optionalLazy(
+  "../editor/assets/AssetPlacementPalettePanel.jsx",
+  AssetPlacementPalettePanelFallback
+);
+
+const ConstraintBlockedBanner = optionalLazy(
+  "../editor/constraints/ConstraintBlockedBanner.jsx",
+  ConstraintBlockedBannerFallback
+);
+
+const ConstraintViolationsPanel = optionalLazy(
+  "../editor/constraints/ConstraintViolationsPanel.jsx",
+  ConstraintViolationsPanelFallback
+);
+
+const BulkObjectActionsPanel = optionalLazy(
+  "../editor/outliner/BulkObjectActionsPanel.jsx",
+  BulkObjectActionsPanelFallback
+);
+
+const UnifiedInspectorPanel = optionalLazy(
+  "../editor/inspector/UnifiedInspectorPanel.jsx",
+  UnifiedInspectorPanelFallback
+);
+
+// ------------------------------------------------------
+// Optional late-tier constraint store
+// ------------------------------------------------------
+
+const constraintStoreModule =
+  optionalJsModules["../editor/constraints/constraintViolationStore.js"] || {};
+
+const setConstraintViolations =
+  constraintStoreModule.setConstraintViolations || (() => {});
+const clearConstraintViolations =
+  constraintStoreModule.clearConstraintViolations || (() => {});
 
 function normalizeLock(data) {
   if (!data) return { state: "unknown" };
@@ -271,9 +355,15 @@ function normalizeLock(data) {
 
   if (data.owned === true || data.is_owner === true) return { state: "owned" };
   if (data.owner_id != null) {
-    return { state: "taken", owner_id: data.owner_id, owner_name: data.owner_name };
+    return {
+      state: "taken",
+      owner_id: data.owner_id,
+      owner_name: data.owner_name,
+    };
   }
-  if (data.locked === false || data.exists === false) return { state: "missing" };
+  if (data.locked === false || data.exists === false) {
+    return { state: "missing" };
+  }
 
   return { state: "unknown" };
 }
@@ -365,7 +455,9 @@ export default function StudioEditor() {
 
   const baseSnapshot = useMemo(() => {
     if (!activeSnapshot?.parent_snapshot_id) return null;
-    return snapshots?.find((s) => s.id === activeSnapshot.parent_snapshot_id) || null;
+    return (
+      snapshots?.find((s) => s.id === activeSnapshot.parent_snapshot_id) || null
+    );
   }, [activeSnapshot?.id, activeSnapshot?.parent_snapshot_id, snapshots]);
 
   useEffect(() => {
@@ -459,7 +551,10 @@ export default function StudioEditor() {
     return () => controller.abort();
   }, [projectId, activeSnapshot?.id]);
 
-  const { targetId: resolvedTargetId } = resolveSelectedTarget(activeSnapshot, selectedId);
+  const { targetId: resolvedTargetId } = resolveSelectedTarget(
+    activeSnapshot,
+    selectedId
+  );
 
   const sceneIndexForViewer = useMemo(() => {
     if (!sceneIndex) return sceneIndex;
@@ -564,7 +659,9 @@ export default function StudioEditor() {
     if (!activeSnapshot?.id) rs.push("SNAPSHOT_MISSING");
     if (sceneIndex == null && !!activeSnapshot?.id) rs.push("LOADING");
 
-    if (activeSnapshot?.id && activeSnapshot?.status !== "draft") rs.push("NOT_DRAFT");
+    if (activeSnapshot?.id && activeSnapshot?.status !== "draft") {
+      rs.push("NOT_DRAFT");
+    }
 
     if (activeSnapshot?.status === "draft") {
       if (lock?.state !== "owned") rs.push("NO_LOCK");
@@ -596,7 +693,10 @@ export default function StudioEditor() {
         console.log("commitToolPayload:", payload);
 
         if (!toolsEnabled) {
-          return { ok: false, error: { kind: "conflict", detail: "Tools disabled" } };
+          return {
+            ok: false,
+            error: { kind: "conflict", detail: "Tools disabled" },
+          };
         }
 
         const nextStation = payload?.station || "geometry";
@@ -604,7 +704,10 @@ export default function StudioEditor() {
         const toolPayload = payload?.payload || {};
 
         if (!tool) {
-          return { ok: false, error: { kind: "invalid", detail: "tool missing" } };
+          return {
+            ok: false,
+            error: { kind: "invalid", detail: "tool missing" },
+          };
         }
 
         const res = await executeTool({
@@ -635,7 +738,10 @@ export default function StudioEditor() {
 
         return res;
       } catch (e) {
-        return { ok: false, error: { kind: "network", detail: String(e?.message || e) } };
+        return {
+          ok: false,
+          error: { kind: "network", detail: String(e?.message || e) },
+        };
       }
     },
     [activeSnapshot?.id, toolsEnabled, fetchSnapshots, refreshSceneIndex]
@@ -652,7 +758,10 @@ export default function StudioEditor() {
                 Unsaved changes
               </span>
             )}
-            <SnapshotPreview snapshot={activeSnapshot} onDraftCreated={fetchSnapshots} />
+            <SnapshotPreview
+              snapshot={activeSnapshot}
+              onDraftCreated={fetchSnapshots}
+            />
           </>
         }
       >
@@ -668,7 +777,9 @@ export default function StudioEditor() {
         </div>
 
         <div className="p-3 pt-2 pb-0">
-          <ConstraintBlockedBanner />
+          <PanelSuspense>
+            <ConstraintBlockedBanner />
+          </PanelSuspense>
         </div>
 
         <div className="p-3 pt-2 pb-0 flex items-center gap-2">
@@ -721,7 +832,10 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <SnapshotDiffPanel baseSnapshot={baseSnapshot} targetSnapshot={activeSnapshot} />
+              <SnapshotDiffPanel
+                baseSnapshot={baseSnapshot}
+                targetSnapshot={activeSnapshot}
+              />
             </div>
 
             <div style={{ padding: 12 }}>
@@ -754,10 +868,12 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <BulkObjectActionsPanel
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
+              <PanelSuspense>
+                <BulkObjectActionsPanel
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </PanelSuspense>
             </div>
 
             <div style={{ padding: 12 }}>
@@ -780,11 +896,13 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <MaterialSlotInspectorPanel
-                snapshot={activeSnapshot}
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
+              <PanelSuspense>
+                <MaterialSlotInspectorPanel
+                  snapshot={activeSnapshot}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </PanelSuspense>
             </div>
 
             <div style={{ padding: 12 }}>
@@ -796,11 +914,13 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <PaintLibraryPanel
-                snapshot={activeSnapshot}
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
+              <PanelSuspense>
+                <PaintLibraryPanel
+                  snapshot={activeSnapshot}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </PanelSuspense>
             </div>
 
             <div style={{ padding: 12 }}>
@@ -811,7 +931,9 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <DecalPlacementPanel />
+              <PanelSuspense>
+                <DecalPlacementPanel />
+              </PanelSuspense>
             </div>
 
             <div style={{ padding: 12 }}>
@@ -822,22 +944,28 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <AssetPlacementPalettePanel
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
+              <PanelSuspense>
+                <AssetPlacementPalettePanel
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </PanelSuspense>
             </div>
 
             <div style={{ padding: 12 }}>
-              <VariantSetsPanel
-                snapshot={activeSnapshot}
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
+              <PanelSuspense>
+                <VariantSetsPanel
+                  snapshot={activeSnapshot}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </PanelSuspense>
             </div>
 
             <div style={{ padding: 12 }}>
-              <ConstraintViolationsPanelFallback constraints={constraintsForPanel} />
+              <PanelSuspense>
+                <ConstraintViolationsPanel constraints={constraintsForPanel} />
+              </PanelSuspense>
             </div>
 
             <div style={{ padding: 12 }}>
@@ -852,7 +980,9 @@ export default function StudioEditor() {
               <SelectionHud />
             </div>
 
-            <div style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
+            <div
+              style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}
+            >
               <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
 
               <TransformToolbar
@@ -928,7 +1058,10 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <ReferenceFramesPanel activeSnapshotId={activeSnapshot?.id} disabled={false} />
+              <ReferenceFramesPanel
+                activeSnapshotId={activeSnapshot?.id}
+                disabled={false}
+              />
             </div>
           </div>
 
@@ -968,13 +1101,15 @@ export default function StudioEditor() {
 
           <div className="space-y-3">
             <div style={{ padding: 12 }}>
-              <UnifiedInspectorPanel
-                snapshot={activeSnapshot}
-                toolsEnabled={toolsEnabled}
-                lockState={lock?.state || "unknown"}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-                constraints={constraintsForPanel}
-              />
+              <PanelSuspense>
+                <UnifiedInspectorPanel
+                  snapshot={activeSnapshot}
+                  toolsEnabled={toolsEnabled}
+                  lockState={lock?.state || "unknown"}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                  constraints={constraintsForPanel}
+                />
+              </PanelSuspense>
             </div>
           </div>
         </div>

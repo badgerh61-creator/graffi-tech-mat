@@ -136,14 +136,9 @@ def apply_create(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
         "id": decal_id,
         "enabled": True,
         "target_id": payload.get("target_id"),
-
-        # authoritative registry reference
         "asset_ref": asset_ref,
-        # compatibility alias
         "asset_id": asset_ref,
-        # cached resolved URL
         "url": resolve_asset_url(asset_ref),
-
         "position": initial.get("position") or {"x": 0, "y": 0, "z": 0},
         "rotation_euler": initial.get("rotation_euler") or {"x": 0, "y": 0, "z": 0},
         "scale": initial.get("scale") or {"x": 1, "y": 1, "z": 1},

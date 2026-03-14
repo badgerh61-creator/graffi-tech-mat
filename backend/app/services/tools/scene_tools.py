@@ -9,30 +9,56 @@ from app.models.asset import Asset
 from app.models.model import ModelRecord
 from app import crud
 
-from app.services.mutations.scene_objects import (
-    validate_add_model_ref,
-    apply_add_model_ref,
-    validate_remove_object,
-    apply_remove_object,
-    validate_set_object_enabled,
-    apply_set_object_enabled,
-    validate_set_object_layers,
-    apply_set_object_layers,
-    validate_duplicate_object,
-    apply_duplicate_object,
-    validate_mirror_object,
-    apply_mirror_object,
-    validate_create_group,
-    apply_create_group,
-    validate_parent_object,
-    apply_parent_object,
-    validate_unparent_object,
-    apply_unparent_object,
-    validate_bulk_set_enabled,
-    apply_bulk_set_enabled,
-    validate_bulk_set_layers,
-    apply_bulk_set_layers,
-)
+try:
+    from app.services.mutations.scene_objects import (
+        validate_add_model_ref,
+        apply_add_model_ref,
+        validate_remove_object,
+        apply_remove_object,
+        validate_set_object_enabled,
+        apply_set_object_enabled,
+        validate_set_object_layers,
+        apply_set_object_layers,
+        validate_duplicate_object,
+        apply_duplicate_object,
+        validate_mirror_object,
+        apply_mirror_object,
+        validate_create_group,
+        apply_create_group,
+        validate_parent_object,
+        apply_parent_object,
+        validate_unparent_object,
+        apply_unparent_object,
+        validate_bulk_set_enabled,
+        apply_bulk_set_enabled,
+        validate_bulk_set_layers,
+        apply_bulk_set_layers,
+    )
+except ImportError:
+    from app.services.scene_objects.mutator import (
+        validate_add_model_ref,
+        apply_add_model_ref,
+        validate_remove_object,
+        apply_remove_object,
+        validate_set_object_enabled,
+        apply_set_object_enabled,
+        validate_set_object_layers,
+        apply_set_object_layers,
+        validate_duplicate_object,
+        apply_duplicate_object,
+        validate_mirror_object,
+        apply_mirror_object,
+        validate_create_group,
+        apply_create_group,
+        validate_parent_object,
+        apply_parent_object,
+        validate_unparent_object,
+        apply_unparent_object,
+        validate_bulk_set_enabled,
+        apply_bulk_set_enabled,
+        validate_bulk_set_layers,
+        apply_bulk_set_layers,
+    )
 
 # Tool names (Tier 7.46 + 7.47 + 7.50 + 7.51 + 7.60)
 SCENE_ADD_MODEL_REF = "SCENE_ADD_MODEL_REF"
@@ -89,7 +115,6 @@ def _maybe_require_asset_access(*, db: Session, user, payload: Dict[str, Any]) -
     try:
         asset_id = int(raw_asset_id)
     except (TypeError, ValueError):
-        # Registry/string asset ids are validated elsewhere by the scene mutator/registry flow.
         return
 
     _require_asset_access(db=db, user_id=int(user.id), asset_id=asset_id)

@@ -1,16 +1,36 @@
 import React, { useMemo, useState } from "react";
-import { setSelectedId } from "../selection/selectionStore";
 import { buildOutlinerTree } from "./outlinerTree";
+import {
+  useMultiSelection,
+  toggleMultiSelection,
+  setPrimarySelection,
+} from "../selection/multiSelectionStore";
+import { syncPrimaryToSingleSelection } from "../selection/multiSelectionBridge";
 
 function Row({ node, depth, canEdit, onCommitTool, allObjects }) {
   const [expanded, setExpanded] = useState(true);
+  const { selectedIds, primaryId } = useMultiSelection();
 
   const parentableTargets = allObjects.filter((o) => o.id !== node.id);
+  const isSelected = selectedIds.includes(node.id);
+  const isPrimary = primaryId === node.id;
+
+  function handleSelect(e) {
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      toggleMultiSelection(node.id, true);
+      return;
+    }
+
+    setPrimarySelection(node.id);
+    syncPrimaryToSingleSelection(node.id);
+  }
 
   return (
     <div className="space-y-1">
       <div
-        className="border rounded p-2 flex items-center gap-2"
+        className={`border rounded p-2 flex items-center gap-2 ${
+          isSelected ? "bg-gray-50" : ""
+        } ${isPrimary ? "ring-1 ring-gray-300" : ""}`}
         style={{ marginLeft: `${depth * 16}px` }}
       >
         <button
@@ -22,7 +42,7 @@ function Row({ node, depth, canEdit, onCommitTool, allObjects }) {
 
         <button
           className="text-left flex-1"
-          onClick={() => setSelectedId(node.id)}
+          onClick={handleSelect}
         >
           <div className="text-sm font-semibold">
             {node.name || node.id}

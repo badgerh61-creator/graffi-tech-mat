@@ -839,8 +839,13 @@ export default function StudioEditor() {
             </div>
 
             <div style={{ padding: 12 }}>
-              {sceneErr ? <div className="text-red-600 text-sm">{sceneErr}</div> : null}
-              <SceneIndexPanel sceneIndex={sceneIndex} snapshotId={activeSnapshot?.id} />
+              {sceneErr ? (
+                <div className="text-red-600 text-sm">{sceneErr}</div>
+              ) : null}
+              <SceneIndexPanel
+                sceneIndex={sceneIndex}
+                snapshotId={activeSnapshot?.id}
+              />
             </div>
 
             <div style={{ padding: 12 }}>

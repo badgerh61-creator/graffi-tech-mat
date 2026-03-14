@@ -1,14 +1,36 @@
-import { toolExecutionAdapter } from "../../services/studio/toolExecutionAdapter";
+import { executeTool } from "../../services/studio/toolExecutionAdapter";
 
 /**
  * One place to send a gizmo commit payload into governed pipeline.
  * Assumes payload like:
- * { tool, station, payload: { target_id, ... } }
+ * { tool, station, payload: { target_id, ... }, snapshotId? }
  */
 export async function executeGizmoCommit(payload) {
-  // you already have this pattern in Tier 7.8
-  // evaluate -> apply
-  const evaluated = await toolExecutionAdapter.evaluate(payload);
-  if (!evaluated?.ok) return evaluated;
-  return await toolExecutionAdapter.apply(evaluated.proposal_id);
+  const snapshotId = payload?.snapshotId ?? payload?.snapshot_id;
+  const station = payload?.station || "geometry";
+  const tool = payload?.tool;
+  const toolPayload = payload?.payload || {};
+
+  if (!snapshotId) {
+    return {
+      ok: false,
+      error: { kind: "invalid", detail: "snapshotId required" },
+    };
+  }
+
+  if (!tool) {
+    return {
+      ok: false,
+      error: { kind: "invalid", detail: "tool required" },
+    };
+  }
+
+  return await executeTool({
+    snapshotId,
+    station,
+    tool,
+    payload: toolPayload,
+    mode: "proposals",
+    enablePreview: false,
+  });
 }

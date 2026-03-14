@@ -6,12 +6,28 @@ ASSETS: Dict[str, Dict[str, Any]] = {
         "name": "Demo Vehicle",
         "url": "https://example.com/assets/models/demo_vehicle.glb",
         "kind": "vehicle",
+        "category": "vehicles",
         "tags": ["vehicle", "demo"],
+    },
+    "asset-wheel-sport": {
+        "name": "Sport Wheel",
+        "url": "https://example.com/assets/models/sport_wheel.glb",
+        "kind": "wheel",
+        "category": "wheels",
+        "tags": ["wheel", "sport"],
+    },
+    "asset-spoiler-compact": {
+        "name": "Compact Spoiler",
+        "url": "https://example.com/assets/models/compact_spoiler.glb",
+        "kind": "prop",
+        "category": "aero",
+        "tags": ["spoiler", "aero"],
     },
     "asset-cube-demo": {
         "name": "Cube Demo",
         "url": "https://example.com/assets/models/cube.glb",
         "kind": "prop",
+        "category": "props",
         "tags": ["demo"],
     },
 }

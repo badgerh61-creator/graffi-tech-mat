@@ -205,13 +205,15 @@ function ConstraintBlockedBannerFallback() {
   return null;
 }
 
-function ConstraintViolationsPanelFallback({ constraints = [] }) {
-  if (!constraints.length) return null;
+function ConstraintViolationsPanelFallback({ violations = [], constraints = [] }) {
+  const list = Array.isArray(violations) && violations.length ? violations : constraints;
+
+  if (!list.length) return null;
 
   return (
     <div className="border rounded p-3 space-y-2">
       <div className="text-sm font-semibold">Constraints</div>
-      {constraints.map((c, i) => (
+      {list.map((c, i) => (
         <div
           key={`${c?.constraint_id || "c"}:${i}`}
           className="border rounded p-2 text-xs"
@@ -969,7 +971,7 @@ export default function StudioEditor() {
 
             <div style={{ padding: 12 }}>
               <PanelSuspense>
-                <ConstraintViolationsPanel constraints={constraintsForPanel} />
+                <ConstraintViolationsPanel violations={constraintsForPanel} />
               </PanelSuspense>
             </div>
 

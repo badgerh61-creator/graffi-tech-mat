@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
 
 @dataclass
 class ConstraintViolation:
@@ -8,11 +9,14 @@ class ConstraintViolation:
     kind: str
     message: str
     data: Dict[str, Any]
+    target_id: Optional[str] = None
+
 
 def _get_constraints(snapshot) -> List[Dict[str, Any]]:
     body = snapshot.body_state or {}
     raw = body.get("constraints", [])
     return raw if isinstance(raw, list) else []
+
 
 def evaluate_constraints_for_tool(
     *,
@@ -44,24 +48,30 @@ def evaluate_constraints_for_tool(
         params = c.get("params") or {}
 
         if kind == "locked_axis":
-            v = _eval_locked_axis(cid, tool, payload, params)
+            v = _eval_locked_axis(cid, tool, payload, params, target_id)
             if v:
                 violations.append(v)
 
         elif kind == "bounds":
-            v = _eval_bounds(cid, tool, payload, params)
+            v = _eval_bounds(cid, tool, payload, params, target_id)
             if v:
                 violations.append(v)
 
         elif kind == "symmetry":
-            v = _eval_symmetry(cid, tool, payload, params)
+            v = _eval_symmetry(cid, tool, payload, params, target_id)
             if v:
                 violations.append(v)
 
     return violations
 
 
-def _eval_locked_axis(cid: str, tool: str, payload: Dict[str, Any], params: Dict[str, Any]):
+def _eval_locked_axis(
+    cid: str,
+    tool: str,
+    payload: Dict[str, Any],
+    params: Dict[str, Any],
+    target_id: Optional[str],
+):
     tools = params.get("tools") or ["TRANSLATE", "ROTATE", "SCALE"]
     axes = params.get("axes") or []
     if tool not in tools:
@@ -73,12 +83,23 @@ def _eval_locked_axis(cid: str, tool: str, payload: Dict[str, Any], params: Dict
             constraint_id=cid,
             kind="locked_axis",
             message=f"{tool} blocked on axis {axis}",
-            data={"axis": axis, "tool": tool},
+            data={
+                "axis": axis,
+                "tool": tool,
+                "target_id": target_id,
+            },
+            target_id=target_id,
         )
     return None
 
 
-def _eval_bounds(cid: str, tool: str, payload: Dict[str, Any], params: Dict[str, Any]):
+def _eval_bounds(
+    cid: str,
+    tool: str,
+    payload: Dict[str, Any],
+    params: Dict[str, Any],
+    target_id: Optional[str],
+):
     if tool != "TRANSLATE":
         return None
 
@@ -107,15 +128,24 @@ def _eval_bounds(cid: str, tool: str, payload: Dict[str, Any], params: Dict[str,
                 "delta": {"x": dx, "y": dy, "z": dz},
                 "min": bounds_min,
                 "max": bounds_max,
+                "target_id": target_id,
             },
+            target_id=target_id,
         )
 
     return None
 
 
-def _eval_symmetry(cid: str, tool: str, payload: Dict[str, Any], params: Dict[str, Any]):
+def _eval_symmetry(
+    cid: str,
+    tool: str,
+    payload: Dict[str, Any],
+    params: Dict[str, Any],
+    target_id: Optional[str],
+):
     if tool != "TRANSLATE":
         return None
+
     plane = str(params.get("plane") or "")
     if plane != "vehicle_centerline":
         return None
@@ -127,6 +157,11 @@ def _eval_symmetry(cid: str, tool: str, payload: Dict[str, Any], params: Dict[st
             constraint_id=cid,
             kind="symmetry",
             message="Centerline symmetry forbids X translation",
-            data={"plane": plane, "x": dx},
+            data={
+                "plane": plane,
+                "x": dx,
+                "target_id": target_id,
+            },
+            target_id=target_id,
         )
     return None

@@ -10,6 +10,9 @@ import {
   setSelectionFilter,
 } from "../selection/selectionFilterStore";
 
+// ✅ Tier 7.58 — canonical constraint violation indicator
+import { useConstraintViolations } from "../constraints/constraintViolationStore";
+
 function Button({ onClick, disabled, active, children, title }) {
   const cls = active
     ? "border rounded px-2 py-1 text-sm bg-gray-100"
@@ -48,6 +51,9 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
   // ✅ Tier 7.41
   const filter = useSelectionFilter().filter;
 
+  // ✅ Tier 7.58
+  const { violations } = useConstraintViolations();
+
   const selectionShort = useMemo(() => {
     if (!selectedId) return "none";
     const parts = String(selectedId).split("::");
@@ -62,7 +68,6 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         Selection: <span className="font-mono">{selectionShort}</span>
       </div>
 
-      {/* ✅ Tier 7.41 — Selection filter */}
       <div className="flex items-center gap-2 ml-2">
         <div className="text-xs opacity-70">Select</div>
         <select
@@ -192,6 +197,12 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
           <option value="world">World</option>
         </select>
       </div>
+
+      {violations?.length ? (
+        <div className="text-xs border rounded px-2 py-1 bg-red-50 ml-3">
+          Constraints: {violations.length}
+        </div>
+      ) : null}
 
       <div className="flex-1" />
 

@@ -205,8 +205,12 @@ function ConstraintBlockedBannerFallback() {
   return null;
 }
 
-function ConstraintViolationsPanelFallback({ violations = [], constraints = [] }) {
-  const list = Array.isArray(violations) && violations.length ? violations : constraints;
+function ConstraintViolationsPanelFallback({
+  violations = [],
+  constraints = [],
+}) {
+  const list =
+    Array.isArray(violations) && violations.length ? violations : constraints;
 
   if (!list.length) return null;
 
@@ -386,7 +390,6 @@ function sortWhy(rs) {
 
 export default function StudioEditor() {
   const user = getCurrentUser();
-
   const projectId = 1;
 
   const [snapshots, setSnapshots] = useState([]);
@@ -474,15 +477,19 @@ export default function StudioEditor() {
       try {
         clearGizmoPreview?.();
       } catch {}
+
       try {
         clearAllDecalPreview?.();
       } catch {}
+
       try {
         clearActiveDecalId?.();
       } catch {}
+
       try {
         clearSelection?.();
       } catch {}
+
       try {
         clearConstraintViolations?.();
       } catch {}
@@ -560,6 +567,7 @@ export default function StudioEditor() {
 
   const sceneIndexForViewer = useMemo(() => {
     if (!sceneIndex) return sceneIndex;
+
     const decor_state =
       sceneIndex?.decor_state ??
       activeSnapshot?.decor_state ??
@@ -734,6 +742,7 @@ export default function StudioEditor() {
         try {
           await fetchSnapshots();
         } catch {}
+
         try {
           refreshSceneIndex?.();
         } catch {}

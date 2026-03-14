@@ -6,7 +6,7 @@ from app.services.tool_registry import get_tool
 from app.services.audit import log_event
 
 # ✅ FIX: use canonical StudioSession gate (snapshot-bound)
-from app.services.studio_sessions import require_active_session
+from app.services.presence_sessions import require_active_session
 
 
 def execute_tool(*, db, user, snapshot, tool, params):

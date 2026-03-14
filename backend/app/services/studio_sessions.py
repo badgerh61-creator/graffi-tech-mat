@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 
-from app.models.studio_session import StudioSession
+from app.models.session import StudioSession
 from app.services.clock import clock
 
 

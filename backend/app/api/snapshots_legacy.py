@@ -15,7 +15,7 @@ from app import crud
 
 # ✅ IMPORTANT:
 # - legacy router is now isolated under /legacy so it never collides with modern routes
-router = APIRouter(prefix="/legacy/snapshots", tags=["snapshots-legacy"])
+router = APIRouter(prefix="/snapshots", tags=["snapshots-legacy"])
 
 
 # -----------------------------

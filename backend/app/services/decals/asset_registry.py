@@ -10,6 +10,7 @@ Notes:
 - Static, deterministic registry.
 - asset_ref used by decals must match keys in ASSETS.
 - URLs are derived deterministically from a base URL unless overridden.
+- Legacy aliases (e.g. builtin://checker) are supported for backwards compatibility.
 """
 
 DECAL_ASSET_BASE_URL = os.getenv(
@@ -34,7 +35,25 @@ ASSETS: Dict[str, Dict[str, Any]] = {
         "path": "number_7.png",
         "tags": ["number"],
     },
+
+    # --- Legacy compatibility asset ---
+    # Used by older tests and legacy mutation flows
+    "builtin://checker": {
+        "name": "Checker",
+        "path": "checker.png",
+        "tags": ["checker", "pattern", "legacy"],
+    },
 }
+
+# Optional alias table if more legacy refs appear later
+ASSET_ALIASES: Dict[str, str] = {
+    # example: "builtin://checkers": "builtin://checker"
+}
+
+
+def _resolve_alias(asset_ref: str) -> str:
+    ref = str(asset_ref)
+    return ASSET_ALIASES.get(ref, ref)
 
 
 def resolve_asset_url(asset_ref: str) -> str:
@@ -43,7 +62,8 @@ def resolve_asset_url(asset_ref: str) -> str:
     If an asset has explicit 'url', use it.
     Otherwise derive from base URL + path.
     """
-    ref = str(asset_ref)
+
+    ref = _resolve_alias(asset_ref)
 
     if ref not in ASSETS:
         raise KeyError(f"Unknown decal asset_ref: {ref}")
@@ -62,6 +82,7 @@ def list_decal_assets() -> List[Dict[str, Any]]:
     Stable sorted output for deterministic UI rendering.
     """
     out: List[Dict[str, Any]] = []
+
     for k in sorted(ASSETS.keys()):
         a = ASSETS[k]
         out.append(
@@ -72,8 +93,10 @@ def list_decal_assets() -> List[Dict[str, Any]]:
                 "tags": a.get("tags") or [],
             }
         )
+
     return out
 
 
 def is_valid_asset(asset_ref: str) -> bool:
-    return str(asset_ref) in ASSETS
+    ref = _resolve_alias(asset_ref)
+    return ref in ASSETS

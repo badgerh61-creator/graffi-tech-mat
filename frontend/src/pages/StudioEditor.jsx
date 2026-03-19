@@ -83,6 +83,9 @@ import ThreeSceneViewer from "../editor/scene/ThreeSceneViewer";
 // ✅ 6G.6 ADD (scene layers + pick filters)
 import SceneLayersPanel from "../editor/scene/SceneLayersPanel";
 
+// ✅ Tier 7.62 — Marquee overlay (box select UI)
+import MarqueeOverlay from "../editor/selection/MarqueeOverlay";
+
 // ✅ 6G.10 ADD (scene graph tree panel)
 import SceneGraphPanel from "../editor/scene/SceneGraphPanel";
 
@@ -1086,20 +1089,27 @@ export default function StudioEditor() {
 
           <div className="space-y-3">
             <div style={{ padding: 12 }}>
-              <ThreeSceneViewer
-                key={sceneRebindKey}
-                sceneIndex={sceneIndexForViewer}
-                materialOverrides={materialOverrides}
-                disabled={!activeSnapshot?.id}
-                canEdit={toolsEnabled}
-                onCommitTool={(p) => commitToolPayload(p)}
-                commitToolPayload={(p) => commitToolPayload(p)}
-                onViewerApiReady={(api) => {
-                  viewerApiRef.current = api;
-                }}
-              />
-            </div>
+              {/* ✅ Wrap viewer for overlay positioning */}
+              <div className="relative">
+                <ThreeSceneViewer
+                  key={sceneRebindKey}
+                  sceneIndex={sceneIndexForViewer}
+                  materialOverrides={materialOverrides}
+                  disabled={!activeSnapshot?.id}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(p) => commitToolPayload(p)}
+                  commitToolPayload={(p) => commitToolPayload(p)}
+                  onViewerApiReady={(api) => {
+                    viewerApiRef.current = api;
+                  }}
+                />
 
+                {/* ✅ Tier 7.62 — Marquee Selection Overlay */}
+                <MarqueeOverlay />
+              </div>
+           </div>
+         </div>
+        
             <ViewportSurface disabled={!activeSnapshot} />
 
             <EditorLayoutHost
@@ -1130,9 +1140,8 @@ export default function StudioEditor() {
                 />
               </PanelSuspense>
             </div>
-          </div>
-        </div>
-      </EditorShell>
-    </CapabilityProvider>
-  );
-}
+          </div>        
+       </EditorShell>
+     </CapabilityProvider>
+   );
+ }

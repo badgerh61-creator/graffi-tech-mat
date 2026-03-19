@@ -18,11 +18,21 @@ import { clearSelection, setSelectedId, useSelection } from "../selection/select
 import {
   toggleMultiSelection,
   setPrimarySelection,
+  setMultiSelection, // ✅ NEW (for marquee replace selection)
 } from "../selection/multiSelectionStore";
 import {
   syncPrimaryToSingleSelection,
   clearAllSelectionState,
 } from "../selection/multiSelectionBridge";
+
+// ✅ ✅ Tier 7.62 — marquee selection (NEW)
+import {
+  startMarquee,
+  updateMarquee,
+  endMarquee,
+  clearMarquee,
+  marqueeGetSnapshot,
+} from "../selection/marqueeStore";
 
 // ✅ 6G.6 layers
 import { useSceneLayers, ensureKind } from "./layersStore";
@@ -58,7 +68,7 @@ import { resolvePick } from "../selection/resolvePick";
 // ✅ Tier 7.41 — set/clear active decal (optional, safe)
 import { setActiveDecalId, clearActiveDecalId } from "../decals/activeDecalStore";
 
-// ✅ Tier 7.42 — Material overrides (read + apply) (optional, additive-safe)
+// ✅ Tier 7.42 — Material overrides (read + apply)
 import { applyMaterialOverridesToScene } from "../materials/applyMaterialOverridesToScene";
 
 // ✅ Tier 7.53 — material slot discovery store
@@ -74,7 +84,7 @@ import {
   computeSelectedBounds,
 } from "./sceneBounds";
 
-// ✅ ✅ Tier 7.61 — Pivot preview (NEW, additive-safe)
+// ✅ Tier 7.61 — Pivot preview
 import { usePivotPreview } from "../transform/pivotPreviewStore";
 
 function makeRenderer(canvas) {
@@ -684,6 +694,10 @@ const decalBaseById = new Map();
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let pickables = [];
+
+// ✅ Tier 7.62 — marquee drag state
+const isDraggingRef = { current: false };
+const dragStartRef = { current: null };
 
 const meshToObjectKey = new Map();
 const meshToObjectId = new Map();
@@ -1430,7 +1444,49 @@ function pickIdNodeForMeshPath(hitMesh) {
     }
 
     loadAll();
+    
+// --------------------------------------------------
+// ✅ Tier 7.62 — Marquee selection computation
+// --------------------------------------------------
 
+function computeMarqueeSelection(start, end) {
+  const rect = {
+    minX: Math.min(start.x, end.x),
+    maxX: Math.max(start.x, end.x),
+    minY: Math.min(start.y, end.y),
+    maxY: Math.max(start.y, end.y),
+  };
+
+  const results = new Set();
+
+  const width = renderer.domElement.clientWidth;
+  const height = renderer.domElement.clientHeight;
+
+  root?.traverse((obj) => {
+    if (!obj || !obj.isMesh) return;
+    if (!obj.visible) return;
+
+    const objectId = obj.userData?.objectId;
+    if (!objectId) return;
+
+    const pos = obj.getWorldPosition(new THREE.Vector3());
+    pos.project(camera);
+
+    const x = (pos.x * 0.5 + 0.5) * width;
+    const y = (-pos.y * 0.5 + 0.5) * height;
+
+    if (
+      x >= rect.minX &&
+      x <= rect.maxX &&
+      y >= rect.minY &&
+      y <= rect.maxY
+    ) {
+      results.add(String(objectId));
+    }
+  });
+
+  return Array.from(results).sort();
+}
     function buildPickIdListFromIntersects(intersects) {
       const ids = [];
 
@@ -1479,6 +1535,67 @@ function pickIdNodeForMeshPath(hitMesh) {
       toggleMultiSelection(oid, true);
       syncPrimaryToSingleSelection(oid);
     }
+    
+    // --------------------------------------------------
+// ✅ Tier 7.62 — Marquee (Box Select)
+// --------------------------------------------------
+
+function handleMouseDown(e) {
+  if (contextLost) return;
+  if (e.button !== 0) return;
+
+  isDraggingRef.current = true;
+
+  const point = {
+    x: e.clientX,
+    y: e.clientY,
+  };
+
+  dragStartRef.current = point;
+
+  startMarquee(point);
+}
+
+function handleMouseMove(e) {
+  if (!isDraggingRef.current) return;
+
+  updateMarquee({
+    x: e.clientX,
+    y: e.clientY,
+  });
+}
+
+function handleMouseUp(e) {
+  if (!isDraggingRef.current) return;
+
+  isDraggingRef.current = false;
+
+  const snap = marqueeGetSnapshot();
+  const start = snap.start;
+  const end = snap.end;
+
+  endMarquee();
+
+  if (!start || !end) return;
+
+  // ignore tiny drags (treat as click)
+  const dx = Math.abs(end.x - start.x);
+  const dy = Math.abs(end.y - start.y);
+  if (dx < 4 && dy < 4) return;
+
+  const selected = computeMarqueeSelection(start, end);
+
+  const additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
+
+  if (additive) {
+    selected.forEach((id) => toggleMultiSelection(id, false));
+  } else {
+    setMultiSelection(selected, selected[0] || null);
+    if (selected[0]) {
+      syncPrimaryToSingleSelection(selected[0]);
+    }
+  }
+}
 
     function onClick(e) {
       if (contextLost) return;
@@ -1599,10 +1716,15 @@ function pickIdNodeForMeshPath(hitMesh) {
       }
     }
 
-    canvas.addEventListener("click", onClick);
-    canvas.addEventListener("dblclick", onDoubleClick);
-    window.addEventListener("keydown", onKeyDown);
+    canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("mouseup", handleMouseUp);
 
+    canvas.addEventListener("click", onClick);  
+    canvas.addEventListener("dblclick", onDoubleClick);
+
+    window.addEventListener("keydown", onKeyDown);   
+    
     let raf = 0;
     function tick() {
       raf = requestAnimationFrame(tick);
@@ -1790,10 +1912,15 @@ function pickIdNodeForMeshPath(hitMesh) {
 
       controls.dispose();
 
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("mouseup", handleMouseUp);
+
       canvas.removeEventListener("click", onClick);
       canvas.removeEventListener("dblclick", onDoubleClick);
-      window.removeEventListener("keydown", onKeyDown);
 
+      window.removeEventListener("keydown", onKeyDown);
+      
       ro.disconnect();
 
       root.traverse((node) => {

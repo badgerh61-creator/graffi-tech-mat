@@ -40,6 +40,9 @@ try:
         apply_reset_object_pivot,
         validate_set_object_pivot_preset,
         apply_set_object_pivot_preset,
+        # --- Multi-transform (Tier 7.63) ---
+        validate_bulk_transform,
+        apply_bulk_transform,
     )
 except ImportError:
     from app.services.scene_objects.mutator import (
@@ -72,6 +75,9 @@ except ImportError:
         apply_reset_object_pivot,
         validate_set_object_pivot_preset,
         apply_set_object_pivot_preset,
+        # --- Multi-transform (Tier 7.63) ---
+        validate_bulk_transform,
+        apply_bulk_transform,
     )
 
 # --- Tool constants ---
@@ -94,6 +100,9 @@ SCENE_BULK_SET_LAYERS = "SCENE_BULK_SET_LAYERS"
 SCENE_SET_OBJECT_PIVOT = "SCENE_SET_OBJECT_PIVOT"
 SCENE_RESET_OBJECT_PIVOT = "SCENE_RESET_OBJECT_PIVOT"
 SCENE_SET_OBJECT_PIVOT_PRESET = "SCENE_SET_OBJECT_PIVOT_PRESET"
+
+# --- Multi-transform (Tier 7.63) ---
+SCENE_BULK_TRANSFORM = "SCENE_BULK_TRANSFORM"
 
 
 # --- Access control helpers ---
@@ -211,6 +220,11 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
         err = validate_set_object_pivot_preset(payload)
         return {"ok": err is None, "error": err}
 
+    # --- Multi-transform ---
+    if tool == SCENE_BULK_TRANSFORM:
+        err = validate_bulk_transform(payload)
+        return {"ok": err is None, "error": err}
+
     return {"ok": False, "error": "unknown scene tool"}
 
 
@@ -261,5 +275,9 @@ def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[st
 
     if tool == SCENE_SET_OBJECT_PIVOT_PRESET:
         return apply_set_object_pivot_preset(snapshot, payload)
+
+    # --- Multi-transform ---
+    if tool == SCENE_BULK_TRANSFORM:
+        return apply_bulk_transform(snapshot, payload)
 
     return {"ok": False, "error": "unknown scene tool"}

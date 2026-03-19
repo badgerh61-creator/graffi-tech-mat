@@ -1,4 +1,4 @@
-from app.services.materials.mutator import (
+from app.services.scene_objects.mutator import (
     apply_set_object_pivot,
     apply_reset_object_pivot,
     apply_set_object_pivot_preset,

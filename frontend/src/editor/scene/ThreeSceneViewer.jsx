@@ -630,12 +630,12 @@ function updatePivotPreview() {
   clearPivotHelper();
 
   const pv = pivotPreviewRef.current;
-  if (!pv || !pv.objectId || !pv.position) return;
+  if (!pv || !pv.object_id || !pv.pivot) return;
 
-  const group = objectGroups.get(String(pv.objectId));
+  const group = objectGroups.get(String(pv.object_id));
   if (!group || group.visible === false) return;
 
-  const { x, y, z } = pv.position;
+  const { x, y, z } = pv.pivot;
 
   const geom = new THREE.SphereGeometry(0.05, 12, 12);
   const mat = new THREE.MeshBasicMaterial({
@@ -653,6 +653,7 @@ function updatePivotPreview() {
 
 // ✅ KEEP ORIGINAL (ONLY ONCE)
 const objectGroups = new Map();
+const pivotGroups = new Map();
 const allMeshes = new Set();
 
 function updateSelectionBox() {
@@ -1224,6 +1225,7 @@ function pickIdNodeForMeshPath(hitMesh) {
       clearGhost();
       clearSelectionBox();
       clearDecals();
+      clearPivotHelper();
       
       // ✅ Tier 7.61 — reset pivot preview
       clearPivotHelper();
@@ -1257,17 +1259,46 @@ function pickIdNodeForMeshPath(hitMesh) {
 
         const objectKey = objId;
 
-        const group = new THREE.Group();
-        group.name = `obj:${objectKey}`;
-        group.userData.kind = kind;
-        group.userData.pickId = `obj:${objectKey}`;
-        group.userData.objectId = objectKey;
-        group.visible = !!cfg.visible && obj?.enabled !== false;
+      // ---------------------------------------
+      // OUTER GROUP (world transform)
+      // ---------------------------------------
+      const outer = new THREE.Group();
+      outer.name = `obj:${objectKey}`;
+      outer.userData.kind = kind;
+      outer.userData.pickId = `obj:${objectKey}`;
+      outer.userData.objectId = objectKey;
+      outer.visible = !!cfg.visible && obj?.enabled !== false;
 
-        applyTransformToObject3D(group, obj?.transform);
+      applyTransformToObject3D(outer, obj?.transform);
 
-        objectGroups.set(objectKey, group);
-      }
+     // ---------------------------------------
+     // PIVOT GROUP (local offset)
+     // ---------------------------------------
+     const pivotGroup = new THREE.Group();
+
+     // snapshot pivot
+     let pivot = obj?.pivot || null;
+
+     // preview pivot overrides snapshot
+     const preview = pivotPreviewRef.current;
+     if (preview && preview.object_id === objectKey) {
+       pivot = preview.pivot;
+     }
+
+     const px = Number(pivot?.x || 0);
+     const py = Number(pivot?.y || 0);
+     const pz = Number(pivot?.z || 0);
+
+     // IMPORTANT: negative offset
+     pivotGroup.position.set(-px, -py, -pz);
+
+     // attach pivot inside outer
+     outer.add(pivotGroup);
+
+     // store both
+     objectGroups.set(objectKey, outer);
+     pivotGroups.set(objectKey, pivotGroup);
+   }
 
       // --------------------------------------------------
       // PASS 2 — attach hierarchy (Tier 7.51)
@@ -1314,6 +1345,8 @@ function pickIdNodeForMeshPath(hitMesh) {
         const group = objectGroups.get(objectKey);
         if (!group) continue;
 
+        const pivotGroup = pivotGroups.get(objectKey) || group;
+
         const assetRef = obj?.asset_ref
           ? String(obj.asset_ref).trim()
           : obj?.url
@@ -1323,7 +1356,7 @@ function pickIdNodeForMeshPath(hitMesh) {
         if (!assetRef) {
           const placeholder = makePlaceholderMesh(objectKey);
           placeholder.userData.objectId = objectKey;
-          group.add(placeholder);
+          pivotGroup.add(placeholder);
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
@@ -1363,7 +1396,7 @@ function pickIdNodeForMeshPath(hitMesh) {
           if (disposed) return;
 
           const gltfRoot = gltf.scene;
-          group.add(gltfRoot);
+          pivotGroup.add(gltfRoot);
 
           const meshPaths = [];
 
@@ -1403,7 +1436,7 @@ function pickIdNodeForMeshPath(hitMesh) {
 
           const placeholder = makePlaceholderMesh(`${objectKey} (failed)`);
           placeholder.userData.objectId = objectKey;
-          group.add(placeholder);
+          pivotGroup.add(placeholder);
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
@@ -1729,6 +1762,9 @@ function handleMouseUp(e) {
     function tick() {
       raf = requestAnimationFrame(tick);
       if (contextLost) return;
+      
+      updatePivotPreview();
+      
       controls.update();
       renderer.render(scene, camera);
     }

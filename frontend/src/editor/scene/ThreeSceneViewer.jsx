@@ -74,6 +74,9 @@ import {
   computeSelectedBounds,
 } from "./sceneBounds";
 
+// ✅ ✅ Tier 7.61 — Pivot preview (NEW, additive-safe)
+import { usePivotPreview } from "../transform/pivotPreviewStore";
+
 function makeRenderer(canvas) {
   const gl2 = canvas.getContext("webgl2", { antialias: true });
   const gl1 = gl2 ? null : canvas.getContext("webgl", { antialias: true });
@@ -341,6 +344,9 @@ function publishMaterialSlotsForMesh(objectKey, meshPath, material) {
  * - plain click sets primary selection
  * - shift/ctrl/cmd click toggles object selection
  * - decal selection remains unchanged
+ *
+ * ✅ Tier 7.61:
+ * - pivot preview support (no scene mutation yet in this section)
  */
 export default function ThreeSceneViewer({
   sceneIndex,
@@ -366,6 +372,9 @@ export default function ThreeSceneViewer({
   const decalPreview = useDecalPreview();
 
   const { filter: selectionFilter } = useSelectionFilter();
+
+  // ✅ ✅ Tier 7.61 — pivot preview (NEW)
+  const { preview: pivotPreview } = usePivotPreview();
 
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
@@ -394,6 +403,9 @@ export default function ThreeSceneViewer({
   // ✅ Tier 7.49 snap ref
   const snapRef = useRef(normalizeSnapState(snapState));
 
+  // ✅ ✅ Tier 7.61 pivot ref (NEW)
+  const pivotPreviewRef = useRef(pivotPreview);
+
   const canEditRef = useRef(!!canEdit);
   const decalsRef = useRef(decals);
   const activeDecalIdRef = useRef(activeDecalId);
@@ -420,6 +432,11 @@ export default function ThreeSceneViewer({
   useEffect(() => {
     snapRef.current = normalizeSnapState(snapState);
   }, [snapState]);
+
+  // ✅ ✅ Tier 7.61 pivot sync (NEW)
+  useEffect(() => {
+    pivotPreviewRef.current = pivotPreview || null;
+  }, [pivotPreview]);
 
   useEffect(() => {
     canEditRef.current = !!canEdit;
@@ -467,6 +484,9 @@ export default function ThreeSceneViewer({
     frameSelected: null,
     frameScene: null,
     applyPreset: null,
+
+    // ✅ ✅ Tier 7.61 (placeholder, implemented in Part 3)
+    getPivotPresetForObject: null,
   });
 
   useEffect(() => {
@@ -571,93 +591,134 @@ export default function ThreeSceneViewer({
     let dragSession = 0;
     let committedForSession = false;
 
-    let selectionBoxHelper = null;
+let selectionBoxHelper = null;
 
-    function clearSelectionBox() {
-      if (!selectionBoxHelper) return;
-      scene.remove(selectionBoxHelper);
-      selectionBoxHelper.geometry?.dispose?.();
-      selectionBoxHelper.material?.dispose?.();
-      selectionBoxHelper = null;
+function clearSelectionBox() {
+  if (!selectionBoxHelper) return;
+  scene.remove(selectionBoxHelper);
+  selectionBoxHelper.geometry?.dispose?.();
+  selectionBoxHelper.material?.dispose?.();
+  selectionBoxHelper = null;
+}
+
+// --------------------------------------------------
+// ✅ Tier 7.61 — Pivot preview helper (FINAL)
+// --------------------------------------------------
+
+let pivotHelper = null;
+
+function clearPivotHelper() {
+  if (!pivotHelper) return;
+
+  scene.remove(pivotHelper);
+  pivotHelper.geometry?.dispose?.();
+  pivotHelper.material?.dispose?.();
+  pivotHelper = null;
+}
+
+function updatePivotPreview() {
+  clearPivotHelper();
+
+  const pv = pivotPreviewRef.current;
+  if (!pv || !pv.objectId || !pv.position) return;
+
+  const group = objectGroups.get(String(pv.objectId));
+  if (!group || group.visible === false) return;
+
+  const { x, y, z } = pv.position;
+
+  const geom = new THREE.SphereGeometry(0.05, 12, 12);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffaa00,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  pivotHelper = new THREE.Mesh(geom, mat);
+  pivotHelper.position.set(x, y, z);
+  pivotHelper.renderOrder = 2000;
+
+  scene.add(pivotHelper);
+}
+
+// ✅ KEEP ORIGINAL (ONLY ONCE)
+const objectGroups = new Map();
+const allMeshes = new Set();
+
+function updateSelectionBox() {
+  clearSelectionBox();
+
+  const sid = selectedIdRef.current;
+  if (!sid) return;
+
+  const { objectKey, meshPath } = parseSelectedId(sid);
+  if (!objectKey) return;
+
+  const group = objectGroups.get(String(objectKey));
+  if (!group) return;
+  if (group.visible === false) return;
+
+  let target = group;
+
+  if (meshPath) {
+    const node = findNodeByMeshPath(group, meshPath);
+    if (node) target = node;
+  }
+
+  const box = new THREE.Box3().setFromObject(target);
+  if (box.isEmpty()) return;
+
+  selectionBoxHelper = new THREE.Box3Helper(box);
+  selectionBoxHelper.name = "selection-box-helper";
+  scene.add(selectionBoxHelper);
+}
+
+let decalPlanes = [];
+const textureLoader = new THREE.TextureLoader();
+const decalTextureCache = new Map();
+const checkerTex = makeCheckerTexture(128, 8);
+
+const decalProxyById = new Map();
+const decalBaseById = new Map();
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let pickables = [];
+
+const meshToObjectKey = new Map();
+const meshToObjectId = new Map();
+
+function resolveObjectKeyFromHitMesh(hitMesh) {
+  if (!hitMesh) return null;
+
+  const direct = meshToObjectKey.get(hitMesh);
+  if (direct) return direct;
+
+  const legacy = meshToObjectId.get(hitMesh);
+  if (legacy) return legacy;
+
+  let p = hitMesh.parent;
+  while (p) {
+    if (typeof p.name === "string" && p.name.startsWith("obj:")) {
+      return p.name.slice(4);
     }
+    p = p.parent;
+  }
+  return null;
+}
 
-    const objectGroups = new Map();
-    const allMeshes = new Set();
+function pickIdNodeForMeshPath(hitMesh) {
+  if (!hitMesh) return null;
+  if (hitMesh.name && String(hitMesh.name).trim()) return hitMesh;
 
-    function updateSelectionBox() {
-      clearSelectionBox();
-
-      const sid = selectedIdRef.current;
-      if (!sid) return;
-
-      const { objectKey, meshPath } = parseSelectedId(sid);
-      if (!objectKey) return;
-
-      const group = objectGroups.get(String(objectKey));
-      if (!group) return;
-      if (group.visible === false) return;
-
-      let target = group;
-
-      if (meshPath) {
-        const node = findNodeByMeshPath(group, meshPath);
-        if (node) target = node;
-      }
-
-      const box = new THREE.Box3().setFromObject(target);
-      if (box.isEmpty()) return;
-
-      selectionBoxHelper = new THREE.Box3Helper(box);
-      selectionBoxHelper.name = "selection-box-helper";
-      scene.add(selectionBoxHelper);
-    }
-
-    let decalPlanes = [];
-    const textureLoader = new THREE.TextureLoader();
-    const decalTextureCache = new Map();
-    const checkerTex = makeCheckerTexture(128, 8);
-
-    const decalProxyById = new Map();
-    const decalBaseById = new Map();
-
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    let pickables = [];
-
-    const meshToObjectKey = new Map();
-    const meshToObjectId = new Map();
-
-    function resolveObjectKeyFromHitMesh(hitMesh) {
-      if (!hitMesh) return null;
-
-      const direct = meshToObjectKey.get(hitMesh);
-      if (direct) return direct;
-
-      const legacy = meshToObjectId.get(hitMesh);
-      if (legacy) return legacy;
-
-      let p = hitMesh.parent;
-      while (p) {
-        if (typeof p.name === "string" && p.name.startsWith("obj:")) {
-          return p.name.slice(4);
-        }
-        p = p.parent;
-      }
-      return null;
-    }
-
-    function pickIdNodeForMeshPath(hitMesh) {
-      if (!hitMesh) return null;
-      if (hitMesh.name && String(hitMesh.name).trim()) return hitMesh;
-
-      let p = hitMesh.parent;
-      while (p) {
-        if (typeof p.name === "string" && p.name.startsWith("obj:")) break;
-        if (p.name && String(p.name).trim()) return p;
-        p = p.parent;
-      }
-      return hitMesh;
-    }
+  let p = hitMesh.parent;
+  while (p) {
+    if (typeof p.name === "string" && p.name.startsWith("obj:")) break;
+    if (p.name && String(p.name).trim()) return p;
+    p = p.parent;
+  }
+  return hitMesh;
+}
 
     function frameScene() {
       const bounds = computeVisibleSceneBounds(root);
@@ -1149,6 +1210,9 @@ export default function ThreeSceneViewer({
       clearGhost();
       clearSelectionBox();
       clearDecals();
+      
+      // ✅ Tier 7.61 — reset pivot preview
+      clearPivotHelper();
 
       transformControls.detach();
       transformControls.visible = false;
@@ -1548,63 +1612,137 @@ export default function ThreeSceneViewer({
     }
     tick();
 
+    // --------------------------------------------------
+    // ✅ Tier 7.61 — Pivot preset computation (FINAL)
+    // --------------------------------------------------
+
+    function computeObjectBoundsById(objectId) {
+      const id = String(objectId || "").trim();
+      if (!id) return new THREE.Box3().makeEmpty();
+
+      const group = objectGroups.get(id);
+      if (!group || group.visible === false) {
+        return new THREE.Box3().makeEmpty();
+      }
+
+      const box = new THREE.Box3();
+      box.setFromObject(group);
+
+      return box;
+    }
+
+    function getPivotPresetForObject(objectId, preset) {
+      try {
+        const box = computeObjectBoundsById(objectId);
+
+        if (!box || box.isEmpty()) {
+          return { x: 0, y: 0, z: 0 };
+        }
+
+        return boxToPivotPreset(box, preset);
+      } catch (e) {
+        console.warn("[ThreeSceneViewer] pivot preset failed:", {
+          objectId,
+          preset,
+          error: String(e?.message || e),
+        });
+        return { x: 0, y: 0, z: 0 };
+      }
+    }
+
+    // --------------------------------------------------
+    // Viewer API wiring
+    // --------------------------------------------------
+
     viewerApiRef.current.syncSelection = () => {
       updateSelectionBox();
       syncTransformControlsToTarget();
     };
+
     viewerApiRef.current.syncPreview = () => {
       applyPreviewGhost();
     };
+
     viewerApiRef.current.syncMode = () => {
       syncTransformControlsToTarget();
       applySnapToTransformControls();
     };
+
     viewerApiRef.current.syncEditGate = () => {
       syncTransformControlsToTarget();
       applySnapToTransformControls();
     };
+
     viewerApiRef.current.syncDecals = () => {
       syncDecals().then(() => {
         syncTransformControlsToTarget();
         applySnapToTransformControls();
       });
     };
+
     viewerApiRef.current.syncDecalPreview = () => {
       applyAllDecalPreviewPatches();
     };
+
     viewerApiRef.current.syncDecalTarget = () => {
       syncTransformControlsToTarget();
       applySnapToTransformControls();
     };
+
     viewerApiRef.current.syncPickFilter = () => {};
+
     viewerApiRef.current.syncMaterials = () => {
       applyMaterialOverridesNow();
     };
+
     viewerApiRef.current.syncSnap = () => {
       applySnapToTransformControls();
+    };
+    
+    viewerApiRef.current.syncPivotPreview = () => {
+      updatePivotPreview();
     };
 
     viewerApiRef.current.frameSelected = () => {
       frameSelected();
     };
+
     viewerApiRef.current.frameScene = () => {
       frameScene();
     };
+
     viewerApiRef.current.applyPreset = (preset) => {
       applyPreset(preset);
     };
+
+    // ✅ Tier 7.61 — expose pivot API
+    viewerApiRef.current.getPivotPresetForObject = (objectId, preset) =>
+      getPivotPresetForObject(objectId, preset);
+
+    // --------------------------------------------------
+    // Expose viewer API (FULL)
+    // --------------------------------------------------
 
     onViewerApiReadyRef.current?.({
       frameSelected: viewerApiRef.current.frameSelected,
       frameScene: viewerApiRef.current.frameScene,
       applyPreset: viewerApiRef.current.applyPreset,
+      getPivotPresetForObject: viewerApiRef.current.getPivotPresetForObject,
     });
+
+    // --------------------------------------------------
+    // Initial sync
+    // --------------------------------------------------
 
     viewerApiRef.current.syncSelection?.();
     viewerApiRef.current.syncPreview?.();
     viewerApiRef.current.syncDecals?.();
     viewerApiRef.current.syncMaterials?.();
     viewerApiRef.current.syncSnap?.();
+
+    // --------------------------------------------------
+    // Cleanup
+    // --------------------------------------------------
 
     return () => {
       disposed = true;
@@ -1624,6 +1762,9 @@ export default function ThreeSceneViewer({
       viewerApiRef.current.frameScene = null;
       viewerApiRef.current.applyPreset = null;
 
+      // ✅ Tier 7.61 cleanup
+      viewerApiRef.current.getPivotPresetForObject = null;
+
       onViewerApiReadyRef.current?.(null);
 
       clearGhost();
@@ -1637,6 +1778,7 @@ export default function ThreeSceneViewer({
           tex?.dispose?.();
         } catch {}
       }
+
       try {
         checkerTex?.dispose?.();
       } catch {}
@@ -1668,6 +1810,7 @@ export default function ThreeSceneViewer({
 
       renderer.dispose();
     };
+    
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds)]);
 
@@ -1710,14 +1853,22 @@ export default function ThreeSceneViewer({
   useEffect(() => {
     viewerApiRef.current?.syncMaterials?.();
   }, [materialOverrides]);
-
+  
   useEffect(() => {
-    onViewerApiReadyRef.current?.({
-      frameSelected: viewerApiRef.current?.frameSelected || null,
-      frameScene: viewerApiRef.current?.frameScene || null,
-      applyPreset: viewerApiRef.current?.applyPreset || null,
-    });
-  }, [onViewerApiReady, selectedId]);
+    viewerApiRef.current?.syncPivotPreview?.();
+  }, [pivotPreview]);
+
+useEffect(() => {
+  onViewerApiReadyRef.current?.({
+    frameSelected: viewerApiRef.current?.frameSelected || null,
+    frameScene: viewerApiRef.current?.frameScene || null,
+    applyPreset: viewerApiRef.current?.applyPreset || null,
+
+    // ✅ FIX: keep Tier 7.61 API alive
+    getPivotPresetForObject:
+      viewerApiRef.current?.getPivotPresetForObject || null,
+  });
+}, [onViewerApiReady, selectedId]);
 
   return (
     <div className="border rounded p-3 space-y-2">

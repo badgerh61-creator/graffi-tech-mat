@@ -33,6 +33,13 @@ try:
         apply_bulk_set_enabled,
         validate_bulk_set_layers,
         apply_bulk_set_layers,
+        # --- Pivot tools ---
+        validate_set_object_pivot,
+        apply_set_object_pivot,
+        validate_reset_object_pivot,
+        apply_reset_object_pivot,
+        validate_set_object_pivot_preset,
+        apply_set_object_pivot_preset,
     )
 except ImportError:
     from app.services.scene_objects.mutator import (
@@ -58,9 +65,16 @@ except ImportError:
         apply_bulk_set_enabled,
         validate_bulk_set_layers,
         apply_bulk_set_layers,
+        # --- Pivot tools ---
+        validate_set_object_pivot,
+        apply_set_object_pivot,
+        validate_reset_object_pivot,
+        apply_reset_object_pivot,
+        validate_set_object_pivot_preset,
+        apply_set_object_pivot_preset,
     )
 
-# Tool names (Tier 7.46 + 7.47 + 7.50 + 7.51 + 7.60)
+# --- Tool constants ---
 SCENE_ADD_MODEL_REF = "SCENE_ADD_MODEL_REF"
 SCENE_REMOVE_OBJECT = "SCENE_REMOVE_OBJECT"
 SCENE_SET_OBJECT_ENABLED = "SCENE_SET_OBJECT_ENABLED"
@@ -76,13 +90,14 @@ SCENE_UNPARENT_OBJECT = "SCENE_UNPARENT_OBJECT"
 SCENE_BULK_SET_ENABLED = "SCENE_BULK_SET_ENABLED"
 SCENE_BULK_SET_LAYERS = "SCENE_BULK_SET_LAYERS"
 
+# --- Pivot tool constants ---
+SCENE_SET_OBJECT_PIVOT = "SCENE_SET_OBJECT_PIVOT"
+SCENE_RESET_OBJECT_PIVOT = "SCENE_RESET_OBJECT_PIVOT"
+SCENE_SET_OBJECT_PIVOT_PRESET = "SCENE_SET_OBJECT_PIVOT_PRESET"
 
+
+# --- Access control helpers ---
 def _require_asset_access(*, db: Session, user_id: int, asset_id: int) -> None:
-    """
-    Reuse the existing DB-backed access model:
-    - asset is linked to a model
-    - user must have access to that model
-    """
     asset = (
         db.query(Asset)
         .join(ModelRecord)
@@ -98,16 +113,6 @@ def _require_asset_access(*, db: Session, user_id: int, asset_id: int) -> None:
 
 
 def _maybe_require_asset_access(*, db: Session, user, payload: Dict[str, Any]) -> None:
-    """
-    Compatibility bridge:
-
-    Earlier tiers may use DB integer asset ids.
-    Later viewer/editor tiers may use registry/string asset ids like:
-      - "asset-vehicle-demo"
-
-    We keep earlier behavior for numeric ids and safely skip DB access checks
-    for non-numeric registry ids so newer tiers do not break.
-    """
     raw_asset_id = payload.get("asset_id")
     if raw_asset_id is None:
         return
@@ -120,6 +125,7 @@ def _maybe_require_asset_access(*, db: Session, user, payload: Dict[str, Any]) -
     _require_asset_access(db=db, user_id=int(user.id), asset_id=asset_id)
 
 
+# --- Evaluator ---
 def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Evaluate should be read-only (no snapshot writes).
@@ -129,7 +135,6 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
         err = validate_add_model_ref(payload)
         if err:
             return {"ok": False, "error": err}
-
         _maybe_require_asset_access(db=db, user=user, payload=payload)
         return {"ok": True}
 
@@ -193,9 +198,23 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
             return {"ok": False, "error": err}
         return {"ok": True}
 
+    # --- Pivot tools ---
+    if tool == SCENE_SET_OBJECT_PIVOT:
+        err = validate_set_object_pivot(payload)
+        return {"ok": err is None, "error": err}
+
+    if tool == SCENE_RESET_OBJECT_PIVOT:
+        err = validate_reset_object_pivot(payload)
+        return {"ok": err is None, "error": err}
+
+    if tool == SCENE_SET_OBJECT_PIVOT_PRESET:
+        err = validate_set_object_pivot_preset(payload)
+        return {"ok": err is None, "error": err}
+
     return {"ok": False, "error": "unknown scene tool"}
 
 
+# --- Applier ---
 def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Apply mutates the snapshot in-memory (governed pipeline owns persistence).
@@ -232,5 +251,15 @@ def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[st
 
     if tool == SCENE_BULK_SET_LAYERS:
         return apply_bulk_set_layers(snapshot, payload)
+
+    # --- Pivot tools ---
+    if tool == SCENE_SET_OBJECT_PIVOT:
+        return apply_set_object_pivot(snapshot, payload)
+
+    if tool == SCENE_RESET_OBJECT_PIVOT:
+        return apply_reset_object_pivot(snapshot, payload)
+
+    if tool == SCENE_SET_OBJECT_PIVOT_PRESET:
+        return apply_set_object_pivot_preset(snapshot, payload)
 
     return {"ok": False, "error": "unknown scene tool"}

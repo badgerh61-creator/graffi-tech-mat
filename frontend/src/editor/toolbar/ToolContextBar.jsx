@@ -1,5 +1,3 @@
-// frontend/src/editor/toolbar/ToolContextBar.jsx
-
 import React, { useMemo } from "react";
 import { useSelection } from "../selection/selectionStore";
 import { useGizmoMode, setGizmoMode } from "../gizmo/gizmoModeStore";
@@ -34,6 +32,13 @@ import {
   historyCanRedo,
 } from "../history/historyStore";
 
+// ✅ Tier 7.69 — view modes
+import {
+  useViewMode,
+  setViewMode,
+  toggleBounds,
+} from "../view/viewModeStore";
+
 function Button({ onClick, disabled, active, children, title }) {
   const cls = active
     ? "border rounded px-2 py-1 text-sm bg-gray-100"
@@ -62,7 +67,7 @@ export default function ToolContextBar({
   canEdit,
   reasons,
   lockLabelText,
-  onRestoreSnapshot, // ✅ required for undo/redo
+  onRestoreSnapshot,
 }) {
   const { selectedId } = useSelection();
   const mode = useGizmoMode().mode;
@@ -79,6 +84,9 @@ export default function ToolContextBar({
 
   // ✅ Tier 7.66
   const history = useHistory();
+
+  // ✅ Tier 7.69
+  const view = useViewMode();
 
   const selectionShort = useMemo(() => {
     if (!selectedId) return "none";
@@ -160,9 +168,8 @@ export default function ToolContextBar({
         })}
       </div>
 
-      {/* SNAP SYSTEM (Tier 7.65 upgraded) */}
+      {/* SNAP SYSTEM */}
       <div className="flex items-center gap-2 ml-3 border-l pl-2">
-        {/* Enable */}
         <label className="flex items-center gap-1 text-sm">
           <input
             type="checkbox"
@@ -173,7 +180,6 @@ export default function ToolContextBar({
           Snap
         </label>
 
-        {/* Mode */}
         <select
           className="border rounded px-2 py-1 text-xs"
           value={snap.mode}
@@ -186,7 +192,6 @@ export default function ToolContextBar({
           <option value="object">Object</option>
         </select>
 
-        {/* Grid Size */}
         {snap.mode === "grid" && (
           <input
             className="border rounded px-2 py-1 w-16 text-xs"
@@ -198,7 +203,6 @@ export default function ToolContextBar({
           />
         )}
 
-        {/* Legacy precision snap (kept for compatibility) */}
         <div className="text-xs opacity-70">
           Move:
           <input
@@ -250,7 +254,32 @@ export default function ToolContextBar({
         })}
       </div>
 
-      {/* ✅ Undo / Redo (Tier 7.66) */}
+      {/* ✅ View Modes */}
+      <div className="flex items-center gap-2 ml-3 border-l pl-2">
+        <span className="text-xs opacity-70">View</span>
+
+        <select
+          className="border rounded px-2 py-1 text-xs"
+          value={view.mode}
+          onChange={(e) => setViewMode(e.target.value)}
+        >
+          <option value="studio">Studio</option>
+          <option value="solid">Solid</option>
+          <option value="clay">Clay</option>
+          <option value="wireframe">Wireframe</option>
+        </select>
+
+        <label className="text-xs flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={view.showBounds}
+            onChange={toggleBounds}
+          />
+          Bounds
+        </label>
+      </div>
+
+      {/* Undo / Redo */}
       <div className="flex items-center gap-2 ml-3 border-l pl-2">
         <button
           className="border rounded px-2 py-1 text-xs"
@@ -299,7 +328,7 @@ export default function ToolContextBar({
         </div>
       )}
 
-      {/* ✅ Tier 7.67 — Keyboard shortcuts hint */}
+      {/* Keyboard hint */}
       <div className="w-full text-[11px] opacity-60 border-t pt-1 mt-1">
         G: Move · R: Rotate · S: Scale · Ctrl+Z: Undo · Ctrl+Shift+Z: Redo · Ctrl+D: Duplicate · Esc: Clear
       </div>

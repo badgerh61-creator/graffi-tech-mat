@@ -88,6 +88,9 @@ import {
 // ✅ Tier 7.61 — Pivot preview
 import { usePivotPreview } from "../transform/pivotPreviewStore";
 
+// ✅ Tier 7.69 — view modes
+import { useViewMode } from "../view/viewModeStore";
+
 function makeRenderer(canvas) {
   const gl2 = canvas.getContext("webgl2", { antialias: true });
   const gl1 = gl2 ? null : canvas.getContext("webgl", { antialias: true });
@@ -421,6 +424,9 @@ export default function ThreeSceneViewer({
   const { preview } = useGizmoPreview();
   const { mode: gizmoMode } = useGizmoMode();
   const { mode: transformSpace } = useTransformSpace();
+  
+  // ✅ Tier 7.69
+  const viewMode = useViewMode();
 
   // ✅ Tier 7.49
   const snapState = useSnap().snap;
@@ -456,6 +462,7 @@ export default function ThreeSceneViewer({
   const selectedIdRef = useRef(selectedId);
   const previewRef = useRef(preview);
   const gizmoModeRef = useRef(gizmoMode);
+  const viewModeRef = useRef(viewMode);
   
   // ✅ NEW — Tier 7.64
   const transformSpaceRef = useRef(transformSpace);
@@ -533,6 +540,11 @@ export default function ThreeSceneViewer({
   useEffect(() => {
     onViewerApiReadyRef.current = onViewerApiReady;
   }, [onViewerApiReady]);
+  
+  // ✅ Tier 7.69 — sync view mode ref
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
 
   const viewerApiRef = useRef({
     syncSelection: null,
@@ -587,7 +599,7 @@ export default function ThreeSceneViewer({
     canvas.addEventListener("webglcontextlost", onContextLost, false);
     canvas.addEventListener("webglcontextrestored", onContextRestored, false);
 
-    addStudioLighting(scene);
+    addStudioLighting(scene);    
     const grid = new THREE.GridHelper(20, 20);
     grid.name = "grid";
     scene.add(grid);
@@ -1034,6 +1046,69 @@ function pickIdNodeForMeshPath(hitMesh) {
       }
     }
 
+    // --------------------------------------------------
+    // ✅ Tier 7.69 — View Modes
+    // --------------------------------------------------
+
+    let wireframeCache = new Map();
+    let clayMaterial = new THREE.MeshStandardMaterial({
+      color: 0xaaaaaa,
+      roughness: 1,
+      metalness: 0,
+    });
+
+    function applyViewMode() {
+      const vm = viewModeRef.current?.mode || "studio";
+
+      allMeshes.forEach((mesh) => {
+        if (!mesh || !mesh.material) return;
+
+        if (wireframeCache.has(mesh)) {
+          mesh.material = wireframeCache.get(mesh);
+        }
+
+        if (vm === "studio") return;
+
+        if (vm === "solid") {
+          if (!wireframeCache.has(mesh)) {
+            wireframeCache.set(mesh, mesh.material);
+          }
+
+          const mat = Array.isArray(mesh.material)
+            ? mesh.material.map((m) => {
+                const clone = m.clone();
+                clone.map = null;
+                clone.color.set(0xcccccc);
+                return clone;
+              })
+            : (() => {
+                const clone = mesh.material.clone();
+                clone.map = null;
+                clone.color.set(0xcccccc);
+                return clone;
+              })();
+
+          mesh.material = mat;
+        }
+
+        if (vm === "clay") {
+          mesh.material = clayMaterial;
+        }
+
+        if (vm === "wireframe") {
+          if (!wireframeCache.has(mesh)) {
+            wireframeCache.set(mesh, mesh.material);
+          }
+
+          mesh.material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            wireframe: true,
+          });
+        }
+      });
+    }
+
+    
     async function syncDecals() {
       const myNonce = ++decalsSyncNonceRef.current;
 
@@ -1135,17 +1210,18 @@ function pickIdNodeForMeshPath(hitMesh) {
 
       const objectKey = String(sid).split("::")[0];
       const group = objectGroups.get(objectKey);
+      const pivotGroup = pivotGroups.get(objectKey);
 
-      if (!group || group.visible === false) {
+      if (!group || !pivotGroup || group.visible === false) {
         transformControls.detach();
         transformControls.visible = false;
         return;
       }
 
-      transformControls.attach(group);
+      transformControls.attach(pivotGroup);
       transformControls.visible = true;
     }
-
+    
     function onGizmoDraggingChanged(e) {
       const dragging = !!e?.value;
       gizmoDragging = dragging;
@@ -1584,6 +1660,7 @@ function pickIdNodeForMeshPath(hitMesh) {
       }
 
       applyMaterialOverridesNow();
+      applyViewMode();
       frameScene();
       applyPreviewGhost();
       updateSelectionBox();
@@ -1975,6 +2052,10 @@ function handleMouseUp(e) {
       applySnapToTransformControls();
     };
     
+    viewerApiRef.current.syncViewMode = () => {
+      applyViewMode();
+    };
+    
     viewerApiRef.current.syncPivotPreview = () => {
       updatePivotPreview();
     };
@@ -2134,6 +2215,10 @@ function handleMouseUp(e) {
   useEffect(() => {
     viewerApiRef.current?.syncMaterials?.();
   }, [materialOverrides]);
+  
+  useEffect(() => {
+    viewerApiRef.current?.syncViewMode?.();
+  }, [viewMode]);
   
   useEffect(() => {
     viewerApiRef.current?.syncPivotPreview?.();

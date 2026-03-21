@@ -151,6 +151,13 @@ import ObjectActionsPanel from "../editor/outliner/ObjectActionsPanel";
 // ✅ Tier 7.51 ADD (hierarchical outliner tree)
 import SceneOutlinerTreePanel from "../editor/outliner/SceneOutlinerTreePanel";
 
+// ✅ Tier 7.66 ADD (history-timeline)
+import { historyUndo, historyRedo } from "../editor/history/historyStore";
+
+// ✅ Tier 7.67 (keyboard shortcuts)
+import { useKeyboardShortcuts } from "../editor/input/useKeyboardShortcuts";
+import { setGizmoMode } from "../editor/gizmo/gizmoModeStore";
+
 const LOCK_POLL_MS = 1500;
 
 // ------------------------------------------------------
@@ -772,6 +779,82 @@ export default function StudioEditor() {
     },
     [activeSnapshot?.id, toolsEnabled, fetchSnapshots, refreshSceneIndex]
   );
+
+// ✅ Tier 7.67 — keyboard dispatcher (FINAL)
+const handleShortcutAction = useCallback(
+  (action) => {
+    if (!activeSnapshot?.id) return;
+
+    switch (action) {
+      // --------------------------------------------------
+      // TRANSFORM MODES (FIXED — use store, NOT viewer)
+      // --------------------------------------------------
+      case "TRANSFORM_TRANSLATE":
+        setGizmoMode("translate");
+        break;
+
+      case "TRANSFORM_ROTATE":
+        setGizmoMode("rotate");
+        break;
+
+      case "TRANSFORM_SCALE":
+        setGizmoMode("scale");
+        break;
+
+      // --------------------------------------------------
+      // HISTORY
+      // --------------------------------------------------
+      case "UNDO": {
+        const snap = historyUndo();
+        if (snap?.id) restoreSnapshotFromHistory(snap.id);
+        break;
+      }
+
+      case "REDO": {
+        const snap = historyRedo();
+        if (snap?.id) restoreSnapshotFromHistory(snap.id);
+        break;
+      }
+
+      // --------------------------------------------------
+      // DUPLICATE (SAFE OBJECT ID EXTRACTION)
+      // --------------------------------------------------
+      case "DUPLICATE": {
+        if (!selectedId) return;
+
+        const objectId = String(selectedId).split("::")[0];
+
+        commitToolPayload({
+          tool: "SCENE_DUPLICATE_OBJECT",
+          station: "geometry",
+          payload: { object_id: objectId },
+        });
+        break;
+      }
+
+      // --------------------------------------------------
+      // CLEAR SELECTION
+      // --------------------------------------------------
+      case "CLEAR_SELECTION":
+        clearAllSelectionState();
+        break;
+
+      default:
+        break;
+    }
+  },
+  [
+    activeSnapshot?.id,
+    selectedId,
+    commitToolPayload,
+    restoreSnapshotFromHistory,
+  ]
+);
+
+  // ✅ Tier 7.67 — activate keyboard shortcuts
+  useKeyboardShortcuts({
+    onAction: handleShortcutAction,
+  });
 
   return (
     <CapabilityProvider role={user?.role ?? "viewer"}>

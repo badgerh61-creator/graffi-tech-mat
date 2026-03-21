@@ -298,6 +298,11 @@ export default function ToolContextBar({
           {lockLabelText || "Editing enabled"}
         </div>
       )}
+
+      {/* ✅ Tier 7.67 — Keyboard shortcuts hint */}
+      <div className="w-full text-[11px] opacity-60 border-t pt-1 mt-1">
+        G: Move · R: Rotate · S: Scale · Ctrl+Z: Undo · Ctrl+Shift+Z: Redo · Ctrl+D: Duplicate · Esc: Clear
+      </div>
     </div>
   );
 }

@@ -249,4 +249,103 @@ def apply_bulk_transform(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
         "ok": True,
         "updated": updated,
         "mode": mode,
-    }    
+    }  
+    
+# -------------------------------------------------------
+# Numeric Transform (Tier 7.68)
+# -------------------------------------------------------
+
+def validate_set_object_transform(payload: Dict[str, Any]) -> Optional[str]:
+    object_id = str(payload.get("object_id") or "").strip()
+    if not object_id:
+        return "object_id required"
+
+    t = payload.get("transform")
+    if not isinstance(t, dict):
+        return "transform required"
+
+    return None
+
+
+def apply_set_object_transform(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
+    body = _ensure_body(snapshot)
+    objs = body["objects"]
+
+    object_id = str(payload.get("object_id"))
+    obj = _find_object(objs, object_id)
+    if not obj:
+        return {"ok": False, "error": "object not found"}
+
+    t = payload.get("transform") or {}
+
+    obj["transform"] = {
+        "pos": {
+            "x": _num(t.get("pos", {}).get("x")),
+            "y": _num(t.get("pos", {}).get("y")),
+            "z": _num(t.get("pos", {}).get("z")),
+        },
+        "rot": {
+            "x": _num(t.get("rot", {}).get("x")),
+            "y": _num(t.get("rot", {}).get("y")),
+            "z": _num(t.get("rot", {}).get("z")),
+        },
+        "scale": {
+            "x": _num(t.get("scale", {}).get("x"), 1),
+            "y": _num(t.get("scale", {}).get("y"), 1),
+            "z": _num(t.get("scale", {}).get("z"), 1),
+        },
+    }
+
+    obj["version"] = _bump_version(obj)
+
+    body["objects"] = _sorted_objects(objs)
+    setattr(snapshot, "body_state", body)
+
+    return {"ok": True, "object_id": object_id}
+
+
+def validate_bulk_offset_transform(payload: Dict[str, Any]) -> Optional[str]:
+    if not isinstance(payload.get("object_ids"), list) or not payload.get("object_ids"):
+        return "object_ids required"
+
+    if not isinstance(payload.get("delta"), dict):
+        return "delta required"
+
+    return None
+
+
+def apply_bulk_offset_transform(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
+    body = _ensure_body(snapshot)
+    objs = body["objects"]
+
+    ids = set(_normalize_object_ids(payload.get("object_ids")))
+    delta = payload.get("delta") or {}
+
+    def add_vec(base, d):
+        return {
+            "x": _num(base.get("x")) + _num(d.get("x")),
+            "y": _num(base.get("y")) + _num(d.get("y")),
+            "z": _num(base.get("z")) + _num(d.get("z")),
+        }
+
+    updated = 0
+
+    for obj in objs:
+        if obj.get("id") not in ids:
+            continue
+
+        t = obj.get("transform") or {}
+
+        obj["transform"] = {
+            "pos": add_vec(t.get("pos", {}), delta.get("pos", {})),
+            "rot": add_vec(t.get("rot", {}), delta.get("rot", {})),
+            "scale": add_vec(t.get("scale", {}), delta.get("scale", {})),
+        }
+
+        obj["version"] = _bump_version(obj)
+        updated += 1
+
+    body["objects"] = _sorted_objects(objs)
+    setattr(snapshot, "body_state", body)
+
+    return {"ok": True, "updated": updated}      

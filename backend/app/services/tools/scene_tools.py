@@ -46,6 +46,11 @@ try:
         # --- Multi-transform (Tier 7.63) ---
         validate_bulk_transform,
         apply_bulk_transform,
+        # --- Numeric transform (Tier 7.68) ---
+        validate_set_object_transform,
+        apply_set_object_transform,
+        validate_bulk_offset_transform,
+        apply_bulk_offset_transform,
     )
 except ImportError:
     from app.services.scene_objects.mutator import (
@@ -81,6 +86,11 @@ except ImportError:
         # --- Multi-transform (Tier 7.63) ---
         validate_bulk_transform,
         apply_bulk_transform,
+        # --- Numeric transform (Tier 7.68) ---
+        validate_set_object_transform,
+        apply_set_object_transform,
+        validate_bulk_offset_transform,
+        apply_bulk_offset_transform,
     )
 
 # --- Tool constants ---
@@ -106,6 +116,10 @@ SCENE_SET_OBJECT_PIVOT_PRESET = "SCENE_SET_OBJECT_PIVOT_PRESET"
 
 # --- Multi-transform (Tier 7.63) ---
 SCENE_BULK_TRANSFORM = "SCENE_BULK_TRANSFORM"
+
+# --- Numeric transform (Tier 7.68) ---
+SCENE_SET_OBJECT_TRANSFORM = "SCENE_SET_OBJECT_TRANSFORM"
+SCENE_BULK_OFFSET_TRANSFORM = "SCENE_BULK_OFFSET_TRANSFORM"
 
 # ✅ NEW — Tier 7.66
 SNAPSHOT_RESTORE = "SNAPSHOT_RESTORE"
@@ -235,6 +249,15 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
         err = validate_bulk_transform(payload)
         return {"ok": err is None, "error": err}
 
+    # ✅ NEW — numeric transform
+    if tool == SCENE_SET_OBJECT_TRANSFORM:
+        err = validate_set_object_transform(payload)
+        return {"ok": err is None, "error": err}
+
+    if tool == SCENE_BULK_OFFSET_TRANSFORM:
+        err = validate_bulk_offset_transform(payload)
+        return {"ok": err is None, "error": err}
+
     return {"ok": False, "error": "unknown scene tool"}
 
 
@@ -291,5 +314,12 @@ def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[st
 
     if tool == SCENE_BULK_TRANSFORM:
         return apply_bulk_transform(snapshot, payload)
+
+    # ✅ NEW — numeric transform
+    if tool == SCENE_SET_OBJECT_TRANSFORM:
+        return apply_set_object_transform(snapshot, payload)
+
+    if tool == SCENE_BULK_OFFSET_TRANSFORM:
+        return apply_bulk_offset_transform(snapshot, payload)
 
     return {"ok": False, "error": "unknown scene tool"}

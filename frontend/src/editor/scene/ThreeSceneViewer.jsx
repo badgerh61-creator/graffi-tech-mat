@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { useTransformSpace } from "../transform/transformSpaceStore";
 
 // ✅ Step 1 — TransformControls (Three.js handles)
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
@@ -374,6 +375,7 @@ export default function ThreeSceneViewer({
   const layers = useSceneLayers();
   const { preview } = useGizmoPreview();
   const { mode: gizmoMode } = useGizmoMode();
+  const { mode: transformSpace } = useTransformSpace();
 
   // ✅ Tier 7.49
   const snapState = useSnap().snap;
@@ -409,6 +411,13 @@ export default function ThreeSceneViewer({
   const selectedIdRef = useRef(selectedId);
   const previewRef = useRef(preview);
   const gizmoModeRef = useRef(gizmoMode);
+  
+  // ✅ NEW — Tier 7.64
+  const transformSpaceRef = useRef(transformSpace);
+
+  useEffect(() => {
+    transformSpaceRef.current = transformSpace;
+  }, [transformSpace]);
 
   // ✅ Tier 7.49 snap ref
   const snapRef = useRef(normalizeSnapState(snapState));
@@ -567,8 +576,9 @@ export default function ThreeSceneViewer({
     function applySnapToTransformControls() {
       const snap = normalizeSnapState(snapRef.current);
 
-      transformControls.setSpace(snap.orientation === "world" ? "world" : "local");
-
+      const mode = transformSpaceRef.current;
+      transformControls.setSpace(mode === "world" ? "world" : "local");
+      
       if (transformControls.mode === "translate") {
         transformControls.setTranslationSnap(snap.enabled ? snap.step : null);
         transformControls.setRotationSnap(null);
@@ -1134,9 +1144,28 @@ function pickIdNodeForMeshPath(hitMesh) {
         rotation_euler: eulerDegPatch(proxy.rotation, 2),
         scale: vec3Patch(proxy.scale, 4),
       });
+
+      const space = transformSpaceRef.current;
+      if (space !== "pivot") return;
+
+      const sid = selectedIdRef.current;
+      if (!sid) return;
+
+      const primaryId = String(sid).split("::")[0];
+      const pivotGroup = objectGroups.get(primaryId);
+      if (!pivotGroup) return;
+
+      if (gizmoModeRef.current === "translate") {
+        const delta = obj.position.clone().sub(pivotGroup.position);
+        obj.position.copy(pivotGroup.position.clone().add(delta));
+      }
+
+      if (gizmoModeRef.current === "rotate") {
+        obj.quaternion.premultiply(pivotGroup.quaternion);
+      }
     }
     transformControls.addEventListener("objectChange", onGizmoObjectChange);
-
+    
     function resize() {
       const r = container.getBoundingClientRect();
       const w = Math.max(1, Math.floor(r.width));
@@ -1569,7 +1598,7 @@ function computeMarqueeSelection(start, end) {
       syncPrimaryToSingleSelection(oid);
     }
     
-    // --------------------------------------------------
+// --------------------------------------------------
 // ✅ Tier 7.62 — Marquee (Box Select)
 // --------------------------------------------------
 
@@ -1983,11 +2012,11 @@ function handleMouseUp(e) {
 
   useEffect(() => {
     viewerApiRef.current?.syncMode?.();
-  }, [gizmoMode]);
+  }, [gizmoMode, transformSpace]);
 
   useEffect(() => {
     viewerApiRef.current?.syncSnap?.();
-  }, [snapState]);
+  }, [snapState, transformSpace]);
 
   useEffect(() => {
     viewerApiRef.current?.syncPreview?.();

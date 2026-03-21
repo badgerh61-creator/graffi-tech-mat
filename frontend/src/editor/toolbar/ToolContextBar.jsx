@@ -4,6 +4,12 @@ import { useSelection } from "../selection/selectionStore";
 import { useGizmoMode, setGizmoMode } from "../gizmo/gizmoModeStore";
 import { useSnap, setSnap } from "../transform/snapStore";
 
+// ✅ Tier 7.64 — transform space store
+import {
+  useTransformSpace,
+  setTransformSpace,
+} from "../transform/transformSpaceStore";
+
 // ✅ Tier 7.41 — selection filter dropdown
 import {
   useSelectionFilter,
@@ -47,6 +53,9 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
   const { selectedId } = useSelection();
   const mode = useGizmoMode().mode;
   const snap = useSnap().snap;
+
+  // ✅ Tier 7.64
+  const transformSpace = useTransformSpace().mode;
 
   // ✅ Tier 7.41
   const filter = useSelectionFilter().filter;
@@ -108,6 +117,29 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         >
           Scale
         </Button>
+      </div>
+
+      {/* ✅ Tier 7.64 — Transform Space */}
+      <div className="flex items-center gap-1 ml-3">
+        <span className="text-xs opacity-70">Space</span>
+        {["world", "local", "pivot"].map((s) => {
+          const active = transformSpace === s;
+          return (
+            <button
+              key={s}
+              className={
+                active
+                  ? "border rounded px-2 py-1 text-xs bg-gray-100"
+                  : "border rounded px-2 py-1 text-xs"
+              }
+              disabled={!canEdit}
+              onClick={() => setTransformSpace(s)}
+              title={`Transform space ${s}`}
+            >
+              {s.toUpperCase()}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex items-center gap-2 ml-3">
@@ -182,20 +214,6 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
             </button>
           );
         })}
-      </div>
-
-      <div className="flex items-center gap-2 ml-3">
-        <span className="text-xs opacity-70">Space</span>
-        <select
-          className="border rounded px-2 py-1 text-sm"
-          disabled={!canEdit}
-          value={snap.orientation}
-          onChange={(e) => setSnap({ orientation: e.target.value })}
-          title="Transform Orientation"
-        >
-          <option value="local">Local</option>
-          <option value="world">World</option>
-        </select>
       </div>
 
       {violations?.length ? (

@@ -9,6 +9,9 @@ from app.models.asset import Asset
 from app.models.model import ModelRecord
 from app import crud
 
+# ✅ NEW — snapshot tool
+from app.services.tools.snapshot_tools import apply_snapshot_restore
+
 try:
     from app.services.mutations.scene_objects import (
         validate_add_model_ref,
@@ -104,6 +107,9 @@ SCENE_SET_OBJECT_PIVOT_PRESET = "SCENE_SET_OBJECT_PIVOT_PRESET"
 # --- Multi-transform (Tier 7.63) ---
 SCENE_BULK_TRANSFORM = "SCENE_BULK_TRANSFORM"
 
+# ✅ NEW — Tier 7.66
+SNAPSHOT_RESTORE = "SNAPSHOT_RESTORE"
+
 
 # --- Access control helpers ---
 def _require_asset_access(*, db: Session, user_id: int, asset_id: int) -> None:
@@ -138,8 +144,14 @@ def _maybe_require_asset_access(*, db: Session, user, payload: Dict[str, Any]) -
 def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Evaluate should be read-only (no snapshot writes).
-    It may check permissions + payload validity.
     """
+
+    if tool == SNAPSHOT_RESTORE:
+        return {
+            "ok": bool(payload.get("snapshot_id")),
+            "error": None if payload.get("snapshot_id") else "snapshot_id required",
+        }
+
     if tool == SCENE_ADD_MODEL_REF:
         err = validate_add_model_ref(payload)
         if err:
@@ -207,7 +219,6 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
             return {"ok": False, "error": err}
         return {"ok": True}
 
-    # --- Pivot tools ---
     if tool == SCENE_SET_OBJECT_PIVOT:
         err = validate_set_object_pivot(payload)
         return {"ok": err is None, "error": err}
@@ -220,7 +231,6 @@ def evaluate_scene_tool(*, db: Session, user, tool: str, payload: Dict[str, Any]
         err = validate_set_object_pivot_preset(payload)
         return {"ok": err is None, "error": err}
 
-    # --- Multi-transform ---
     if tool == SCENE_BULK_TRANSFORM:
         err = validate_bulk_transform(payload)
         return {"ok": err is None, "error": err}
@@ -233,6 +243,10 @@ def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[st
     """
     Apply mutates the snapshot in-memory (governed pipeline owns persistence).
     """
+
+    if tool == SNAPSHOT_RESTORE:
+        return apply_snapshot_restore(snapshot, payload)
+
     if tool == SCENE_ADD_MODEL_REF:
         return apply_add_model_ref(snapshot, payload)
 
@@ -266,7 +280,6 @@ def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[st
     if tool == SCENE_BULK_SET_LAYERS:
         return apply_bulk_set_layers(snapshot, payload)
 
-    # --- Pivot tools ---
     if tool == SCENE_SET_OBJECT_PIVOT:
         return apply_set_object_pivot(snapshot, payload)
 
@@ -276,7 +289,6 @@ def apply_scene_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[st
     if tool == SCENE_SET_OBJECT_PIVOT_PRESET:
         return apply_set_object_pivot_preset(snapshot, payload)
 
-    # --- Multi-transform ---
     if tool == SCENE_BULK_TRANSFORM:
         return apply_bulk_transform(snapshot, payload)
 

@@ -505,6 +505,15 @@ export default function StudioEditor() {
     },
     [fetchSnapshots]
   );
+  
+  const restoreSnapshotFromHistory = useCallback(
+    (snapshotId) => {
+      if (!snapshotId) return;
+
+      navigateToSnapshot(snapshotId);
+    },
+    [navigateToSnapshot]
+  );
 
   const sceneRebindKey = useMemo(() => {
     if (!activeSnapshot?.id) return "snap:none";
@@ -805,6 +814,7 @@ export default function StudioEditor() {
               canEdit={toolsEnabled}
               reasons={whyBlockedReasons}
               lockLabelText={lock?.state === "owned" ? "LOCK: Owned" : ""}
+              onRestoreSnapshot={restoreSnapshotFromHistory} // ✅ Tier 7.66 bridge
             />
           </div>
           <ViewModeSelect />

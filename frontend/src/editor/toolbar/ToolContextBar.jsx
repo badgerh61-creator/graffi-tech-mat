@@ -1,8 +1,14 @@
 // frontend/src/editor/toolbar/ToolContextBar.jsx
+
 import React, { useMemo } from "react";
 import { useSelection } from "../selection/selectionStore";
 import { useGizmoMode, setGizmoMode } from "../gizmo/gizmoModeStore";
-import { useSnap, setSnap } from "../transform/snapStore";
+import {
+  useSnap,
+  setSnapEnabled,
+  setSnapMode,
+  setGridSize,
+} from "../transform/snapStore";
 
 // ✅ Tier 7.64 — transform space store
 import {
@@ -16,8 +22,17 @@ import {
   setSelectionFilter,
 } from "../selection/selectionFilterStore";
 
-// ✅ Tier 7.58 — canonical constraint violation indicator
+// ✅ Tier 7.58 — constraint violations
 import { useConstraintViolations } from "../constraints/constraintViolationStore";
+
+// ✅ Tier 7.66 — history
+import {
+  useHistory,
+  historyUndo,
+  historyRedo,
+  historyCanUndo,
+  historyCanRedo,
+} from "../history/historyStore";
 
 function Button({ onClick, disabled, active, children, title }) {
   const cls = active
@@ -43,10 +58,15 @@ function ReasonPills({ reasons }) {
   );
 }
 
-export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
+export default function ToolContextBar({
+  canEdit,
+  reasons,
+  lockLabelText,
+  onRestoreSnapshot, // ✅ required for undo/redo
+}) {
   const { selectedId } = useSelection();
   const mode = useGizmoMode().mode;
-  const snap = useSnap().snap;
+  const snap = useSnap();
 
   // ✅ Tier 7.64
   const transformSpace = useTransformSpace().mode;
@@ -56,6 +76,9 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
 
   // ✅ Tier 7.58
   const { violations } = useConstraintViolations();
+
+  // ✅ Tier 7.66
+  const history = useHistory();
 
   const selectionShort = useMemo(() => {
     if (!selectedId) return "none";
@@ -137,7 +160,7 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         })}
       </div>
 
-      {/* SNAP BLOCK (UPDATED) */}
+      {/* SNAP SYSTEM (Tier 7.65 upgraded) */}
       <div className="flex items-center gap-2 ml-3 border-l pl-2">
         {/* Enable */}
         <label className="flex items-center gap-1 text-sm">
@@ -145,17 +168,17 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
             type="checkbox"
             disabled={!canEdit}
             checked={!!snap.enabled}
-            onChange={(e) => setSnap({ enabled: e.target.checked })}
+            onChange={(e) => setSnapEnabled(e.target.checked)}
           />
           Snap
         </label>
 
-        {/* NEW: Mode */}
+        {/* Mode */}
         <select
           className="border rounded px-2 py-1 text-xs"
           value={snap.mode}
           disabled={!canEdit}
-          onChange={(e) => setSnap({ mode: e.target.value })}
+          onChange={(e) => setSnapMode(e.target.value)}
         >
           <option value="none">None</option>
           <option value="grid">Grid</option>
@@ -163,7 +186,7 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
           <option value="object">Object</option>
         </select>
 
-        {/* NEW: Grid size */}
+        {/* Grid Size */}
         {snap.mode === "grid" && (
           <input
             className="border rounded px-2 py-1 w-16 text-xs"
@@ -171,13 +194,11 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
             step="0.1"
             value={snap.gridSize}
             disabled={!canEdit}
-            onChange={(e) =>
-              setSnap({ gridSize: Number(e.target.value || 1) })
-            }
+            onChange={(e) => setGridSize(Number(e.target.value || 1))}
           />
         )}
 
-        {/* Existing precision snap */}
+        {/* Legacy precision snap (kept for compatibility) */}
         <div className="text-xs opacity-70">
           Move:
           <input
@@ -185,8 +206,10 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
             type="number"
             step="0.01"
             disabled={!canEdit || !snap.enabled}
-            value={snap.step}
-            onChange={(e) => setSnap({ step: Number(e.target.value || 0.1) })}
+            value={snap.step ?? 0.1}
+            onChange={(e) =>
+              setSnap({ step: Number(e.target.value || 0.1) })
+            }
           />
         </div>
 
@@ -197,7 +220,7 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
             type="number"
             step="1"
             disabled={!canEdit || !snap.enabled}
-            value={snap.step_degrees}
+            value={snap.step_degrees ?? 5}
             onChange={(e) =>
               setSnap({ step_degrees: Number(e.target.value || 5) })
             }
@@ -225,6 +248,35 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
             </button>
           );
         })}
+      </div>
+
+      {/* ✅ Undo / Redo (Tier 7.66) */}
+      <div className="flex items-center gap-2 ml-3 border-l pl-2">
+        <button
+          className="border rounded px-2 py-1 text-xs"
+          disabled={!historyCanUndo()}
+          onClick={() => {
+            const snap = historyUndo();
+            if (snap?.id) {
+              onRestoreSnapshot?.(snap.id);
+            }
+          }}
+        >
+          Undo
+        </button>
+
+        <button
+          className="border rounded px-2 py-1 text-xs"
+          disabled={!historyCanRedo()}
+          onClick={() => {
+            const snap = historyRedo();
+            if (snap?.id) {
+              onRestoreSnapshot?.(snap.id);
+            }
+          }}
+        >
+          Redo
+        </button>
       </div>
 
       {/* Constraint indicator */}

@@ -43,12 +43,6 @@ function ReasonPills({ reasons }) {
   );
 }
 
-/**
- * Props:
- * - canEdit: boolean
- * - reasons: string[] (7.36 stable order)
- * - lockLabelText: string (optional)
- */
 export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
   const { selectedId } = useSelection();
   const mode = useGizmoMode().mode;
@@ -77,6 +71,7 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         Selection: <span className="font-mono">{selectionShort}</span>
       </div>
 
+      {/* Selection Filter */}
       <div className="flex items-center gap-2 ml-2">
         <div className="text-xs opacity-70">Select</div>
         <select
@@ -92,6 +87,7 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         </select>
       </div>
 
+      {/* Gizmo */}
       <div className="flex items-center gap-1 ml-2">
         <Button
           disabled={!canEdit}
@@ -119,7 +115,7 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         </Button>
       </div>
 
-      {/* ✅ Tier 7.64 — Transform Space */}
+      {/* Transform Space */}
       <div className="flex items-center gap-1 ml-3">
         <span className="text-xs opacity-70">Space</span>
         {["world", "local", "pivot"].map((s) => {
@@ -134,7 +130,6 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
               }
               disabled={!canEdit}
               onClick={() => setTransformSpace(s)}
-              title={`Transform space ${s}`}
             >
               {s.toUpperCase()}
             </button>
@@ -142,8 +137,10 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         })}
       </div>
 
-      <div className="flex items-center gap-2 ml-3">
-        <label className="flex items-center gap-2 text-sm">
+      {/* SNAP BLOCK (UPDATED) */}
+      <div className="flex items-center gap-2 ml-3 border-l pl-2">
+        {/* Enable */}
+        <label className="flex items-center gap-1 text-sm">
           <input
             type="checkbox"
             disabled={!canEdit}
@@ -153,10 +150,38 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
           Snap
         </label>
 
+        {/* NEW: Mode */}
+        <select
+          className="border rounded px-2 py-1 text-xs"
+          value={snap.mode}
+          disabled={!canEdit}
+          onChange={(e) => setSnap({ mode: e.target.value })}
+        >
+          <option value="none">None</option>
+          <option value="grid">Grid</option>
+          <option value="surface">Surface</option>
+          <option value="object">Object</option>
+        </select>
+
+        {/* NEW: Grid size */}
+        {snap.mode === "grid" && (
+          <input
+            className="border rounded px-2 py-1 w-16 text-xs"
+            type="number"
+            step="0.1"
+            value={snap.gridSize}
+            disabled={!canEdit}
+            onChange={(e) =>
+              setSnap({ gridSize: Number(e.target.value || 1) })
+            }
+          />
+        )}
+
+        {/* Existing precision snap */}
         <div className="text-xs opacity-70">
           Move:
           <input
-            className="border rounded px-2 py-1 w-20 ml-1"
+            className="border rounded px-2 py-1 w-16 ml-1"
             type="number"
             step="0.01"
             disabled={!canEdit || !snap.enabled}
@@ -166,9 +191,9 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         </div>
 
         <div className="text-xs opacity-70">
-          Rotate:
+          Rot:
           <input
-            className="border rounded px-2 py-1 w-20 ml-1"
+            className="border rounded px-2 py-1 w-16 ml-1"
             type="number"
             step="1"
             disabled={!canEdit || !snap.enabled}
@@ -178,22 +203,9 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
             }
           />
         </div>
-
-        <div className="text-xs opacity-70">
-          Scale:
-          <input
-            className="border rounded px-2 py-1 w-20 ml-1"
-            type="number"
-            step="0.01"
-            disabled={!canEdit || !snap.enabled}
-            value={snap.step_factor}
-            onChange={(e) =>
-              setSnap({ step_factor: Number(e.target.value || 0.1) })
-            }
-          />
-        </div>
       </div>
 
+      {/* Axis Lock */}
       <div className="flex items-center gap-1 ml-3">
         <span className="text-xs opacity-70">Axis</span>
         {["none", "x", "y", "z"].map((axis) => {
@@ -208,7 +220,6 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
               }
               disabled={!canEdit}
               onClick={() => setSnap({ axis_lock: axis })}
-              title={`Axis lock ${axis.toUpperCase()}`}
             >
               {axis.toUpperCase()}
             </button>
@@ -216,6 +227,7 @@ export default function ToolContextBar({ canEdit, reasons, lockLabelText }) {
         })}
       </div>
 
+      {/* Constraint indicator */}
       {violations?.length ? (
         <div className="text-xs border rounded px-2 py-1 bg-red-50 ml-3">
           Constraints: {violations.length}

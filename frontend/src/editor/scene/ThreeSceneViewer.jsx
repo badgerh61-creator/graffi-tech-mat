@@ -242,6 +242,38 @@ function eulerDegPatch(e, p = 2) {
   };
 }
 
+function boxToPivotPreset(box, preset) {
+  const min = box.min;
+  const max = box.max;
+  const center = box.getCenter(new THREE.Vector3());
+
+  switch (preset) {
+    case "center":
+      return { x: center.x, y: center.y, z: center.z };
+
+    case "bottom":
+      return { x: center.x, y: min.y, z: center.z };
+
+    case "top":
+      return { x: center.x, y: max.y, z: center.z };
+
+    case "front":
+      return { x: center.x, y: center.y, z: max.z };
+
+    case "back":
+      return { x: center.x, y: center.y, z: min.z };
+
+    case "left":
+      return { x: min.x, y: center.y, z: center.z };
+
+    case "right":
+      return { x: max.x, y: center.y, z: center.z };
+
+    default:
+      return { x: center.x, y: center.y, z: center.z };
+  }
+}
+
 function addStudioLighting(scene) {
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9);
   hemi.name = "light:hemi";
@@ -265,8 +297,11 @@ function addStudioLighting(scene) {
 
 function normalizeSnapState(raw) {
   const snap = raw || {};
+
   return {
     enabled: !!snap.enabled,
+
+    // existing
     step: Number.isFinite(Number(snap.step)) && Number(snap.step) > 0 ? Number(snap.step) : 0.1,
     step_degrees:
       Number.isFinite(Number(snap.step_degrees)) && Number(snap.step_degrees) > 0
@@ -276,12 +311,22 @@ function normalizeSnapState(raw) {
       Number.isFinite(Number(snap.step_factor)) && Number(snap.step_factor) > 0
         ? Number(snap.step_factor)
         : 0.1,
+
     axis_lock: ["none", "x", "y", "z"].includes(String(snap.axis_lock))
       ? String(snap.axis_lock)
       : "none",
+
     orientation: ["local", "world"].includes(String(snap.orientation))
       ? String(snap.orientation)
       : "local",
+
+    // ✅ Tier 7.65 — ADD THESE
+    mode: ["step", "grid"].includes(String(snap.mode)) ? String(snap.mode) : "step",
+
+    gridSize:
+      Number.isFinite(Number(snap.gridSize)) && Number(snap.gridSize) > 0
+        ? Number(snap.gridSize)
+        : 1,
   };
 }
 
@@ -626,26 +671,40 @@ function clearSelectionBox() {
 // --------------------------------------------------
 
 let pivotHelper = null;
+let lastPivotKey = null;
 
 function clearPivotHelper() {
   if (!pivotHelper) return;
 
-  scene.remove(pivotHelper);
+  if (pivotHelper.parent) {
+    pivotHelper.parent.remove(pivotHelper);
+  }
+
   pivotHelper.geometry?.dispose?.();
   pivotHelper.material?.dispose?.();
   pivotHelper = null;
+  lastPivotKey = null;
 }
 
 function updatePivotPreview() {
-  clearPivotHelper();
-
   const pv = pivotPreviewRef.current;
-  if (!pv || !pv.object_id || !pv.pivot) return;
+  if (!pv || !pv.object_id || !pv.pivot) {
+    clearPivotHelper();
+    return;
+  }
 
   const group = objectGroups.get(String(pv.object_id));
-  if (!group || group.visible === false) return;
+  if (!group || group.visible === false) {
+    clearPivotHelper();
+    return;
+  }
 
   const { x, y, z } = pv.pivot;
+
+  const key = `${pv.object_id}:${x}:${y}:${z}`;
+  if (pivotHelper && key === lastPivotKey) return;
+
+  clearPivotHelper();
 
   const geom = new THREE.SphereGeometry(0.05, 12, 12);
   const mat = new THREE.MeshBasicMaterial({
@@ -659,6 +718,8 @@ function updatePivotPreview() {
   pivotHelper.renderOrder = 2000;
 
   scene.add(pivotHelper);
+
+  lastPivotKey = key;
 }
 
 // ✅ KEEP ORIGINAL (ONLY ONCE)
@@ -1129,9 +1190,11 @@ function pickIdNodeForMeshPath(hitMesh) {
     transformControls.addEventListener("dragging-changed", onGizmoDraggingChanged);
 
     function onGizmoObjectChange() {
-      const activeId = activeDecalIdRef.current;
       const obj = transformControls.object;
-      if (!activeId || !obj) return;
+      if (!obj) return;
+
+      const activeId = activeDecalIdRef.current;
+      if (!activeId) return;
 
       const proxy = decalProxyById.get(String(activeId));
       if (!proxy) return;
@@ -1139,33 +1202,61 @@ function pickIdNodeForMeshPath(hitMesh) {
 
       if (!gizmoDragging) return;
 
+      const space = transformSpaceRef.current;
+
+      if (space === "pivot") {
+        const sid = selectedIdRef.current;
+        if (!sid) return;
+
+        const primaryId = String(sid).split("::")[0];
+        const pivotGroup = objectGroups.get(primaryId);
+        if (!pivotGroup) return;
+
+        if (gizmoModeRef.current === "translate") {
+          const delta = obj.position.clone().sub(pivotGroup.position);
+          obj.position.copy(pivotGroup.position.clone().add(delta));
+        }
+
+        if (gizmoModeRef.current === "rotate") {
+          obj.quaternion.premultiply(pivotGroup.quaternion);
+        }
+      }
+
+      // --------------------------------------------------
+      // ✅ Tier 7.65 — GRID SNAP (FINAL, AFTER PIVOT)
+      // --------------------------------------------------
+      const snap = snapRef.current;
+
+      if (
+        snap.enabled &&
+        snap.mode === "grid" &&
+        gizmoModeRef.current === "translate"
+      ) {
+        const g = Number(snap.gridSize || 1);
+
+        if (g > 0) {
+          if (snap.axis_lock === "none" || snap.axis_lock === "x") {
+            obj.position.x = Math.round(obj.position.x / g) * g;
+          }
+          if (snap.axis_lock === "none" || snap.axis_lock === "y") {
+            obj.position.y = Math.round(obj.position.y / g) * g;
+          }
+          if (snap.axis_lock === "none" || snap.axis_lock === "z") {
+            obj.position.z = Math.round(obj.position.z / g) * g;
+          }
+        }
+      }
+
       setDecalPreviewPatch(activeId, {
         position: vec3Patch(proxy.position, 4),
         rotation_euler: eulerDegPatch(proxy.rotation, 2),
         scale: vec3Patch(proxy.scale, 4),
       });
 
-      const space = transformSpaceRef.current;
-      if (space !== "pivot") return;
-
-      const sid = selectedIdRef.current;
-      if (!sid) return;
-
-      const primaryId = String(sid).split("::")[0];
-      const pivotGroup = objectGroups.get(primaryId);
-      if (!pivotGroup) return;
-
-      if (gizmoModeRef.current === "translate") {
-        const delta = obj.position.clone().sub(pivotGroup.position);
-        obj.position.copy(pivotGroup.position.clone().add(delta));
-      }
-
-      if (gizmoModeRef.current === "rotate") {
-        obj.quaternion.premultiply(pivotGroup.quaternion);
-      }
+      updatePivotPreview();
     }
     transformControls.addEventListener("objectChange", onGizmoObjectChange);
-    
+        
     function resize() {
       const r = container.getBoundingClientRect();
       const w = Math.max(1, Math.floor(r.width));
@@ -1246,6 +1337,7 @@ function pickIdNodeForMeshPath(hitMesh) {
       meshToObjectKey.clear();
       objectGroups.clear();
       allMeshes.clear();
+      pivotGroups.clear();
 
       clearMaterialSlots();
 
@@ -1254,9 +1346,6 @@ function pickIdNodeForMeshPath(hitMesh) {
       clearGhost();
       clearSelectionBox();
       clearDecals();
-      clearPivotHelper();
-      
-      // ✅ Tier 7.61 — reset pivot preview
       clearPivotHelper();
 
       transformControls.detach();

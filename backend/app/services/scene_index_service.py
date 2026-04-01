@@ -5,15 +5,15 @@ from typing import Any, Dict, List
 
 def _default_stub_objects() -> List[Dict[str, Any]]:
     """
-    Deterministic fallback until real asset registry / scene persistence exists.
-    Stub must NOT pretend a real asset exists.
+    Deterministic fallback when no scene data exists.
+    MUST NOT pretend a real asset exists.
     """
     return [
         {
             "id": "vehicle-1",
             "kind": "vehicle",
             "name": "Default Vehicle",
-            "asset_ref": None,  # ← changed from "vehicles/default.glb"
+            "asset_ref": None,
             "transform": {
                 "position": {"x": 0, "y": 0, "z": 0},
                 "rotation": {"x": 0, "y": 0, "z": 0},
@@ -23,31 +23,95 @@ def _default_stub_objects() -> List[Dict[str, Any]]:
     ]
 
 
+def _normalize_transform(node: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "position": node.get("transform", {}).get(
+            "position", {"x": 0, "y": 0, "z": 0}
+        ),
+        "rotation": node.get("transform", {}).get(
+            "rotation", {"x": 0, "y": 0, "z": 0}
+        ),
+        "scale": node.get("transform", {}).get(
+            "scale", {"x": 1, "y": 1, "z": 1}
+        ),
+    }
+
+
+def _bind_asset(node: Dict[str, Any]) -> str | None:
+    """
+    Tier 6G.13 — Correct binding:
+    Accept BOTH:
+    - int → "asset:<id>"
+    - "asset:<id>" → pass through
+    """
+    asset_ref = node.get("asset_ref")
+
+    # ✅ already correct format
+    if isinstance(asset_ref, str) and asset_ref.startswith("asset:"):
+        return asset_ref
+
+    # ✅ legacy int support
+    if isinstance(asset_ref, int):
+        return f"asset:{asset_ref}"
+
+    return None
+    
+
+def _build_from_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    objects = []
+
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+
+        obj_id = str(n.get("id") or "").strip()
+        if not obj_id:
+            continue
+
+        objects.append(
+            {
+                "id": obj_id,
+                "kind": n.get("kind", "node"),
+                "name": n.get("name"),
+                "asset_ref": _bind_asset(n),  # ✅ FIXED
+                "transform": _normalize_transform(n),
+            }
+        )
+
+    return objects
+
+
 def build_scene_index(snapshot: Any) -> Dict[str, Any]:
     """
-    Deterministic scene index builder.
+    Tier 6G.13 — Real Asset Binding Scene Index
 
-    Uses snapshot.body_state as the current best-known payload source.
-    Accepts any of these future shapes (additive, safe):
-      - body_state["scene"]["objects"]
-      - body_state["objects"]
-
-    If missing, returns a deterministic stub.
+    Rules:
+    - Deterministic
+    - Read-only
+    - No DB access
+    - asset_ref → viewer binding happens here ONLY
     """
+
     body = getattr(snapshot, "body_state", None) or {}
 
-    # Shape A: { scene: { objects: [...] } }
+    # ✅ Preferred shape (future-safe)
     scene = body.get("scene")
     if isinstance(scene, dict):
-        objs = scene.get("objects")
-        if isinstance(objs, list):
-            safe = [o for o in objs if isinstance(o, dict)]
-            return {"snapshot_id": snapshot.id, "objects": safe}
+        nodes = scene.get("nodes") or scene.get("objects")
+        if isinstance(nodes, list):
+            objects = _build_from_nodes(nodes)
+            if objects:
+                return {"snapshot_id": snapshot.id, "objects": objects}
 
-    # Shape B: { objects: [...] }
-    objs = body.get("objects")
-    if isinstance(objs, list):
-        safe = [o for o in objs if isinstance(o, dict)]
-        return {"snapshot_id": snapshot.id, "objects": safe}
+    # ✅ Flat fallback
+    nodes = body.get("nodes") or body.get("objects")
+    if isinstance(nodes, list):
+        objects = _build_from_nodes(nodes)
+        if objects:
+            return {"snapshot_id": snapshot.id, "objects": objects}
 
-    return {"snapshot_id": snapshot.id, "objects": _default_stub_objects()}
+    # ❌ Nothing usable → deterministic stub
+    return {
+        "snapshot_id": snapshot.id,
+        "objects": _default_stub_objects(),
+    }

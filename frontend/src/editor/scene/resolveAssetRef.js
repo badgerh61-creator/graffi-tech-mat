@@ -1,51 +1,54 @@
 // frontend/src/editor/scene/resolveAssetRef.js
 import { API_BASE } from "../../config/apiBase";
 
-/**
- * Resolve scene object's asset_ref into a loadable URL.
- * Supported:
- * - "asset:<id>" -> GET /assets/<id>/url
- * - "http(s)://..." passthrough
- * - "/path.glb" passthrough (dev)
- */
+const cache = new Map();
+
 export async function resolveAssetRef(assetRef) {
   if (!assetRef) return null;
 
   const ref = String(assetRef).trim();
   if (!ref) return null;
 
-  // ✅ passthrough absolute URLs
-  if (ref.startsWith("http://") || ref.startsWith("https://")) return ref;
+  if (cache.has(ref)) return cache.get(ref);
 
-  // ✅ passthrough dev-relative paths EXACTLY (tests expect no prefix)
-  if (ref.startsWith("/")) return ref;
+  if (ref.startsWith("http://") || ref.startsWith("https://")) {
+    cache.set(ref, ref);
+    return ref;
+  }
 
-  // ✅ "asset:<id>" -> backend gives signed URL
   if (ref.startsWith("asset:")) {
-    const idStr = ref.slice("asset:".length).trim();
-    const assetId = Number(idStr);
-    if (!Number.isFinite(assetId)) return null;
+    const assetId = Number(ref.replace("asset:", "").trim());
 
-    // Keep older tier tests stable:
-    // they expect 127.0.0.1 even if API_BASE is localhost.
-    const base = String(API_BASE || "").replace("http://localhost:8000", "http://127.0.0.1:8000");
+    const base = "http://127.0.0.1:8000";
+    const token = localStorage.getItem("graffi.access_token");
 
-    // ✅ IMPORTANT: tests expect fetch(url) with ONLY the URL argument
-    const res = await fetch(`${base}/assets/${assetId}/url`);
+    console.log("🚀 FETCHING ASSET URL:", assetId);
+
+    const res = await fetch(`${base}/assets/${assetId}/url`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    console.log("📡 RESPONSE STATUS:", res.status);
+
     if (!res.ok) {
-      throw new Error(`Failed to resolve asset:${assetId} (${res.status})`);
+      console.error("❌ FAILED TO FETCH ASSET URL");
+      return null;
     }
 
     const data = await res.json();
 
-    // Only GLB is supported by the viewer
-    if (data?.type && data.type !== "glb") {
-      throw new Error(`Asset ${assetId} is not a GLB`);
+    console.log("📦 ASSET RESPONSE:", data);
+
+    const url = data?.url;
+
+    if (!url) {
+      console.error("❌ NO URL RETURNED");
+      return null;
     }
 
-    return data?.url || null;
+    cache.set(ref, url);
+    return url;
   }
 
-  // ✅ any other relative string: passthrough unchanged
-  return ref;
+  return null;
 }

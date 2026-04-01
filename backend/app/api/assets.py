@@ -1,7 +1,6 @@
-# backend/app/api/assets.py
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from minio.error import S3Error
 
 from app.db.session import get_db
 from app.api.deps import get_current_user
@@ -9,6 +8,7 @@ from app import crud
 from app.models.asset import Asset
 from app.models.model import ModelRecord
 from app.services import storage as s3
+from app.core.config import settings  # 🔥 REQUIRED
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -22,11 +22,9 @@ def list_assets(
 ):
     """
     List all assets belonging to models the user can access
-    (Phase 4.6 compatible)
     """
     rows = crud.get_models_accessible_to_user(db, user.id)
 
-    # rows = [(model, role), ...]
     model_ids = [model.id for model, _role in rows]
 
     if not model_ids:
@@ -41,9 +39,19 @@ def list_assets(
         .all()
     )
 
+    serialized = [
+        {
+            "id": a.id,
+            "filename": a.filename,
+            "model_id": a.model_id,
+            "processed": True,
+        }
+        for a in assets
+    ]
+
     return {
-        "items": assets,
-        "total": len(assets),
+        "items": serialized,
+        "total": len(serialized),
     }
 
 
@@ -54,8 +62,11 @@ def get_asset_url(
     user=Depends(get_current_user),
 ):
     """
-    Return a presigned URL if the user can access the asset's model
+    Return a presigned URL if:
+    - user has access
+    - file EXISTS in storage (critical fix)
     """
+
     asset = (
         db.query(Asset)
         .join(ModelRecord)
@@ -64,7 +75,7 @@ def get_asset_url(
     )
 
     if not asset:
-        raise HTTPException(404, "Asset not found")
+        raise HTTPException(status_code=404, detail="Asset not found")
 
     model = crud.get_model_if_accessible(
         db,
@@ -73,14 +84,29 @@ def get_asset_url(
     )
 
     if not model:
-        raise HTTPException(403, "No access to asset")
+        raise HTTPException(status_code=403, detail="No access to asset")
+
+    # 🔥 CRITICAL FIX — VERIFY FILE EXISTS (CORRECT CLIENT)
+    try:
+        s3.get_client().stat_object(
+            settings.MINIO_BUCKET,
+            asset.s3_key,
+        )
+    except S3Error:
+        print(f"❌ Missing asset in storage: {asset.s3_key}")
+        raise HTTPException(
+            status_code=404,
+            detail="Asset file missing in storage",
+        )
+
+    # ✅ ONLY generate URL if file exists
+    url = s3.get_presigned_url(
+        asset.s3_key,
+        expires_seconds=ASSET_URL_EXPIRES,
+    )
 
     return {
-        "url": s3.get_presigned_url(
-            asset.s3_key,
-            expires_seconds=ASSET_URL_EXPIRES,
-        ),
+        "url": url,
         "expires_in": ASSET_URL_EXPIRES,
         "type": "glb" if asset.filename.lower().endswith(".glb") else "image",
     }
-

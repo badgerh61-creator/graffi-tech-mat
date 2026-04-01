@@ -1,6 +1,9 @@
 // frontend/src/editor/scene/ThreeSceneViewer.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+
+const EMPTY_ARRAY = Object.freeze([]);
+
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { useTransformSpace } from "../transform/transformSpaceStore";
 
@@ -91,6 +94,7 @@ import { usePivotPreview } from "../transform/pivotPreviewStore";
 // ✅ Tier 7.69 — view modes
 import { useViewMode } from "../view/viewModeStore";
 
+
 function makeRenderer(canvas) {
   const gl2 = canvas.getContext("webgl2", { antialias: true });
   const gl1 = gl2 ? null : canvas.getContext("webgl", { antialias: true });
@@ -109,7 +113,7 @@ function makeRenderer(canvas) {
   r.outputColorSpace = THREE.SRGBColorSpace;
   r.toneMapping = THREE.ACESFilmicToneMapping;
   r.toneMappingExposure = 1.0;
-  r.physicallyCorrectLights = true;
+  r.useLegacyLights = false;
 
   return r;
 }
@@ -409,6 +413,7 @@ function publishMaterialSlotsForMesh(objectKey, meshPath, material) {
  */
 export default function ThreeSceneViewer({
   sceneIndex,
+  activeSnapshot = null,
   disabled = false,
   canEdit = true,
   onCommitTool = null,
@@ -442,22 +447,41 @@ export default function ThreeSceneViewer({
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
+  const lastGoodObjectsRef = useRef([]);
+
   const objects = useMemo(() => {
     const a = sceneIndex?.objects;
-    const b = sceneIndex?.body_state?.objects;
-    const c = sceneIndex?.snapshot?.body_state?.objects;
-    const d = sceneIndex?.activeSnapshot?.body_state?.objects;
-    const list = a || b || c || d || [];
-    return Array.isArray(list) ? list.filter(Boolean) : [];
-  }, [sceneIndex]);
+    const b = sceneIndex?.body_state?.scene?.objects;
+    const c = sceneIndex?.snapshot?.body_state?.scene?.objects;
+    const d = activeSnapshot?.body_state?.scene?.objects;
 
+    // ✅ use FIRST NON-EMPTY array
+    const list =
+      (Array.isArray(a) && a.length ? a :
+      Array.isArray(b) && b.length ? b :
+      Array.isArray(c) && c.length ? c :
+      Array.isArray(d) && d.length ? d :
+      []);
+
+    // ✅ store last valid objects
+    if (list.length) {
+      lastGoodObjectsRef.current = list;
+    }
+
+    const finalList = list.length ? list : lastGoodObjectsRef.current;
+
+    console.log("🔥 RESOLVED OBJECT SOURCE:", finalList);
+
+    return finalList;
+  }, [sceneIndex]); // ✅ KEEP THIS
+    
   const decals = useMemo(() => {
     const d1 = sceneIndex?.decor_state?.decals;
     const d2 = sceneIndex?.snapshot?.decor_state?.decals;
-    const d3 = sceneIndex?.activeSnapshot?.decor_state?.decals;
+    const d3 = activeSnapshot?.decor_state?.decals;
     const list = d1 || d2 || d3 || [];
     return Array.isArray(list) ? list.filter(Boolean) : [];
-  }, [sceneIndex]);
+  }, [sceneIndex, activeSnapshot]);
 
   const selectedIdRef = useRef(selectedId);
   const previewRef = useRef(preview);
@@ -566,6 +590,10 @@ export default function ThreeSceneViewer({
   });
 
   useEffect(() => {
+    if (!objects.length) {
+      console.warn("⚠️ No objects, but still initializing viewer");
+    }
+
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
@@ -1400,9 +1428,9 @@ function pickIdNodeForMeshPath(hitMesh) {
         else if (axis === "y") ghost.scale.y *= factor;
         else ghost.scale.z *= factor;
       }
+      
+      }
 
-      root.add(ghost);
-    }
 
     async function loadAll() {
       if (disposed) return;
@@ -1430,11 +1458,14 @@ function pickIdNodeForMeshPath(hitMesh) {
       while (root.children.length) root.remove(root.children[0]);
       root.add(decalsRoot);
 
-      if (!objects.length) return;
+      if (!objects.length) {
+        console.log("⏸ waiting for objects...");
+        return;
+      }
 
       const loader = new GLTFLoader();
       const sortedObjects = sortObjectsStable(objects);
-
+      
       // --------------------------------------------------
       // PASS 1 — create all object groups deterministically
       // --------------------------------------------------
@@ -1488,6 +1519,9 @@ function pickIdNodeForMeshPath(hitMesh) {
 
      // attach pivot inside outer
      outer.add(pivotGroup);
+     
+     // add to scene root
+     root.add(outer);
 
      // store both
      objectGroups.set(objectKey, outer);
@@ -1530,7 +1564,6 @@ function pickIdNodeForMeshPath(hitMesh) {
 
         const objId = String(obj?.id || "").trim();
         if (!objId) continue;
-        if (obj?.enabled === false) continue;
 
         const kind = String(obj?.kind || "unknown");
         const cfg = layers.kinds[kind] || ensureKind(kind);
@@ -1541,11 +1574,20 @@ function pickIdNodeForMeshPath(hitMesh) {
 
         const pivotGroup = pivotGroups.get(objectKey) || group;
 
-        const assetRef = obj?.asset_ref
-          ? String(obj.asset_ref).trim()
-          : obj?.url
-            ? String(obj.url).trim()
-            : "";
+        const assetRefRaw = obj?.asset_ref ?? obj?.url ?? null;
+
+        const assetRef =
+          typeof assetRefRaw === "string"
+            ? assetRefRaw.trim()
+            : assetRefRaw != null
+              ? String(assetRefRaw).trim()
+              : "";
+
+        console.log("🧱 OBJECT ASSET CHECK:", {
+          objectKey,
+          raw: obj?.asset_ref,
+          final: assetRef,
+        });
 
         if (!assetRef) {
           const placeholder = makePlaceholderMesh(objectKey);
@@ -1576,17 +1618,35 @@ function pickIdNodeForMeshPath(hitMesh) {
         }
 
         setLoadingCount((c) => c + 1);
-        try {
-          const url = /^https?:\/\//i.test(assetRef) ? assetRef : await resolveAssetRef(assetRef);
-          if (!url) throw new Error("asset_ref could not be resolved");
 
-          console.log("[ThreeSceneViewer] Loading GLB:", {
-            objId,
+        let finalUrl = null;
+
+        try {
+          finalUrl = await resolveAssetRef(assetRef);
+          
+          console.log("🧩 AFTER resolveAssetRef:", finalUrl);
+          
+          console.log("🧩 RESOLVE RESULT:", {
             assetRef,
-            url,
+            finalUrl,
           });
 
-          const gltf = await loader.loadAsync(url);
+          if (!finalUrl) {
+            throw new Error("asset_ref could not be resolved");
+          }
+          
+          console.log("[ThreeSceneViewer] Loading GLB:", {
+            assetRef,
+            finalUrl,
+          });
+
+          const gltf = await loader.loadAsync(finalUrl);
+
+          console.log("✅ GLB LOADED SUCCESSFULLY:", {
+            objId,
+            finalUrl,
+          });
+
           if (disposed) return;
 
           const gltfRoot = gltf.scene;
@@ -1600,34 +1660,39 @@ function pickIdNodeForMeshPath(hitMesh) {
             node.userData.objectId = objectKey;
             applyOpacityToMaterial(node.material, cfg.opacity);
 
+            // ✅ register mesh
             allMeshes.add(node);
 
+            // ✅ make pickable
+            if (cfg.pickable) {
+              pickables.push(node);
+              meshToObjectKey.set(node, objectKey);
+              meshToObjectId.set(node, objId);
+            }
+
+            // ✅ build mesh path
             try {
               const mp = buildMeshPath(node);
               if (mp) {
                 meshPaths.push(mp);
+
                 node.userData.pickId = `mesh:${objectKey}::${mp}`;
                 node.userData.meshPath = mp;
 
                 publishMaterialSlotsForMesh(objectKey, mp, node.material);
               }
             } catch {}
-
-            if (cfg.pickable) {
-              pickables.push(node);
-              meshToObjectId.set(node, objId);
-              meshToObjectKey.set(node, objectKey);
-            }
           });
 
-          setMeshPathsForObject(objectKey, meshPaths);
-        } catch (e) {
-          console.error("[ThreeSceneViewer] GLB load failed:", {
-            objId,
-            assetRef,
-            error: String(e?.message || e),
-          });
-
+          // ✅ register all mesh paths
+          if (meshPaths.length) {
+            setMeshPathsForObject(objectKey, meshPaths);
+          }
+          
+        } catch (err) {
+          console.error("❌ Asset resolution failed:", assetRef, err);
+          
+          // 🔥 fallback placeholder ONLY inside catch
           const placeholder = makePlaceholderMesh(`${objectKey} (failed)`);
           placeholder.userData.objectId = objectKey;
           pivotGroup.add(placeholder);
@@ -1641,7 +1706,11 @@ function pickIdNodeForMeshPath(hitMesh) {
               placeholder.userData.pickId = `mesh:${objectKey}::${mp}`;
               placeholder.userData.meshPath = mp;
 
-              publishMaterialSlotsForMesh(objectKey, mp, placeholder.material);
+              publishMaterialSlotsForMesh(
+                objectKey,
+                mp,
+                placeholder.material
+              );
             }
           } catch {}
 
@@ -1653,9 +1722,11 @@ function pickIdNodeForMeshPath(hitMesh) {
             meshToObjectKey.set(placeholder, objectKey);
           }
 
-          setErr((prev) => prev || String(e?.message || e));
+          setErr((prev) => prev || String(err?.message || err));
         } finally {
-          if (!disposed) setLoadingCount((c) => Math.max(0, c - 1));
+          if (!disposed) {
+            setLoadingCount((c) => Math.max(0, c - 1));
+          }
         }
       }
 
@@ -1671,8 +1742,10 @@ function pickIdNodeForMeshPath(hitMesh) {
       applySnapToTransformControls();
     }
 
-    loadAll();
-    
+    if (objects.length) {
+      loadAll();
+    }  
+        
 // --------------------------------------------------
 // ✅ Tier 7.62 — Marquee selection computation
 // --------------------------------------------------
@@ -2155,7 +2228,7 @@ function handleMouseUp(e) {
       canvas.removeEventListener("dblclick", onDoubleClick);
 
       window.removeEventListener("keydown", onKeyDown);
-      
+
       ro.disconnect();
 
       root.traverse((node) => {
@@ -2172,10 +2245,13 @@ function handleMouseUp(e) {
 
       renderer.dispose();
     };
-    
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(objects), disabled, JSON.stringify(layers.kinds)]);
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objects, disabled, layers.kinds]);
+    
+  // -----------------------------------------
+  // NEXT EFFECT (MUST START CLEAN)
+  // -----------------------------------------
   useEffect(() => {
     viewerApiRef.current?.syncSelection?.();
   }, [selectedId]);
@@ -2255,7 +2331,10 @@ useEffect(() => {
         </div>
       ) : null}
 
-      <div ref={containerRef} className="border rounded overflow-hidden" style={{ height: 460 }}>
+      <div
+        ref={containerRef}
+        className="border rounded overflow-hidden h-full w-full"
+      >
         <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
       </div>
 

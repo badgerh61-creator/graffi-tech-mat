@@ -13,7 +13,7 @@ import React, {
 import EditorShell from "../app/EditorShell";
 import EditorLayoutHost from "../layout/EditorLayoutHost";
 import { CapabilityProvider } from "../capabilities";
-import { getCurrentUser, getAccessToken } from "../utils/auth.ts";
+import { getAccessToken, fetchCurrentUser } from "../utils/auth";
 
 import SnapshotPreview from "../components/snapshots/SnapshotPreview";
 import DraftStatusBadge from "../components/snapshots/DraftStatusBadge";
@@ -157,6 +157,9 @@ import { historyUndo, historyRedo } from "../editor/history/historyStore";
 // ✅ Tier 7.67 (keyboard shortcuts)
 import { useKeyboardShortcuts } from "../editor/input/useKeyboardShortcuts";
 import { setGizmoMode } from "../editor/gizmo/gizmoModeStore";
+
+// ✅ Tier 7.75 (bootstrapEditSession)
+import { bootstrapEditSession } from "../editor/session/bootstrapEditSession";
 
 const LOCK_POLL_MS = 1500;
 
@@ -402,7 +405,7 @@ function sortWhy(rs) {
 }
 
 export default function StudioEditor() {
-  const user = getCurrentUser();
+  const [user, setUser] = useState(null);
   const projectId = 1;
 
   const [snapshots, setSnapshots] = useState([]);
@@ -417,6 +420,10 @@ export default function StudioEditor() {
   const viewerApiRef = useRef(null);
 
   const [isDirty, setIsDirty] = useState(false);
+  
+  const [bootstrapped, setBootstrapped] = useState(false);
+  
+  const [workspace, setWorkspace] = useState("design");
 
   const sel = useSelection();
   const { selectedId } = useSelectionStore();
@@ -430,6 +437,17 @@ export default function StudioEditor() {
     return () => {
       aliveRef.current = false;
     };
+  }, []);
+  
+  // 🔥 LOAD REAL USER FROM BACKEND
+  useEffect(() => {
+    async function loadUser() {
+      const u = await fetchCurrentUser();
+      console.log("🔥 USER:", u);
+      setUser(u);
+    }
+
+    loadUser();
   }, []);
 
   const fetchSnapshots = useCallback(() => {
@@ -459,6 +477,80 @@ export default function StudioEditor() {
     fetchSnapshots().catch(console.error);
   }, [projectId, fetchSnapshots]);
 
+// 🔥 Tier 7.75 — bootstrap edit session (FULL)
+useEffect(() => {
+  if (!projectId) return;
+  if (!snapshots.length) return;
+  if (bootstrapped) return;
+
+  async function bootstrap() {
+    try {
+      console.log("🔥 7.75 bootstrap starting...");
+
+      const draftId = await bootstrapEditSession(projectId);
+
+      console.log("✅ Draft ready:", draftId);
+
+      // ✅ FIXED TOKEN KEY
+      const token = localStorage.getItem("graffi.access_token");
+
+      // ✅ 1. acquire lock (CRITICAL)
+      const lockRes = await fetch(
+        `http://localhost:8000/projects/${projectId}/snapshots/${draftId}/lock`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      console.log("lockRes status:", lockRes.status);
+
+      if (!lockRes.ok) {
+        throw new Error("Failed to acquire lock");
+      }
+
+      console.log("🔒 Lock acquired");
+
+      // ✅ 2. fetch scene (CRITICAL)
+      const res = await fetch(
+        `http://localhost:8000/snapshots/${draftId}/scene`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      console.log("sceneRes status:", res.status);
+
+      if (!res.ok) throw new Error("Failed to fetch scene");
+
+      const scene = await res.json();
+
+      console.log("🎬 Scene loaded:", scene);
+      console.log("🔥 FIRST OBJECT:", scene?.objects?.[0]);
+
+      // ✅ 3. push to global store (CRITICAL)
+      setSceneIndex(scene, draftId);
+
+      // ✅ 4. activate snapshot
+      setActiveSnapshotOverrideId(draftId);
+
+      // 🔥 CRITICAL FIX — sync lock state to UI
+      setLockStatus({ state: "owned" });
+
+      setBootstrapped(true);
+
+    } catch (e) {
+      console.error("❌ 7.75 bootstrap failed", e);
+    }
+  }
+
+  bootstrap();
+}, [projectId, snapshots, bootstrapped]);
+  
   const draftSnapshot = snapshots.find((s) => s.status === "draft");
   const completedSnapshot = snapshots.find((s) => s.status === "completed");
 
@@ -568,12 +660,17 @@ export default function StudioEditor() {
     if (!activeSnapshot?.id) return;
 
     const controller = new AbortController();
-
     setSceneErr(null);
     setSceneIndex(null);
 
     fetchScene(projectId, activeSnapshot.id, { signal: controller.signal })
-      .then(setSceneIndex)
+      .then((idx) => {
+        console.log("🔥 SCENE INDEX:", idx);
+        console.log("🔥 OBJECTS:", idx?.objects);
+        console.log("🔥 BODY OBJECTS:", idx?.body_state?.objects);
+
+        setSceneIndex(idx);
+      })
       .catch((e) => {
         if (e?.name === "AbortError") return;
         setSceneErr(String(e?.message || e));
@@ -586,7 +683,7 @@ export default function StudioEditor() {
     activeSnapshot,
     selectedId
   );
-
+  
   const sceneIndexForViewer = useMemo(() => {
     if (!sceneIndex) return sceneIndex;
 
@@ -659,7 +756,7 @@ export default function StudioEditor() {
   const hasDraftLock = lock?.state === "owned";
   const station = "geometry";
 
-  const canEditByRole = (user?.role ?? "viewer") !== "viewer";
+  const canEditByRole = user?.is_admin === true;
   const canEditByStation = station === "geometry";
 
   const toolsEnabled =
@@ -855,6 +952,17 @@ const handleShortcutAction = useCallback(
   useKeyboardShortcuts({
     onAction: handleShortcutAction,
   });
+  
+// 🔥 Tier 7.75 — block UI until bootstrap completes
+if (!bootstrapped) {
+  return (
+    <div className="h-screen flex items-center justify-center">
+      <div className="text-sm opacity-70">
+        Preparing editor session...
+      </div>
+    </div>
+  );
+}
 
   return (
     <CapabilityProvider role={user?.role ?? "viewer"}>
@@ -874,6 +982,7 @@ const handleShortcutAction = useCallback(
           </>
         }
       >
+      
         <div className="p-3 pt-3 pb-0">
           <EditSessionHeader
             project={{ id: projectId, name: "Project" }}
@@ -884,7 +993,7 @@ const handleShortcutAction = useCallback(
             canEditByStation={canEditByStation}
           />
         </div>
-
+        
         <div className="p-3 pt-2 pb-0">
           <PanelSuspense>
             <ConstraintBlockedBanner />
@@ -914,315 +1023,333 @@ const handleShortcutAction = useCallback(
         <div className="p-3 pt-2 pb-0">
           <LightingControls />
         </div>
-
-        <div className="p-3 pt-2 pb-0">
-          <StudioModeBar
-            activeSnapshot={activeSnapshot}
-            onSetActiveSnapshotId={(id) => {
-              navigateToSnapshot(id);
-            }}
-          />
-        </div>
-
-        <div className="grid grid-cols-[360px_1fr_420px] gap-3 p-3">
-          <div className="space-y-3">
-            <div style={{ padding: 12 }}>
-              <UndoRedoBar
-                projectId={projectId}
-                activeSnapshotId={activeSnapshot?.id}
-                onNavigate={navigateToSnapshot}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <SnapshotHistoryGraphPanel
-                activeSnapshotId={activeSnapshot?.id}
-                onNavigate={navigateToSnapshot}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <SnapshotDiffPanel
-                baseSnapshot={baseSnapshot}
-                targetSnapshot={activeSnapshot}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              {sceneErr ? (
-                <div className="text-red-600 text-sm">{sceneErr}</div>
-              ) : null}
-              <SceneIndexPanel
-                sceneIndex={sceneIndex}
-                snapshotId={activeSnapshot?.id}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <SceneLayersPanel sceneIndex={sceneIndex} />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <SceneGraphPanel sceneIndex={sceneIndex} />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <SceneOutlinerPanel
-                snapshot={activeSnapshot}
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <SceneOutlinerTreePanel
-                snapshot={activeSnapshot}
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PanelSuspense>
-                <BulkObjectActionsPanel
-                  canEdit={toolsEnabled}
-                  onCommitTool={(payload) => commitToolPayload(payload)}
-                />
-              </PanelSuspense>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <ObjectActionsPanel
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <MaterialOverridesPanel snapshot={activeSnapshot} />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <MaterialInspectorPanel
-                snapshot={activeSnapshot}
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PanelSuspense>
-                <MaterialSlotInspectorPanel
-                  snapshot={activeSnapshot}
-                  canEdit={toolsEnabled}
-                  onCommitTool={(payload) => commitToolPayload(payload)}
-                />
-              </PanelSuspense>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PaintParamsPanel
-                snapshot={activeSnapshot}
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PanelSuspense>
-                <PaintLibraryPanel
-                  snapshot={activeSnapshot}
-                  canEdit={toolsEnabled}
-                  onCommitTool={(payload) => commitToolPayload(payload)}
-                />
-              </PanelSuspense>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <DecalAssetBrowserPanel
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PanelSuspense>
-                <DecalPlacementPanel />
-              </PanelSuspense>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <ModelAssetPickerPanel
-                canEdit={toolsEnabled}
-                onCommitTool={(payload) => commitToolPayload(payload)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PanelSuspense>
-                <AssetPlacementPalettePanel
-                  canEdit={toolsEnabled}
-                  onCommitTool={(payload) => commitToolPayload(payload)}
-                />
-              </PanelSuspense>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PanelSuspense>
-                <VariantSetsPanel
-                  snapshot={activeSnapshot}
-                  canEdit={toolsEnabled}
-                  onCommitTool={(payload) => commitToolPayload(payload)}
-                />
-              </PanelSuspense>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <PanelSuspense>
-                <ConstraintViolationsPanel violations={constraintsForPanel} />
-              </PanelSuspense>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <AttachAssetPanel
-                projectId={projectId}
-                snapshotId={activeSnapshot?.id}
-                onAttached={refreshSceneIndex}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <SelectionHud />
-            </div>
-
-            <div
-              style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}
-            >
-              <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
-
-              <TransformToolbar
-                activeSnapshot={activeSnapshot}
-                isEditable={isEditable}
-                selectedId={sel.selectedId}
-                onNewSnapshot={(newId) => {
-                  console.log("New snapshot:", newId);
-                  fetchSnapshots().catch(console.error);
-                }}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <GizmoCommitController
-                activeSnapshot={activeSnapshot}
-                activeTargetId={activeTargetId}
-                enabled={gizmoEnabled}
-                reasonDisabled={gizmoReason}
-                enablePreview={false}
-                onApplied={(newId) => {
-                  console.log("Applied new snapshot:", newId);
-
-                  setActiveSnapshotOverrideId(null);
-                  clearConstraintViolations?.();
-
-                  fetchSnapshots().catch(console.error);
-                }}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <TransformToolPanel
-                activeSnapshot={activeSnapshot}
-                disabled={!toolsEnabled}
-                onExecuted={(data) => {
-                  console.log("Tool executed:", data);
-                  clearConstraintViolations?.();
-                  fetchSnapshots().catch(console.error);
-                }}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <TelemetryViewerPanel activeSnapshot={activeSnapshot} />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <TelemetryAdvancedPanel />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <TelemetryComparePanel />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <ScenarioTemplatesPanel
-                projectId={projectId}
-                onCreated={() => setLabRefreshKey((k) => k + 1)}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <BatchRunnerPanel activeSnapshot={activeSnapshot} />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <TelemetryLabPanel
-                key={`lab:${labRefreshKey}`}
-                projectId={projectId}
-                activeSnapshot={activeSnapshot}
-              />
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <ReferenceFramesPanel
-                activeSnapshotId={activeSnapshot?.id}
-                disabled={false}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div style={{ padding: 12 }}>
-              {/* ✅ Wrap viewer for overlay positioning */}
-              <div className="relative">
-                <ThreeSceneViewer
-                  key={sceneRebindKey}
-                  sceneIndex={sceneIndexForViewer}
-                  materialOverrides={materialOverrides}
-                  disabled={!activeSnapshot?.id}
-                  canEdit={toolsEnabled}
-                  onCommitTool={(p) => commitToolPayload(p)}
-                  commitToolPayload={(p) => commitToolPayload(p)}
-                  onViewerApiReady={(api) => {
-                    viewerApiRef.current = api;
-                  }}
-                />
-
-                {/* ✅ Tier 7.62 — Marquee Selection Overlay */}
-                <MarqueeOverlay />
-              </div>
-           </div>
-         </div>
         
-            <ViewportSurface disabled={!activeSnapshot} />
-
-            <EditorLayoutHost
-              editable={isEditMode}
-              panelContext={{
-                history: snapshots,
-                activeSnapshotId: activeSnapshot?.id ?? null,
-                onNavigate: navigateToSnapshot,
-                constraints: constraintsForPanel,
-              }}
-              onSceneChange={() => {
-                if (!isEditMode) return;
-                setSceneStateHash(Date.now().toString());
-                setIsDirty(true);
+        <div className="p-3 pt-2 pb-0 flex items-center gap-3">
+          <div className="flex-1">
+            <StudioModeBar
+              activeSnapshot={activeSnapshot}
+              onSetActiveSnapshotId={(id) => {
+                navigateToSnapshot(id);
               }}
             />
           </div>
 
-          <div className="space-y-3">
-            <div style={{ padding: 12 }}>
+          <div className="flex gap-2 text-sm">
+            <button
+              onClick={() => setWorkspace("design")}
+              className={workspace === "design" ? "font-bold underline" : "opacity-60"}
+            >
+              Design
+            </button>
+
+            <button
+              onClick={() => setWorkspace("decor")}
+              className={workspace === "decor" ? "font-bold underline" : "opacity-60"}
+            >
+              Decor
+            </button>
+
+            <button
+              onClick={() => setWorkspace("tuning")}
+              className={workspace === "tuning" ? "font-bold underline" : "opacity-60"}
+            >
+              Tuning
+            </button>
+
+            <button
+              onClick={() => setWorkspace("testing")}
+              className={workspace === "testing" ? "font-bold underline" : "opacity-60"}
+            >
+              Testing
+            </button>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-[220px_1fr_280px] gap-3 p-3 h-[calc(100vh-140px)]">
+        
+        {/* ================= LEFT ================= */}
+        <div className="space-y-3 overflow-y-auto pr-1">
+
+          {workspace === "design" && (
+            <div>
+              <div style={{ padding: 12 }}>
+                <UndoRedoBar
+                  projectId={projectId}
+                  activeSnapshotId={activeSnapshot?.id}
+                  onNavigate={navigateToSnapshot}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <SnapshotHistoryGraphPanel
+                  activeSnapshotId={activeSnapshot?.id}
+                  onNavigate={navigateToSnapshot}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <SnapshotDiffPanel
+                  baseSnapshot={baseSnapshot}
+                  targetSnapshot={activeSnapshot}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                {sceneErr ? (
+                  <div className="text-red-600 text-sm">{sceneErr}</div>
+                ) : null}
+                <SceneIndexPanel
+                  sceneIndex={sceneIndex}
+                  snapshotId={activeSnapshot?.id}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <SceneLayersPanel sceneIndex={sceneIndex} />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <SceneGraphPanel sceneIndex={sceneIndex} />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <SceneOutlinerPanel
+                  snapshot={activeSnapshot}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <SceneOutlinerTreePanel
+                  snapshot={activeSnapshot}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <PanelSuspense>
+                  <BulkObjectActionsPanel
+                    canEdit={toolsEnabled}
+                    onCommitTool={(payload) => commitToolPayload(payload)}
+                  />
+                </PanelSuspense>
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <ObjectActionsPanel
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <AttachAssetPanel
+                  projectId={projectId}
+                  snapshotId={activeSnapshot?.id}
+                  onAttached={refreshSceneIndex}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <SelectionHud />
+              </div>
+
+              <div
+                style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}
+              >
+                <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
+
+                <TransformToolbar
+                  activeSnapshot={activeSnapshot}
+                  isEditable={isEditable}
+                  selectedId={sel.selectedId}
+                  onNewSnapshot={(newId) => {
+                    console.log("New snapshot:", newId);
+                    fetchSnapshots().catch(console.error);
+                  }}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <GizmoCommitController
+                  activeSnapshot={activeSnapshot}
+                  activeTargetId={activeTargetId}
+                  enabled={gizmoEnabled}
+                  reasonDisabled={gizmoReason}
+                  enablePreview={false}
+                  onApplied={(newId) => {
+                    console.log("Applied new snapshot:", newId);
+
+                    setActiveSnapshotOverrideId(null);
+                    clearConstraintViolations?.();
+
+                    fetchSnapshots().catch(console.error);
+                  }}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <TransformToolPanel
+                  activeSnapshot={activeSnapshot}
+                  disabled={!toolsEnabled}
+                  onExecuted={(data) => {
+                    console.log("Tool executed:", data);
+                    clearConstraintViolations?.();
+                    fetchSnapshots().catch(console.error);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {workspace === "decor" && (
+            <div>
+              <div style={{ padding: 12 }}>
+                <MaterialOverridesPanel snapshot={activeSnapshot} />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <MaterialInspectorPanel
+                  snapshot={activeSnapshot}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <PanelSuspense>
+                  <MaterialSlotInspectorPanel
+                    snapshot={activeSnapshot}
+                    canEdit={toolsEnabled}
+                    onCommitTool={(payload) => commitToolPayload(payload)}
+                  />
+                </PanelSuspense>
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <PaintParamsPanel
+                  snapshot={activeSnapshot}
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <PanelSuspense>
+                  <PaintLibraryPanel
+                    snapshot={activeSnapshot}
+                    canEdit={toolsEnabled}
+                    onCommitTool={(payload) => commitToolPayload(payload)}
+                  />
+                </PanelSuspense>
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <DecalAssetBrowserPanel
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <PanelSuspense>
+                  <DecalPlacementPanel />
+                </PanelSuspense>
+              </div>
+            </div>
+          )}
+
+          {workspace === "tuning" && (
+            <div>
+              <div style={{ padding: 12 }}>
+                <PanelSuspense>
+                  <VariantSetsPanel
+                    snapshot={activeSnapshot}
+                    canEdit={toolsEnabled}
+                    onCommitTool={(payload) => commitToolPayload(payload)}
+                  />
+                </PanelSuspense>
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <ObjectActionsPanel
+                  canEdit={toolsEnabled}
+                  onCommitTool={(payload) => commitToolPayload(payload)}
+                />
+              </div>
+            </div>
+          )}
+
+          {workspace === "testing" && (
+            <div>
+              <div style={{ padding: 12 }}>
+                <TelemetryViewerPanel activeSnapshot={activeSnapshot} />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <TelemetryAdvancedPanel />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <TelemetryComparePanel />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <ScenarioTemplatesPanel
+                  projectId={projectId}
+                  onCreated={() => setLabRefreshKey((k) => k + 1)}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <BatchRunnerPanel activeSnapshot={activeSnapshot} />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <TelemetryLabPanel
+                  key={`lab:${labRefreshKey}`}
+                  projectId={projectId}
+                  activeSnapshot={activeSnapshot}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <ReferenceFramesPanel
+                  activeSnapshotId={activeSnapshot?.id}
+                  disabled={false}
+                />
+              </div>
+            </div>
+          )}
+
+        </div>
+        
+          {/* ================= CENTER ================= */}
+          <div className="h-full w-full">
+            <div className="relative h-full">
+              <ThreeSceneViewer
+                key={sceneRebindKey}
+                sceneIndex={sceneIndexForViewer}
+                materialOverrides={materialOverrides}
+                disabled={!activeSnapshot?.id}
+                canEdit={toolsEnabled}
+                onCommitTool={(p) => commitToolPayload(p)}
+                commitToolPayload={(p) => commitToolPayload(p)}
+                onViewerApiReady={(api) => {
+                  viewerApiRef.current = api;
+                }}
+              />
+
+              {/* ✅ Tier 7.62 — Marquee Selection Overlay */}
+              <MarqueeOverlay />
+            </div>
+          </div>
+          
+          {/* ================= RIGHT ================= */}
+          <div className="space-y-3 overflow-y-auto pr-1">
+            <div className="h-full p-2">
               <PanelSuspense>
                 <UnifiedInspectorPanel
                   snapshot={activeSnapshot}
@@ -1234,7 +1361,25 @@ const handleShortcutAction = useCallback(
               </PanelSuspense>
             </div>
           </div>        
-       </EditorShell>
-     </CapabilityProvider>
-   );
+
+        </div> {/* GRID CLOSED */}
+
+        <EditorLayoutHost
+          editable={isEditMode}
+          panelContext={{
+            history: snapshots,
+            activeSnapshotId: activeSnapshot?.id ?? null,
+            onNavigate: navigateToSnapshot,
+            constraints: constraintsForPanel,
+          }}
+          onSceneChange={() => {
+            if (!isEditMode) return;
+            setSceneStateHash(Date.now().toString());
+            setIsDirty(true);
+          }}
+        />
+
+      </EditorShell>
+    </CapabilityProvider>
+  );
  }

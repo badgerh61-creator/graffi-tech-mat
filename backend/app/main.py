@@ -97,6 +97,8 @@ from app.api.draft_lock_status import router as draft_lock_status_router
 from app.api.decor_assets import router as decor_assets_router
 from fastapi.staticfiles import StaticFiles
 from app.api.paint_library import router as paint_library_router
+from app.api.snapshot_scene import router as snapshot_scene_router
+from app.api import draft_locks
 
 
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
@@ -251,9 +253,14 @@ def create_app() -> FastAPI:
     app.include_router(simulation_repro_router)
     app.include_router(draft_workspace_router)
     app.include_router(draft_lock_status_router)
+    app.include_router(draft_locks.router)
+    
     app.include_router(decor_assets_router)
+    
     app.mount("/static", StaticFiles(directory="static"), name="static")
     app.include_router(paint_library_router)
+    app.include_router(snapshot_scene_router)
+    
 
     return app
 

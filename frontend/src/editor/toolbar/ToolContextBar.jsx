@@ -1,12 +1,7 @@
 import React, { useMemo } from "react";
 import { useSelection } from "../selection/selectionStore";
 import { useGizmoMode, setGizmoMode } from "../gizmo/gizmoModeStore";
-import {
-  useSnap,
-  setSnapEnabled,
-  setSnapMode,
-  setGridSize,
-} from "../transform/snapStore";
+import { useSnap } from "../transform/snapStore";
 
 // ✅ Tier 7.64 — transform space store
 import {
@@ -71,7 +66,11 @@ export default function ToolContextBar({
 }) {
   const { selectedId } = useSelection();
   const mode = useGizmoMode().mode;
-  const snap = useSnap();
+
+  // ✅ FIXED SNAP SYSTEM
+  const snapState = useSnap();
+  const snap = snapState.snap;
+  const setSnap = snapState.setSnap;
 
   // ✅ Tier 7.64
   const transformSpace = useTransformSpace().mode;
@@ -175,7 +174,7 @@ export default function ToolContextBar({
             type="checkbox"
             disabled={!canEdit}
             checked={!!snap.enabled}
-            onChange={(e) => setSnapEnabled(e.target.checked)}
+            onChange={(e) => setSnap({ enabled: e.target.checked })}
           />
           Snap
         </label>
@@ -184,7 +183,7 @@ export default function ToolContextBar({
           className="border rounded px-2 py-1 text-xs"
           value={snap.mode}
           disabled={!canEdit}
-          onChange={(e) => setSnapMode(e.target.value)}
+          onChange={(e) => setSnap({ mode: e.target.value })}
         >
           <option value="none">None</option>
           <option value="grid">Grid</option>
@@ -199,7 +198,9 @@ export default function ToolContextBar({
             step="0.1"
             value={snap.gridSize}
             disabled={!canEdit}
-            onChange={(e) => setGridSize(Number(e.target.value || 1))}
+            onChange={(e) =>
+              setSnap({ gridSize: Number(e.target.value || 1) })
+            }
           />
         )}
 
@@ -254,7 +255,7 @@ export default function ToolContextBar({
         })}
       </div>
 
-      {/* ✅ View Modes */}
+      {/* View Modes */}
       <div className="flex items-center gap-2 ml-3 border-l pl-2">
         <span className="text-xs opacity-70">View</span>
 
@@ -328,7 +329,6 @@ export default function ToolContextBar({
         </div>
       )}
 
-      {/* Keyboard hint */}
       <div className="w-full text-[11px] opacity-60 border-t pt-1 mt-1">
         G: Move · R: Rotate · S: Scale · Ctrl+Z: Undo · Ctrl+Shift+Z: Redo · Ctrl+D: Duplicate · Esc: Clear
       </div>

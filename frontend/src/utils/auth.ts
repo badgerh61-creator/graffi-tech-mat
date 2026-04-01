@@ -4,6 +4,7 @@ import { resetSessionState } from "./session";
 
 const ACCESS_TOKEN_KEY = "graffi.access_token";
 const REFRESH_TOKEN_KEY = "graffi.refresh_token";
+const USER_CACHE_KEY = "graffi.user";
 
 /* ================= GETTERS ================= */
 
@@ -28,7 +29,8 @@ export const setTokens = (accessToken, refreshToken) => {
 export const clearTokens = () => {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
-  resetSessionState(); // 🔒 F3.5 REQUIRED
+  localStorage.removeItem(USER_CACHE_KEY); // 🔥 clear user too
+  resetSessionState();
 };
 
 /* ================= JWT HELPERS ================= */
@@ -62,7 +64,7 @@ export const isAuthenticated = () => {
   }
 };
 
-/* ================= USER DESCRIPTOR ================= */
+/* ================= USER (LEGACY — DO NOT TRUST FOR ROLE) ================= */
 
 export const getCurrentUser = () => {
   const token = getAccessToken();
@@ -73,9 +75,45 @@ export const getCurrentUser = () => {
 
   return {
     id: decoded.sub ? Number(decoded.sub) : null,
-    isAdmin: !!decoded.is_admin,
-    roles: decoded.roles ?? [],
-    permissions: decoded.permissions ?? [],
   };
 };
 
+/* ================= 🔥 REAL USER (SOURCE OF TRUTH) ================= */
+
+export const fetchCurrentUser = async () => {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  try {
+    const res = await fetch("http://localhost:8000/me", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) throw new Error("Failed to fetch /me");
+
+    const data = await res.json();
+
+    console.log("🔥 USER FROM /me:", data);
+
+    // ✅ cache for fast access
+    localStorage.setItem(USER_CACHE_KEY, JSON.stringify(data));
+
+    return data;
+  } catch (err) {
+    console.error("User fetch failed:", err);
+    return null;
+  }
+};
+
+/* ================= OPTIONAL CACHE ACCESS ================= */
+
+export const getCachedUser = () => {
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};

@@ -16,7 +16,8 @@ from app.crud.models import (
 )
 
 # Assets
-from app.crud.assets import create_asset
+
+from app.crud.assets import create_asset, transition_asset_status
 
 # Projects
 from app.crud.projects import require_project_role
@@ -49,6 +50,10 @@ __all__ = [
     "resolve_user_role_for_model",
     "get_models_accessible_to_user",
     "get_model_if_accessible",
+    
+        # Assets
+    "create_asset",
+    "transition_asset_status",
 
     # Snapshots
     "get_snapshot_by_id",

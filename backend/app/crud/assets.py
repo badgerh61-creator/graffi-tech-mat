@@ -27,12 +27,31 @@ def create_asset(
         s3_key=asset_in.s3_key,
         content_type=asset_in.content_type,
         status=AssetStatus.processing,
-        uploaded_by_id=user_id,
         created_at=datetime.utcnow(),
         is_visible=True,  # ✅ Phase I.2 default
     )
+
     db.add(asset)
     db.commit()
     db.refresh(asset)
-    return asset
 
+    return asset
+    
+    
+def transition_asset_status(db: Session, *, asset: Asset, new_status: AssetStatus, error: str | None = None):
+    """
+    Simple status transition helper.
+    """
+
+    asset.status = new_status
+
+    if error:
+        # only if your model has an error field
+        if hasattr(asset, "error"):
+            asset.error = error
+
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+
+    return asset

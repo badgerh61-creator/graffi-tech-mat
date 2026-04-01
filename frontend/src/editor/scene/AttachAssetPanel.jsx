@@ -21,9 +21,16 @@ export default function AttachAssetPanel({ projectId, snapshotId, onAttached }) 
     if (busy) return "busy";
     return null;
   }, [projectId, snapshotId, assetId, busy]);
-
+   
+  console.log("🧪 ATTACH CLICK", {
+    projectId,
+    snapshotId,
+    assetId,
+    busy,
+  });
+ 
   async function onAttach() {
-    if (disabledReason) return;
+    if (!projectId || !snapshotId || !assetId) return;
 
     setErr(null);
     setBusy(true);

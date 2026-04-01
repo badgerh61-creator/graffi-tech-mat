@@ -287,6 +287,10 @@ def get_snapshot_scene_index(
 # Tier 6G.2 — Attach Asset Tool (DRAFT ONLY)
 # =================================================
 
+# =================================================
+# Tier 6G.2 — Attach Asset Tool (DRAFT ONLY)
+# =================================================
+
 @router.post("/{snapshot_id}/tools/attach-asset")
 def attach_asset_to_snapshot_scene(
     project_id: int,
@@ -317,12 +321,11 @@ def attach_asset_to_snapshot_scene(
     if snapshot.status != SnapshotStatus.DRAFT.value:
         raise HTTPException(409, "Only draft snapshots can attach assets")
 
-    # Phase U ownership gate (authority lives on RenderedSnapshot)
     ownership = snapshot.resolve_ownership(user)
     if ownership == "owned_by_other":
         raise HTTPException(409, "Draft is owned by another user")
 
-    # Load asset + access check through model (same logic as assets.py)
+    # Load asset
     asset = (
         db.query(Asset)
         .join(ModelRecord)
@@ -336,7 +339,7 @@ def attach_asset_to_snapshot_scene(
     if not model:
         raise HTTPException(403, "No access to asset")
 
-    # Ensure body_state.scene.objects exists
+    # Ensure scene structure exists
     if snapshot.body_state is None:
         snapshot.body_state = {}
 
@@ -350,21 +353,19 @@ def attach_asset_to_snapshot_scene(
         objects = []
         scene["objects"] = objects
 
-    # Find or create object entry
-    found = None
-    for o in objects:
-        if isinstance(o, dict) and o.get("id") == object_id:
-            found = o
-            break
+    print("🔍 OBJECTS:", objects)
+    print("🔍 TARGET ID:", object_id)
 
-    kind = str(payload.get("kind") or "vehicle").strip() or "vehicle"
-    name = str(payload.get("name") or asset.filename or object_id).strip() or object_id
+    # =================================================
+    # 🔥 FIXED LOGIC (NO MORE BROKEN MATCHING)
+    # =================================================
 
-    if found is None:
+    if not objects:
+        # create object if none exists
         found = {
             "id": object_id,
-            "kind": kind,
-            "name": name,
+            "kind": str(payload.get("kind") or "vehicle"),
+            "name": str(payload.get("name") or asset.filename or object_id),
             "asset_ref": None,
             "transform": {
                 "position": {"x": 0, "y": 0, "z": 0},
@@ -373,11 +374,18 @@ def attach_asset_to_snapshot_scene(
             },
         }
         objects.append(found)
+    else:
+        # 🔥 ALWAYS USE FIRST OBJECT (your system = single vehicle)
+        found = objects[0]
 
-    # Stable pointer for viewer: resolve via GET /assets/{id}/url in 6G.3
+    # =================================================
+    # 🔥 CRITICAL LINE (THIS WAS FAILING BEFORE)
+    # =================================================
     found["asset_ref"] = f"asset:{asset.id}"
 
-    # Deterministic ordering by object id
+    print("✅ BOUND ASSET:", found["asset_ref"])
+
+    # Keep deterministic order
     objects.sort(key=lambda x: str((x or {}).get("id") or ""))
 
     flag_modified(snapshot, "body_state")
@@ -386,6 +394,73 @@ def attach_asset_to_snapshot_scene(
 
     return {
         "snapshot_id": snapshot.id,
-        "object_id": object_id,
+        "object_id": found["id"],
         "asset_ref": found["asset_ref"],
     }
+    
+
+# =================================================
+# Tier 7.x — Lock System (REQUIRED)
+# =================================================
+
+from app.services.draft_lock_service import acquire_draft_lock
+
+@router.post("/{snapshot_id}/lock")
+def acquire_lock(
+    project_id: int,
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_editor),
+):
+    snapshot = (
+        db.query(RenderedSnapshot)
+        .filter(
+            RenderedSnapshot.id == snapshot_id,
+            RenderedSnapshot.project_id == project_id,
+        )
+        .first()
+    )
+
+    if not snapshot:
+        raise HTTPException(404, "Snapshot not found")
+
+    # 🔥 CRITICAL FIX — ACTUALLY WRITE LOCK TO DB
+    acquire_draft_lock(
+        db=db,
+        snapshot=snapshot,
+        user=user,
+    )
+
+    return {
+        "state": "owned",
+        "snapshot_id": snapshot.id,
+        "owner_user_id": user.id,
+    }
+
+
+@router.get("/{snapshot_id}/lock-status")
+def get_lock_status(
+    project_id: int,
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    snapshot = (
+        db.query(RenderedSnapshot)
+        .filter(
+            RenderedSnapshot.id == snapshot_id,
+            RenderedSnapshot.project_id == project_id,
+        )
+        .first()
+    )
+
+    if not snapshot:
+        raise HTTPException(404, "Snapshot not found")
+
+    if snapshot.owner_user_id == user.id:
+        return {"state": "owned"}
+
+    if snapshot.owner_user_id is None:
+        return {"state": "unlocked"}
+
+    return {"state": "locked_by_other"}

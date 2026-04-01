@@ -29,11 +29,6 @@ _login_limiter = None  # lazy singleton (test-friendly)
 
 
 def _get_login_limiter() -> InMemoryRateLimiter:
-    """
-    Lazy-init rate limiter so:
-    - monkeypatch.setenv() works in tests
-    - config changes apply without restarting process
-    """
     global _login_limiter
 
     max_req = int(os.getenv("LOGIN_RATE_LIMIT_MAX", "10"))
@@ -74,16 +69,15 @@ def register(
 
 
 # =========================================================
-# LOGIN (with Phase H.2 rate limiting)
+# LOGIN
 # =========================================================
 
 @router.post("/login", response_model=schemas.TokenPair)
 def login(
-    request: Request,  # ← added safely (non-breaking)
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    # 🔒 Rate limit FIRST (counts even invalid creds)
     ip = request.client.host if request.client else "unknown"
     limiter = _get_login_limiter()
 
@@ -92,8 +86,6 @@ def login(
             status_code=429,
             detail="Rate limit exceeded",
         )
-
-    # === Existing authentication logic (UNCHANGED) ===
 
     user = crud.get_user_by_email(db, form_data.username)
 
@@ -175,12 +167,17 @@ def logout(
 
 
 # =========================================================
-# CURRENT USER (IDENTITY CHECK)
+# CURRENT USER (FIXED 🔥)
 # =========================================================
 
-@router.get("/me", response_model=schemas.UserRead)
+@router.get("/me")
 def read_me(
     user=Depends(get_current_user),
 ):
-    return user
-
+    return {
+        "id": user.id,
+        "email": user.email,
+        "role": "admin" if getattr(user, "is_admin", False) else "viewer",
+        "is_admin": getattr(user, "is_admin", False),
+        "created_at": user.created_at,
+    }

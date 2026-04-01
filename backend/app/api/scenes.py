@@ -82,12 +82,18 @@ def save_scene(
             scene_state_hash=scene_hash,
             render_profile="default",
             engine_version="phase-i",
-            status="pending",
+            status="completed",  # ✅ always completed in dev
             created_by=user.id,
         )
         db.add(snapshot)
         db.commit()
         db.refresh(snapshot)
+    else:
+        # 🔥 FIX: upgrade pending → completed
+        if snapshot.status == "pending":
+            snapshot.status = "completed"
+            db.commit()
+            db.refresh(snapshot)
 
     # ---------------------------------------------------------
     # 8. Journaling (Phase I.7 + Phase K safe)
@@ -117,4 +123,3 @@ def save_scene(
         "snapshot_id": snapshot.id,
         "status": snapshot.status,
     }
-

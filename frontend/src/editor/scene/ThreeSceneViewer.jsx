@@ -1707,15 +1707,15 @@ function pickIdNodeForMeshPath(hitMesh) {
           modelGroup.userData.pickId = `obj:${objectKey}`;
 
           modelGroup.add(gltf.scene);
+          
+          // 🔥 6G.18 — transform
+          applyTransform(modelGroup, obj?.transform);          
 
           // 🔥 APPLY MATERIAL IMMEDIATELY AFTER LOAD
           if (obj?.material_state) {
             console.log("🎨 APPLYING MATERIAL STATE:", obj.material_state);
             applyMaterialState(modelGroup, obj.material_state);
           }
-
-          // 🔥 6G.18 — transform
-          applyTransform(modelGroup, obj?.transform);
 
           // 🔥 6G.15 — decals (object-level)
           await applyDecals(modelGroup, obj?.decal_state);             

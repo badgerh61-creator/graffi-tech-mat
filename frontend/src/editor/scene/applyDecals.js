@@ -7,9 +7,17 @@ import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 export async function applyDecals(group, decalState = []) {
   if (!group || !decalState || !decalState.length) return;
 
-  // 🔥 remove old decals first (important for stability)
-  group.children = group.children.filter((child) => {
-    if (!child.name?.startsWith("decal:")) return true;
+  // 🔥 Properly remove old decals (SAFE)
+  const toRemove = [];
+
+  group.children.forEach((child) => {
+    if (child.name?.startsWith("decal:")) {
+      toRemove.push(child);
+    }
+  });
+
+  toRemove.forEach((child) => {
+    group.remove(child);
 
     if (child.geometry) child.geometry.dispose();
 
@@ -17,8 +25,6 @@ export async function applyDecals(group, decalState = []) {
       if (child.material.map) child.material.map.dispose();
       child.material.dispose();
     }
-
-    return false;
   });
 
   // collect meshes

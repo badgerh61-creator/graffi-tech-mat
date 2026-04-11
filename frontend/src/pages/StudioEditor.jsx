@@ -40,7 +40,7 @@ import LightingControls from "../editor/view/LightingControls";
 import CameraToolbar from "../editor/camera/CameraToolbar";
 
 // ✅ Tier 7.1 ADD (selection + transform toolbar)
-import { useSelection } from "../editor/selection/useSelection";
+import { setSelectedId } from "../editor/selection/selectionStore";
 import TransformToolbar from "../editor/tools/TransformToolbar";
 
 // ✅ Tier 7.2 ADD (reference frames panel)
@@ -303,6 +303,7 @@ function UnifiedInspectorPanelFallback({
         snapshot={snapshot}
         canEdit={toolsEnabled}
         onCommitTool={onCommitTool}
+        onApplyPaint={handleApplyPaint}
       />
 
       <ConstraintViolationsPanel constraints={constraints} />
@@ -417,6 +418,28 @@ export default function StudioEditor() {
   const [activeSnapshotOverrideId, setActiveSnapshotOverrideId] = useState(null);
   const [labRefreshKey, setLabRefreshKey] = useState(0);
 
+  // 🔥 ADD THIS BLOCK HERE
+  function handleApplyPaint(objectId, materialState) {
+    setSceneIndex((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        objects: prev.objects.map((obj) => {
+          if (obj.id !== objectId) return obj;
+
+          return {
+            ...obj,
+            material_state: {
+              ...(obj.material_state || {}),
+              ...materialState,
+            },
+          };
+        }),
+      };
+    });
+  }
+
   const viewerApiRef = useRef(null);
 
   const [isDirty, setIsDirty] = useState(false);
@@ -425,7 +448,6 @@ export default function StudioEditor() {
   
   const [workspace, setWorkspace] = useState("design");
 
-  const sel = useSelection();
   const { selectedId } = useSelectionStore();
   const { lock } = useLockStatus();
 
@@ -492,7 +514,7 @@ useEffect(() => {
       console.log("✅ Draft ready:", draftId);
 
       // ✅ FIXED TOKEN KEY
-      const token = localStorage.getItem("graffi.access_token");
+      const token = getAccessToken();
 
       // ✅ 1. acquire lock (CRITICAL)
       const lockRes = await fetch(
@@ -752,7 +774,7 @@ useEffect(() => {
     };
   }, [activeSnapshot?.id, activeSnapshot?.status]);
 
-  const activeTargetId = resolvedTargetId ?? sel.selectedId ?? null;
+  const activeTargetId = resolvedTargetId ?? selectedId ?? null;
   const hasDraftLock = lock?.state === "owned";
   const station = "geometry";
 
@@ -816,66 +838,85 @@ useEffect(() => {
     onSaved: () => setIsDirty(false),
   });
 
-  const commitToolPayload = useCallback(
-    async (payload) => {
-      try {
-        console.log("commitToolPayload:", payload);
+const commitToolPayload = useCallback(
+  async (payload) => {
+    try {
+      console.log("commitToolPayload:", payload);
 
-        if (!toolsEnabled) {
-          return {
-            ok: false,
-            error: { kind: "conflict", detail: "Tools disabled" },
-          };
-        }
+      if (!toolsEnabled) {
+        return {
+          ok: false,
+          error: { kind: "conflict", detail: "Tools disabled" },
+        };
+      }
 
-        const nextStation = payload?.station || "geometry";
-        const tool = payload?.tool;
-        const toolPayload = payload?.payload || {};
+      const nextStation = payload?.station || "geometry";
+      const tool = payload?.tool;
+      const toolPayload = payload?.payload || {};
 
-        if (!tool) {
-          return {
-            ok: false,
-            error: { kind: "invalid", detail: "tool missing" },
-          };
-        }
+      if (!tool) {
+        return {
+          ok: false,
+          error: { kind: "invalid", detail: "tool missing" },
+        };
+      }
 
-        const res = await executeTool({
-          snapshotId: activeSnapshot?.id,
-          station: nextStation,
-          tool,
-          payload: toolPayload,
-          mode: "proposals",
-          enablePreview: false,
-        });
+      // -----------------------------
+      // 1. evaluate
+      // -----------------------------
+      const evalRes = await executeTool({
+        snapshotId: activeSnapshot?.id,
+        station: nextStation,
+        tool,
+        payload: toolPayload,
+        mode: "tools",
+      });
 
-        if (!res?.ok) {
-          if (Array.isArray(res?.violations) && res.violations.length) {
-            setConstraintViolations(res.violations);
-          } else {
-            clearConstraintViolations();
-          }
+      if (!evalRes?.ok) {
+        if (Array.isArray(evalRes?.violations) && evalRes.violations.length) {
+          setConstraintViolations(evalRes.violations);
         } else {
           clearConstraintViolations();
         }
 
-        try {
-          await fetchSnapshots();
-        } catch {}
-
-        try {
-          refreshSceneIndex?.();
-        } catch {}
-
-        return res;
-      } catch (e) {
-        return {
-          ok: false,
-          error: { kind: "network", detail: String(e?.message || e) },
-        };
+        return evalRes;
       }
-    },
-    [activeSnapshot?.id, toolsEnabled, fetchSnapshots, refreshSceneIndex]
-  );
+
+      clearConstraintViolations();
+
+      // -----------------------------
+      // 2. apply (THIS WAS MISSING)
+      // -----------------------------
+      const applyRes = await executeTool({
+        snapshotId: activeSnapshot?.id,
+        station: nextStation,
+        tool,
+        payload: toolPayload,
+        mode: "tools",
+      });
+
+      // -----------------------------
+      // 3. refresh
+      // -----------------------------
+      try {
+        await fetchSnapshots();
+      } catch {}
+
+      try {
+        refreshSceneIndex?.();
+      } catch {}
+
+      return applyRes;
+
+    } catch (e) {
+      return {
+        ok: false,
+        error: { kind: "network", detail: String(e?.message || e) },
+      };
+    }
+  },
+  [activeSnapshot?.id, toolsEnabled, fetchSnapshots, refreshSceneIndex]
+);
 
 // ✅ Tier 7.67 — keyboard dispatcher (FINAL)
 const handleShortcutAction = useCallback(
@@ -1159,12 +1200,12 @@ if (!bootstrapped) {
               <div
                 style={{ padding: 12, display: "flex", gap: 10, alignItems: "center" }}
               >
-                <button onClick={() => sel.select("panel-1")}>Select panel-1</button>
+                <button onClick={() => setSelectedId("panel-1")}>Select panel-1</button>
 
                 <TransformToolbar
                   activeSnapshot={activeSnapshot}
                   isEditable={isEditable}
-                  selectedId={sel.selectedId}
+                 selectedId={selectedId}
                   onNewSnapshot={(newId) => {
                     console.log("New snapshot:", newId);
                     fetchSnapshots().catch(console.error);

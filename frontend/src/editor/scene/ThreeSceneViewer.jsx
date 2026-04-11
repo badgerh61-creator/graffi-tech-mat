@@ -2,6 +2,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
+import { applyTransform } from "./applyTransform";
+import { applyMaterialState } from "./applyMaterialState";
+import { applyDecals } from "./applyDecals";
+
 const EMPTY_ARRAY = Object.freeze([]);
 
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -16,7 +20,12 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { resolveAssetRef } from "./resolveAssetRef";
 import { buildPickedTargetId } from "./pickingId";
 import { applyTransformToObject3D, makePlaceholderMesh } from "./applyTransform";
-import { clearSelection, setSelectedId, useSelection } from "../selection/selectionStore";
+
+import {
+  clearSelection,
+  useSelection as useSelectionStore,
+  setSelectedId,
+} from "../selection/selectionStore";
 
 // ✅ Tier 7.60 — multi-select bridge/store
 import {
@@ -423,7 +432,7 @@ export default function ThreeSceneViewer({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
-  const { selectedId } = useSelection();
+  const { selectedId } = useSelectionStore();
 
   const layers = useSceneLayers();
   const { preview } = useGizmoPreview();
@@ -448,6 +457,7 @@ export default function ThreeSceneViewer({
   const [loadingCount, setLoadingCount] = useState(0);
 
   const lastGoodObjectsRef = useRef([]);
+  const loadedObjectsRef = useRef({});
 
   const objects = useMemo(() => {
     const a = sceneIndex?.objects;
@@ -473,7 +483,7 @@ export default function ThreeSceneViewer({
     console.log("🔥 RESOLVED OBJECT SOURCE:", finalList);
 
     return finalList;
-  }, [sceneIndex]); // ✅ KEEP THIS
+  }, [sceneIndex, activeSnapshot]);
     
   const decals = useMemo(() => {
     const d1 = sceneIndex?.decor_state?.decals;
@@ -640,7 +650,7 @@ export default function ThreeSceneViewer({
     decalsRoot.name = "decals-root";
     root.add(decalsRoot);
 
-    const rect = container.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();;
     const camera = makeCamera(rect.width || 800, rect.height || 500);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -1057,23 +1067,22 @@ function pickIdNodeForMeshPath(hitMesh) {
     }
 
     function applyMaterialOverridesNow() {
-      const ov = materialOverridesRef.current;
-      if (!ov) return;
+      const overrides = materialOverridesRef.current;
+      if (!overrides) return;
       try {
-        if (typeof applyMaterialOverridesToScene === "function") {
-          applyMaterialOverridesToScene({
-            root,
-            objectGroups,
-            meshToObjectKey,
-            allMeshes,
-            overrides: ov,
-          });
-        }
+        Object.entries(objectGroups).forEach(([objectId, group]) => {
+          if (!group) return;
+
+          const override = overrides[objectId];
+          if (!override) return;
+
+          applyMaterialState(group, override);
+        });
       } catch (e) {
         console.warn("[ThreeSceneViewer] material override apply failed:", String(e?.message || e));
       }
     }
-
+    
     // --------------------------------------------------
     // ✅ Tier 7.69 — View Modes
     // --------------------------------------------------
@@ -1493,6 +1502,9 @@ function pickIdNodeForMeshPath(hitMesh) {
       outer.userData.pickId = `obj:${objectKey}`;
       outer.userData.objectId = objectKey;
       outer.visible = !!cfg.visible && obj?.enabled !== false;
+      
+      meshToObjectKey.set(outer, objectKey);
+      meshToObjectId.set(outer, objId);
 
       applyTransformToObject3D(outer, obj?.transform);
 
@@ -1593,6 +1605,9 @@ function pickIdNodeForMeshPath(hitMesh) {
           const placeholder = makePlaceholderMesh(objectKey);
           placeholder.userData.objectId = objectKey;
           pivotGroup.add(placeholder);
+          
+          // ✅ APPLY SNAPSHOT MATERIAL
+          applyMaterialState(placeholder, obj?.material_state || {});
 
           applyOpacityToMaterial(placeholder.material, cfg.opacity);
 
@@ -1622,8 +1637,37 @@ function pickIdNodeForMeshPath(hitMesh) {
         let finalUrl = null;
 
         try {
+
+          // 🔥 detect asset change and clear old model
+          const prev = loadedObjectsRef.current[objId];
+
+          if (prev && prev.userData.assetRef !== assetRef) {
+            pivotGroup.remove(prev);
+            delete loadedObjectsRef.current[objId];
+          }
+
+          // 🔥 prevent reloading same object
+          if (loadedObjectsRef.current[objId]) {
+            console.log("⏭️ already loaded:", objId);
+
+            const modelGroup = loadedObjectsRef.current[objId];
+
+            // 🔥 ALWAYS reattach (viewer rebuild safe)
+            pivotGroup.add(modelGroup);
+
+            // 🔥 ensure visible
+            modelGroup.visible = true;
+
+            // 🔥 reapply material
+            if (obj?.material_state) {
+              applyMaterialState(modelGroup, obj.material_state);
+            }
+
+            continue;
+          }
+
           finalUrl = await resolveAssetRef(assetRef);
-          
+                              
           console.log("🧩 AFTER resolveAssetRef:", finalUrl);
           
           console.log("🧩 RESOLVE RESULT:", {
@@ -1646,31 +1690,63 @@ function pickIdNodeForMeshPath(hitMesh) {
             objId,
             finalUrl,
           });
-
+          
           if (disposed) return;
 
-          const gltfRoot = gltf.scene;
-          pivotGroup.add(gltfRoot);
+          // 🔥 Tier 6G — authoritative group wrapper
+          const modelGroup = new THREE.Group();
+          modelGroup.name = `model:${objectKey}`;  
+          modelGroup.userData.assetRef = assetRef;        
+          
+          pivotGroup.add(modelGroup);
+          
+          loadedObjectsRef.current[objId] = modelGroup;
+
+          // ✅ CRITICAL — selection identity
+          modelGroup.userData.objectId = objectKey;
+          modelGroup.userData.pickId = `obj:${objectKey}`;
+
+          modelGroup.add(gltf.scene);
+
+          // 🔥 APPLY MATERIAL IMMEDIATELY AFTER LOAD
+          if (obj?.material_state) {
+            console.log("🎨 APPLYING MATERIAL STATE:", obj.material_state);
+            applyMaterialState(modelGroup, obj.material_state);
+          }
+
+          // 🔥 6G.18 — transform
+          applyTransform(modelGroup, obj?.transform);
+
+          // 🔥 6G.15 — decals (object-level)
+          await applyDecals(modelGroup, obj?.decal_state);             
 
           const meshPaths = [];
 
-          gltfRoot.traverse((node) => {
+          modelGroup.traverse((node) => {
             if (!node || !node.isMesh) return;
 
+            console.log("TRAVERSE NODE:", node);
+
             node.userData.objectId = objectKey;
+            
+            const mp = buildMeshPath(node);
+            node.userData.pickId = `mesh:${objectKey}::${mp}`;
+            node.userData.meshPath = mp;
+
             applyOpacityToMaterial(node.material, cfg.opacity);
 
             // ✅ register mesh
             allMeshes.add(node);
 
-            // ✅ make pickable
-            if (cfg.pickable) {
-              pickables.push(node);
-              meshToObjectKey.set(node, objectKey);
-              meshToObjectId.set(node, objId);
-            }
+            console.log("✅ MESH FOUND:", node);
 
-            // ✅ build mesh path
+            // 🔥 FORCE pickable (debug mode)
+            pickables.push(node);
+            meshToObjectKey.set(node, objectKey);
+            meshToObjectId.set(node, objId);
+
+            console.log("✅ ADDING PICKABLE:", node);
+
             try {
               const mp = buildMeshPath(node);
               if (mp) {
@@ -1681,17 +1757,27 @@ function pickIdNodeForMeshPath(hitMesh) {
 
                 publishMaterialSlotsForMesh(objectKey, mp, node.material);
               }
-            } catch {}
+            } catch (err) {
+              console.warn("mesh path build failed:", err);
+            }
           });
 
-          // ✅ register all mesh paths
+          // ✅ register all mesh paths (OUTSIDE traverse)
           if (meshPaths.length) {
             setMeshPathsForObject(objectKey, meshPaths);
           }
-          
+
+          // 🔥 Tier 7.42 — APPLY RUNTIME MATERIAL OVERRIDES
+          applyMaterialOverridesNow();
+
+          // 🔥 REAPPLY SNAPSHOT MATERIAL (FINAL AUTHORITY)
+          if (obj?.material_state) {
+            applyMaterialState(modelGroup, obj.material_state);
+          }
+
         } catch (err) {
           console.error("❌ Asset resolution failed:", assetRef, err);
-          
+                              
           // 🔥 fallback placeholder ONLY inside catch
           const placeholder = makePlaceholderMesh(`${objectKey} (failed)`);
           placeholder.userData.objectId = objectKey;
@@ -1723,18 +1809,18 @@ function pickIdNodeForMeshPath(hitMesh) {
           }
 
           setErr((prev) => prev || String(err?.message || err));
+
         } finally {
           if (!disposed) {
             setLoadingCount((c) => Math.max(0, c - 1));
           }
         }
       }
-
       applyMaterialOverridesNow();
       applyViewMode();
-      frameScene();
       applyPreviewGhost();
       updateSelectionBox();
+      frameScene(); 
 
       await syncDecals();
 
@@ -1828,6 +1914,8 @@ function computeMarqueeSelection(start, end) {
       if (!oid) return;
       setPrimarySelection(oid);
       syncPrimaryToSingleSelection(oid);
+      setSelectedId(oid);
+      console.log("🔥 FINAL SELECTED ID:", oid);
     }
 
     function toggleObjectSelection(objectId) {
@@ -1835,6 +1923,8 @@ function computeMarqueeSelection(start, end) {
       if (!oid) return;
       toggleMultiSelection(oid, true);
       syncPrimaryToSingleSelection(oid);
+      setSelectedId(oid);
+      console.log("🔥 TOGGLED SELECTED ID:", oid);
     }
     
 // --------------------------------------------------
@@ -1898,65 +1988,67 @@ function handleMouseUp(e) {
   }
 }
 
-    function onClick(e) {
-      if (contextLost) return;
+function onClick(e) {
+  console.log("🔥 CLICK EVENT FIRED", e.clientX, e.clientY);
+  
+  if (contextLost) return;
 
-      const r = canvas.getBoundingClientRect();
-      const x = ((e.clientX - r.left) / r.width) * 2 - 1;
-      const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
-      mouse.set(x, y);
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  const y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+  mouse.set(x, y);
 
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(pickables, true);
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(pickables, true);
 
-      if (!intersects.length) {
-        clearAllSelectionState?.();
-        clearActiveDecalId?.();
-        return;
-      }
+  if (!intersects.length) {
+    clearAllSelectionState?.();
+    clearActiveDecalId?.();
+    return;
+  }
 
-      const hitIds = buildPickIdListFromIntersects(intersects);
-      const chosen = resolvePick(hitIds, selectionFilterRef.current || "all");
+  const hitIds = buildPickIdListFromIntersects(intersects);
+  const chosen = resolvePick(hitIds, selectionFilterRef.current || "all");
 
-      if (!chosen) {
-        clearAllSelectionState?.();
-        clearActiveDecalId?.();
-        return;
-      }
+  if (!chosen) {
+    clearAllSelectionState?.();
+    clearActiveDecalId?.();
+    return;
+  }
 
-      if (chosen.kind === "decal") {
-        setActiveDecalId?.(chosen.key);
-        clearAllSelectionState?.();
-        return;
-      }
+  if (chosen.kind === "decal") {
+    setActiveDecalId?.(chosen.key);
+    clearAllSelectionState?.();
+    return;
+  }
 
-      clearActiveDecalId?.();
+  clearActiveDecalId?.();
 
-      const additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
+  const additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
 
-      if (chosen.kind === "mesh") {
-        const objectId = String(chosen.key || "").split("::")[0];
-        if (additive) {
-          toggleObjectSelection(objectId);
-        } else {
-          setPrimaryObjectSelection(objectId);
-        }
-        return;
-      }
+  if (chosen.kind === "mesh") {
+    const objectId = String(chosen.key || "").split("::")[0];
 
-      if (chosen.kind === "obj") {
-        const objectId = String(chosen.key || "").split("::")[0];
-        if (additive) {
-          toggleObjectSelection(objectId);
-        } else {
-          setPrimaryObjectSelection(objectId);
-        }
-        return;
-      }
-
-      clearAllSelectionState?.();
+    if (additive) {
+      toggleObjectSelection(objectId);
+    } else {
+      setPrimaryObjectSelection(objectId);
     }
 
+    requestAnimationFrame(() => {
+      viewerApiRef.current?.syncSelection?.();
+    });
+
+    console.log("✅ SELECTED (mesh):", objectId);
+    return;
+  }
+  
+  setPrimarySelection(chosen.key ?? chosen);
+  syncPrimaryToSingleSelection(chosen.key ?? chosen);
+
+  console.log("✅ SELECTED:", chosen);
+}
+    
     function onDoubleClick(e) {
       if (contextLost) return;
 
@@ -2023,7 +2115,6 @@ function handleMouseUp(e) {
 
     canvas.addEventListener("click", onClick);  
     canvas.addEventListener("dblclick", onDoubleClick);
-
     window.addEventListener("keydown", onKeyDown);   
     
     let raf = 0;
@@ -2119,6 +2210,19 @@ function handleMouseUp(e) {
 
     viewerApiRef.current.syncMaterials = () => {
       applyMaterialOverridesNow();
+
+      // 🔥 REAPPLY SNAPSHOT MATERIAL
+      objectGroups.forEach((group, objectId) => {
+        const obj = objects.find(
+          (o) => String(o.id) === String(objectId)
+        );
+
+        if (!obj) return;
+
+        if (obj.material_state) {
+          applyMaterialState(group, obj.material_state);
+        }
+      });
     };
 
     viewerApiRef.current.syncSnap = () => {
@@ -2220,13 +2324,13 @@ function handleMouseUp(e) {
 
       controls.dispose();
 
-      canvas.removeEventListener("mousedown", handleMouseDown);
-      canvas.removeEventListener("mousemove", handleMouseMove);
-      canvas.removeEventListener("mouseup", handleMouseUp);
+      container.removeEventListener("mousedown", handleMouseDown);
+      container.removeEventListener("mousemove", handleMouseMove);
+      container.removeEventListener("mouseup", handleMouseUp);
 
-      canvas.removeEventListener("click", onClick);
-      canvas.removeEventListener("dblclick", onDoubleClick);
-
+      container.removeEventListener("click", onClick);
+      container.removeEventListener("dblclick", onDoubleClick);
+      
       window.removeEventListener("keydown", onKeyDown);
 
       ro.disconnect();
@@ -2247,7 +2351,7 @@ function handleMouseUp(e) {
     };
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objects, disabled, layers.kinds]);
+  }, [objects, disabled, layers.kinds, materialOverrides]);
     
   // -----------------------------------------
   // NEXT EFFECT (MUST START CLEAN)

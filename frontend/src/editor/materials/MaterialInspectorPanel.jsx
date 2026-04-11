@@ -1,5 +1,5 @@
 // src/editor/materials/MaterialInspectorPanel.jsx
-import React from "react"; // ✅ FIX: required in this test/runtime (JSX needs React in scope)
+import React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useSelection } from "../selection/selectionStore";
 import { fetchMaterialPresets } from "../../services/studio/materialPresetsApi";
@@ -28,7 +28,6 @@ export default function MaterialInspectorPanel({
   const effective = useMemo(() => {
     if (!selectedId) return null;
 
-    // precedence: mesh override beats object override
     const tid = String(selectedId);
     const parts = tid.split("::");
     const obj = parts[0];
@@ -42,7 +41,6 @@ export default function MaterialInspectorPanel({
     if (effective?.preset) setChosen(effective.preset);
   }, [effective?.preset]);
 
-  // ✅ additive-safe: avoid optional chaining everywhere
   const commit = onCommitTool || null;
 
   return (
@@ -83,9 +81,12 @@ export default function MaterialInspectorPanel({
           disabled={!canEdit || !selectedId || !chosen}
           onClick={() =>
             commit?.({
-              tool: "MATERIAL_SET_PRESET",
+              tool: "PAINT_APPLY_LIBRARY_PRESET",
               station: "decor",
-              payload: { target_id: selectedId, preset: chosen },
+              payload: {
+                target_id: selectedId,
+                preset: chosen,
+              },
             })
           }
         >
@@ -108,7 +109,8 @@ export default function MaterialInspectorPanel({
       </div>
 
       <div className="text-[11px] opacity-60">
-        Overrides are stored in decor_state.material_overrides. Mesh override beats object override.
+        Overrides are stored in decor_state.material_overrides. Mesh override
+        beats object override.
       </div>
     </div>
   );

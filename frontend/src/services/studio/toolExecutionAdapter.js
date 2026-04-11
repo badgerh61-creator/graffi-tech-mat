@@ -50,7 +50,7 @@ export async function executeTool({
   station,
   tool,
   payload,
-  mode = "proposals",
+  mode = "tools",
   enablePreview = false,
 }) {
   try {
@@ -86,7 +86,6 @@ export async function executeTool({
       getAccessToken,
     });
 
-    // Normalize "blocked" as conflict (because backend uses 409 for governance mismatch often)
     if (decision?.allowed === false) {
       return {
         ok: false,
@@ -99,7 +98,7 @@ export async function executeTool({
       };
     }
 
-    // 2) Preview (optional, non-blocking)
+    // 2) Preview (optional)
     let payloadHash = undefined;
     if (enablePreview) {
       try {
@@ -109,22 +108,20 @@ export async function executeTool({
           getAccessToken,
         });
         payloadHash = preview.payload_hash || preview.payloadHash;
-      } catch {
-        // non-blocking by contract
-      }
+      } catch {}
     }
 
-    // 3) Apply
+    // 3) Apply  ← FIXED
     const applied = await applyProposal({
       proposalId: newProposalId(),
       snapshotId,
+      proposal,
       payloadHash,
       getAccessToken,
     });
 
     return { ok: true, data: applied };
   } catch (e) {
-    // Fetch/network or unexpected runtime error
     return {
       ok: false,
       error: { kind: "network", detail: String(e?.message || e) },

@@ -36,10 +36,6 @@ from app.api.distributions import router as distributions_router
 from app.api.organizations import router as organizations_router
 from app.api.scenes import router as scenes_router
 
-# ❌ Removed to eliminate duplicate signed-urls route
-# from app.api.signed_urls import router as signed_url_router
-
-# 🔑 SNAPSHOT ROUTERS (FIXED — NO SHADOWING)
 from app.api.mutations.snapshots import router as snapshot_mutations_router
 from app.api.snapshot_mutations import router as snapshot_mutations_legacy_router
 from app.api.snapshots_legacy import router as snapshots_legacy_router
@@ -102,10 +98,6 @@ from app.api import draft_locks
 
 
 def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
-    """
-    Additive-only safety: detect duplicate (method, path) pairs.
-    Returns list of duplicates; empty means clean.
-    """
     seen = set()
     dupes = []
     for r in app.routes:
@@ -122,32 +114,31 @@ def _detect_duplicate_routes(app: FastAPI) -> list[tuple[str, str]]:
     return dupes
 
 
-# ===== APP FACTORY =====
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Graffi Tech Mat API",
         version="1.0.0",
     )
 
-    # --- Security hardening (H.4) ---
+    # --- Security ---
     from app.core.security_settings import SecuritySettings
     from app.middleware.security_headers import SecurityHeadersMiddleware
     from app.middleware.login_rate_limit import LoginRateLimitMiddleware
 
     settings = SecuritySettings.from_env()
 
-    # Security headers: keep default behavior ON
     if settings.enable_security_headers:
         app.add_middleware(SecurityHeadersMiddleware)
 
-    # /login rate limit: OFF by default (env enables)
     if settings.enable_login_rate_limit:
         app.add_middleware(LoginRateLimitMiddleware, settings=settings)
 
-    # ===== CORS =====
+    # ===== CORS (FIXED) =====
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
             "http://localhost:5174",
             "http://127.0.0.1:5174",
         ],
@@ -156,7 +147,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ===== STARTUP =====
     @app.on_event("startup")
     def startup():
         validate_settings()
@@ -169,7 +159,7 @@ def create_app() -> FastAPI:
                 "Duplicate routes detected: %s", dupes
             )
 
-    # ===== ROUTERS (ORDER MATTERS) =====
+    # ===== ROUTERS =====
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(projects_router)
@@ -194,7 +184,6 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(audit_router)
 
-    # ✅ Snapshot mutation layers (ALL preserved)
     app.include_router(snapshot_mutations_router)
     app.include_router(snapshot_mutations_legacy_router)
     app.include_router(snapshots_legacy_router)
@@ -203,25 +192,18 @@ def create_app() -> FastAPI:
     app.include_router(resolve_target_router)
     app.include_router(snapshots_validate_transform_router)
 
-    # 📦 Phase M / N
     app.include_router(exports_router)
     app.include_router(distributions_router)
-
     app.include_router(organizations_router)
 
-    # ❌ Removed to eliminate duplicate signed-urls route
-    # app.include_router(signed_url_router)
-
-    # Snapshots (Phase 3 → 4.5)
     app.include_router(snapshots_router)
     app.include_router(snapshots_undo_redo_router)
 
-    # 🧭 Studio kernel exposure (Phase E)
-    app.include_router(studio_state_router)          # E.1
-    app.include_router(studio_tools_router)          # E.2
-    app.include_router(studio_flow_router)           # E.2
-    app.include_router(studio_snapshot_state_router) # E.3
-    app.include_router(studio_audit_router)          # E.3
+    app.include_router(studio_state_router)
+    app.include_router(studio_tools_router)
+    app.include_router(studio_flow_router)
+    app.include_router(studio_snapshot_state_router)
+    app.include_router(studio_audit_router)
 
     app.include_router(warehouse_router)
     app.include_router(exports_images_router)
@@ -237,8 +219,6 @@ def create_app() -> FastAPI:
     app.include_router(testing_results_router)
     app.include_router(testing_compare_router)
 
-    # ✅ Health lives in one place: health_router
-    # (Removed inline /health and /ready definitions)
     app.include_router(health_router)
 
     app.include_router(tools_router)
@@ -254,16 +234,15 @@ def create_app() -> FastAPI:
     app.include_router(draft_workspace_router)
     app.include_router(draft_lock_status_router)
     app.include_router(draft_locks.router)
-    
+
     app.include_router(decor_assets_router)
-    
+
     app.mount("/static", StaticFiles(directory="static"), name="static")
+
     app.include_router(paint_library_router)
     app.include_router(snapshot_scene_router)
-    
 
     return app
 
 
-# ===== APP (backwards compatible) =====
 app = create_app()

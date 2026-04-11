@@ -19,7 +19,7 @@ export async function resolveAssetRef(assetRef) {
   if (ref.startsWith("asset:")) {
     const assetId = Number(ref.replace("asset:", "").trim());
 
-    const base = "http://127.0.0.1:8000";
+    const base = API_BASE;
     const token = localStorage.getItem("graffi.access_token");
 
     console.log("🚀 FETCHING ASSET URL:", assetId);

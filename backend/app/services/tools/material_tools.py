@@ -16,7 +16,8 @@ from app.services.materials.mutator import (
 
 
 def evaluate_material_tool(*, tool: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    if tool == "MATERIAL_SET_PRESET":
+    # ✅ alias
+    if tool in ("MATERIAL_SET_PRESET", "MATERIAL_APPLY_PRESET"):
         err = validate_set(payload)
         return {"ok": err is None, "error": err}
 
@@ -40,7 +41,8 @@ def evaluate_material_tool(*, tool: str, payload: Dict[str, Any]) -> Dict[str, A
 
 
 def apply_material_tool(*, snapshot, tool: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    if tool == "MATERIAL_SET_PRESET":
+    # ✅ alias
+    if tool in ("MATERIAL_SET_PRESET", "MATERIAL_APPLY_PRESET"):
         return apply_set(snapshot, payload)
 
     if tool == "MATERIAL_CLEAR_OVERRIDE":

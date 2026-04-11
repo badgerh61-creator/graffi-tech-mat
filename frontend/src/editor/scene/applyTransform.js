@@ -1,5 +1,8 @@
 import * as THREE from "three";
 
+/**
+ * Existing system (keep this)
+ */
 export function applyTransformToObject3D(obj3d, transform) {
   const t = transform || {};
 
@@ -14,6 +17,17 @@ export function applyTransformToObject3D(obj3d, transform) {
   obj3d.updateMatrixWorld(true);
 }
 
+/**
+ * 🔥 6G.18 compatibility layer
+ * (so viewer can call applyTransform)
+ */
+export function applyTransform(obj3d, transform) {
+  applyTransformToObject3D(obj3d, transform);
+}
+
+/**
+ * Placeholder (unchanged)
+ */
 export function makePlaceholderMesh(label = "object") {
   const geom = new THREE.BoxGeometry(0.6, 0.3, 1.2);
   const mat = new THREE.MeshStandardMaterial({ metalness: 0.0, roughness: 0.9 });

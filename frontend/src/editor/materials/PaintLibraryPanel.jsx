@@ -53,7 +53,9 @@ export default function PaintLibraryPanel({
   const [swatchName, setSwatchName] = useState("New Swatch");
   const [swatchColor, setSwatchColor] = useState("#777777");
   const [swatchFinish, setSwatchFinish] = useState("gloss");
-  const [selectedSwatchId, setSelectedSwatchId] = useState(swatches?.[0]?.id || "");
+  const [selectedSwatchId, setSelectedSwatchId] = useState(
+    swatches?.[0]?.id || ""
+  );
 
   useEffect(() => {
     setSelectedSwatchId(swatches?.[0]?.id || "");
@@ -67,10 +69,18 @@ export default function PaintLibraryPanel({
         Target: <span className="font-mono">{selectedId || "none"}</span>
       </div>
 
+      {!selectedId && (
+        <div className="text-xs text-red-500">
+          Select an object first
+        </div>
+      )}
+
       {err ? <div className="text-xs">Error: {err}</div> : null}
 
       <div className="border rounded p-2 space-y-2">
-        <div className="text-xs font-semibold opacity-80">Library Presets</div>
+        <div className="text-xs font-semibold opacity-80">
+          Library Presets
+        </div>
 
         <div className="flex items-center gap-2">
           <select
@@ -108,23 +118,35 @@ export default function PaintLibraryPanel({
         <button
           className="border rounded px-3 py-2 text-sm"
           disabled={!canEdit || !selectedId || !selectedPreset}
-          onClick={() =>
+          onClick={() => {
+            if (!selectedId) {
+              console.warn("❌ No target selected");
+              return;
+            }
+
+            console.log("🔥 APPLY PRESET", {
+              target_id: selectedId,
+              preset_id: selectedPreset,
+            });
+
             onCommitTool?.({
               tool: "PAINT_APPLY_LIBRARY_PRESET",
-              station: "decor",
+              station: "materials",
               payload: {
                 target_id: selectedId,
-                preset: selectedPreset,
+                preset_id: selectedPreset,
               },
-            })
-          }
+            });
+          }}
         >
           Apply Paint Preset
         </button>
       </div>
 
       <div className="border rounded p-2 space-y-2">
-        <div className="text-xs font-semibold opacity-80">Saved Swatches</div>
+        <div className="text-xs font-semibold opacity-80">
+          Saved Swatches
+        </div>
 
         <div className="grid grid-cols-3 gap-2">
           <input

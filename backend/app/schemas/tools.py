@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from typing import Any, Dict, Literal
-
-
-ToolName = Literal["TRANSLATE", "ROTATE", "SCALE"]
+from typing import Any, Dict
 
 
 class ToolExecutePayload(BaseModel):
@@ -14,9 +11,9 @@ class ToolExecutePayload(BaseModel):
 
 class ToolExecuteRequest(BaseModel):
     snapshot_id: int
-    station: str = Field(..., min_length=1)  # e.g. "geometry"
-    tool: ToolName
-    payload: ToolExecutePayload
+    station: str = Field(..., min_length=1)
+    tool: str  # ← allow ALL tools
+    payload: Dict[str, Any]
 
 
 class ToolExecuteResponse(BaseModel):

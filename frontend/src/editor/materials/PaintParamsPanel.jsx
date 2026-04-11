@@ -17,7 +17,8 @@ export default function PaintParamsPanel({ snapshot, canEdit, onCommitTool }) {
     return overrides[tid] || null;
   }, [overrides, selectedId]);
 
-  const params = activeOverride?.params || {};
+  // ✅ FIX: read from .paint (NOT root params)
+  const params = activeOverride?.paint || {};
 
   const [color, setColor] = useState(params.color || "#777777");
   const [roughness, setRoughness] = useState(params.roughness ?? 0.6);
@@ -107,7 +108,16 @@ export default function PaintParamsPanel({ snapshot, canEdit, onCommitTool }) {
                 station: "decor",
                 payload: {
                   target_id: selectedId,
-                  patch: { color, roughness, metalness, opacity },
+
+                  // ✅ CRITICAL FIX — correct contract
+                  patch: {
+                    paint: {
+                      color,
+                      roughness,
+                      metalness,
+                      opacity,
+                    },
+                  },
                 },
               })
             }

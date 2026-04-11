@@ -6,6 +6,9 @@ import { applyTransform } from "./applyTransform";
 import { applyMaterialState } from "./applyMaterialState";
 import { applyDecals } from "./applyDecals";
 
+// ✅ 6G.16 — mesh role mapping
+import { buildMeshRoleMap } from "./buildMeshRoleMap";
+
 const EMPTY_ARRAY = Object.freeze([]);
 
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -1707,6 +1710,16 @@ function pickIdNodeForMeshPath(hitMesh) {
           modelGroup.userData.pickId = `obj:${objectKey}`;
 
           modelGroup.add(gltf.scene);
+
+          // 🔥 6G.16 — mesh role mapping
+          const roleMap = buildMeshRoleMap(
+            modelGroup,
+            obj?.mesh_roles || {}
+          );
+
+          modelGroup.userData.roleMap = roleMap;
+
+          console.log("ROLE MAP:", roleMap);
           
           // 🔥 6G.18 — transform
           applyTransform(modelGroup, obj?.transform);          
@@ -1718,7 +1731,7 @@ function pickIdNodeForMeshPath(hitMesh) {
           }
 
           // 🔥 6G.15 — decals (object-level)
-          await applyDecals(modelGroup, obj?.decal_state);             
+          await applyDecals(modelGroup, obj?.decal_state);                         
 
           const meshPaths = [];
 

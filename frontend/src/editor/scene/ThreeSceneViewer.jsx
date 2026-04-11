@@ -2100,6 +2100,28 @@ function onClick(e) {
     function onKeyDown(e) {
       const key = String(e.key || "").toLowerCase();
 
+      // Tier 7.77 — gizmo mode switching
+      if (key === "w") {
+        e.preventDefault();
+        transformControls.setMode("translate");
+        viewerApiRef.current?.syncMode?.();
+        return;
+      }
+
+      if (key === "e") {
+        e.preventDefault();
+        transformControls.setMode("rotate");
+        viewerApiRef.current?.syncMode?.();
+        return;
+      }
+
+      if (key === "r") {
+        e.preventDefault();
+        transformControls.setMode("scale");
+        viewerApiRef.current?.syncMode?.();
+        return;
+      }
+
       if (key === "f" && !e.shiftKey) {
         e.preventDefault();
         frameSelected();
@@ -2108,7 +2130,7 @@ function onClick(e) {
         frameScene();
       }
     }
-
+    
     canvas.addEventListener("mousedown", handleMouseDown);
     canvas.addEventListener("mousemove", handleMouseMove);
     canvas.addEventListener("mouseup", handleMouseUp);

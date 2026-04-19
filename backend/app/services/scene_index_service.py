@@ -1,11 +1,6 @@
 from __future__ import annotations
-
 from typing import Any, Dict, List, Optional
 
-
-# --------------------------------------------------
-# DEFAULT FALLBACK
-# --------------------------------------------------
 
 def _default_stub_objects() -> List[Dict[str, Any]]:
     return [
@@ -26,10 +21,6 @@ def _default_stub_objects() -> List[Dict[str, Any]]:
         }
     ]
 
-
-# --------------------------------------------------
-# TRANSFORM
-# --------------------------------------------------
 
 def _normalize_transform(node: Dict[str, Any]) -> Dict[str, Any]:
     t = node.get("transform", {}) or {}
@@ -53,10 +44,6 @@ def _normalize_transform(node: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# --------------------------------------------------
-# ASSET BINDING
-# --------------------------------------------------
-
 def _bind_asset(node: Dict[str, Any]) -> Optional[str]:
     asset_ref = node.get("asset_ref") or node.get("asset_id")
 
@@ -68,10 +55,6 @@ def _bind_asset(node: Dict[str, Any]) -> Optional[str]:
 
     return None
 
-
-# --------------------------------------------------
-# EXTRACTORS
-# --------------------------------------------------
 
 def _extract_material_state(node: Dict[str, Any]) -> Dict[str, Any]:
     ms = node.get("material_state") or {}
@@ -88,55 +71,14 @@ def _extract_mesh_roles(node: Dict[str, Any]) -> Dict[str, Any]:
     return roles if isinstance(roles, dict) else {}
 
 
-# --------------------------------------------------
-# MATERIAL OVERRIDE (FULL FIX)
-# --------------------------------------------------
-
-def _resolve_overrides(snapshot: Any, body: Dict[str, Any]) -> Dict[str, Any]:
-    # snapshot.decor_state.material_overrides
-    decor = getattr(snapshot, "decor_state", None)
-    if isinstance(decor, dict):
-        mo = decor.get("material_overrides")
-        if isinstance(mo, dict):
-            return mo
-
-    # body.decor_state.material_overrides
-    decor = body.get("decor_state")
-    if isinstance(decor, dict):
-        mo = decor.get("material_overrides")
-        if isinstance(mo, dict):
-            return mo
-
-    # body.decor.material_overrides
-    decor = body.get("decor")
-    if isinstance(decor, dict):
-        mo = decor.get("material_overrides")
-        if isinstance(mo, dict):
-            return mo
-
-    # body.scene.decor.material_overrides
-    scene = body.get("scene")
-    if isinstance(scene, dict):
-        decor = scene.get("decor")
-        if isinstance(decor, dict):
-            mo = decor.get("material_overrides")
-            if isinstance(mo, dict):
-                return mo
-
-    return {}
-
-
-# --------------------------------------------------
-# CORE BUILDER
-# --------------------------------------------------
-
 def _build_from_nodes(
     nodes: List[Dict[str, Any]],
     overrides: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
+
     objects: List[Dict[str, Any]] = []
 
-    # 🔥 support nested material_overrides
+    # ✅ ALWAYS normalize overrides
     if "material_overrides" in overrides:
         overrides = overrides.get("material_overrides", {})
 
@@ -152,21 +94,55 @@ def _build_from_nodes(
         if parent_id is not None:
             parent_id = str(parent_id)
 
-        base_material = _extract_material_state(n)
+        existing_material = _extract_material_state(n)
 
-        override = overrides.get(obj_id, {}) or {}
-        params = override.get("params") if isinstance(override, dict) else None
+        # -----------------------------
+        # 🔥 FIX — STRICT mesh override filtering
+        # -----------------------------
+        mesh_overrides = {}
 
-        if params:
-            material_state = {
-                "paint": {
-                    "color": params.get("color"),
-                    "roughness": params.get("roughness"),
-                    "metalness": params.get("metalness"),
-                }
+        for key, value in overrides.items():
+            if not isinstance(key, str):
+                continue
+
+            if key.startswith(f"mesh:{obj_id}::"):
+                mesh_overrides[key] = value
+
+        existing_meshes = existing_material.get("meshes", {}) or {}
+
+        # -----------------------------
+        # 🔥 CRITICAL — MERGE CORRECTLY
+        # -----------------------------
+        merged_meshes = {
+            **existing_meshes,
+            **mesh_overrides
+        }
+
+        material_state = {
+            **existing_material
+        }
+
+        if merged_meshes:
+            material_state["meshes"] = merged_meshes
+
+        # -----------------------------
+        # mesh roles
+        # -----------------------------
+        mesh_roles = _extract_mesh_roles(n)
+
+        if not mesh_roles:
+            mesh_roles = {
+                "_auto": True,
+                "body": n.get("name") or "body",
+                "wheels": "wheel",
+                "glass": "glass",
+                "lights": "light",
+                "doors": "door",
+                "trim": "trim",
+                "interior": "interior",
+                "chassis": "chassis",
+                "engine": "engine",
             }
-        else:
-            material_state = base_material
 
         obj = {
             "id": obj_id,
@@ -176,22 +152,18 @@ def _build_from_nodes(
             "parent_id": parent_id,
             "material_state": material_state,
             "decal_state": _extract_decal_state(n),
-            "mesh_roles": _extract_mesh_roles(n),
+            "mesh_roles": mesh_roles,
             "transform": _normalize_transform(n),
         }
 
         objects.append(obj)
 
     return objects
-    
-# --------------------------------------------------
-# PUBLIC API
-# --------------------------------------------------
+
 
 def build_scene_index(snapshot: Any) -> Dict[str, Any]:
     body = getattr(snapshot, "body_state", None) or {}
 
-    # 🔥 read decor_state directly
     decor = getattr(snapshot, "decor_state", {}) or {}
     overrides = decor.get("material_overrides", {})
 

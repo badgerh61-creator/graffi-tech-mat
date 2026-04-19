@@ -262,6 +262,7 @@ function UnifiedInspectorPanelFallback({
   lockState,
   onCommitTool,
   constraints,
+  setActivePaint,
 }) {
   return (
     <div className="border rounded p-3 space-y-3">
@@ -303,7 +304,10 @@ function UnifiedInspectorPanelFallback({
         snapshot={snapshot}
         canEdit={toolsEnabled}
         onCommitTool={onCommitTool}
-        onApplyPaint={handleApplyPaint}
+        onApplyPaint={(preset) => {
+          console.log("🎨 ACTIVE PAINT SET (PARAMS):", preset);
+          setActivePaint(preset);
+        }}
       />
 
       <ConstraintViolationsPanel constraints={constraints} />
@@ -418,28 +422,51 @@ export default function StudioEditor() {
   const [activeSnapshotOverrideId, setActiveSnapshotOverrideId] = useState(null);
   const [labRefreshKey, setLabRefreshKey] = useState(0);
 
-  // 🔥 ADD THIS BLOCK HERE
-  function handleApplyPaint(objectId, materialState) {
-    setSceneIndex((prev) => {
-      if (!prev) return prev;
+function handleApplyPaint(objectId, materialState) {
+  setSceneIndex((prev) => {
+    if (!prev) return prev;
 
-      return {
-        ...prev,
-        objects: prev.objects.map((obj) => {
-          if (obj.id !== objectId) return obj;
+    const applyToObjects = (objects) =>
+      objects.map((obj) => {
+        if (obj.id !== objectId) return obj;
 
-          return {
-            ...obj,
-            material_state: {
-              ...(obj.material_state || {}),
-              ...materialState,
-            },
-          };
-        }),
-      };
-    });
-  }
+        const prevState = obj.material_state || {};
+        const prevMeshes = prevState.meshes || {};
 
+        const mergedMeshes = { ...prevMeshes };
+
+        Object.entries(materialState.meshes || {}).forEach(([key, value]) => {
+          mergedMeshes[key] = value;
+        });
+
+        return {
+          ...obj,
+          material_state: {
+            ...prevState,
+            meshes: mergedMeshes,
+          },
+        };
+      });
+
+    console.log("PREV SCENE INDEX:", prev);
+
+    return {
+      ...prev,
+      objects: applyToObjects(prev.objects || []),
+
+      body_state: {
+        ...prev.body_state,
+        scene: {
+          ...prev.body_state?.scene,
+          objects: applyToObjects(
+            prev.body_state?.scene?.objects || []
+          ),
+        },
+      },
+    };
+  });
+}
+  
   const viewerApiRef = useRef(null);
 
   const [isDirty, setIsDirty] = useState(false);
@@ -447,6 +474,8 @@ export default function StudioEditor() {
   const [bootstrapped, setBootstrapped] = useState(false);
   
   const [workspace, setWorkspace] = useState("design");
+  
+  const [activePaint, setActivePaint] = useState(null);
 
   const { selectedId } = useSelectionStore();
   const { lock } = useLockStatus();
@@ -775,6 +804,7 @@ useEffect(() => {
   }, [activeSnapshot?.id, activeSnapshot?.status]);
 
   const activeTargetId = resolvedTargetId ?? selectedId ?? null;
+
   const hasDraftLock = lock?.state === "owned";
   const station = "geometry";
 
@@ -885,7 +915,7 @@ const commitToolPayload = useCallback(
       clearConstraintViolations();
 
       // -----------------------------
-      // 2. apply (THIS WAS MISSING)
+      // 2. apply
       // -----------------------------
       const applyRes = await executeTool({
         snapshotId: activeSnapshot?.id,
@@ -896,15 +926,34 @@ const commitToolPayload = useCallback(
       });
 
       // -----------------------------
-      // 3. refresh
+      // 3. LOCAL STATE UPDATE (PAINT FIX)
       // -----------------------------
-      try {
-        await fetchSnapshots();
-      } catch {}
+      if (tool === "PAINT_APPLY_LIBRARY_PRESET") {
+        const { target_id, preset_id } = toolPayload || {};
 
-      try {
-        refreshSceneIndex?.();
-      } catch {}
+        if (target_id && preset_id) {
+          const objectId =
+            target_id.split("::")[0].replace("mesh:", "");
+
+          // 🔥 USE SINGLE SOURCE OF TRUTH
+          handleApplyPaint(objectId, {
+            meshes: {
+              [target_id]: {
+                preset: preset_id,
+              },
+            },
+          });
+
+          // 🔥 CRITICAL: reapply materials WITHOUT reload
+          setTimeout(() => {
+            viewerApiRef.current?.syncMaterials?.();
+          }, 0);
+        }
+      }
+      
+      // -----------------------------
+      // 🚫 NO REFRESH HERE (CRITICAL FIX)
+      // -----------------------------
 
       return applyRes;
 
@@ -915,7 +964,7 @@ const commitToolPayload = useCallback(
       };
     }
   },
-  [activeSnapshot?.id, toolsEnabled, fetchSnapshots, refreshSceneIndex]
+  [activeSnapshot?.id, toolsEnabled] // ✅ CLEAN DEPENDENCIES
 );
 
 // ✅ Tier 7.67 — keyboard dispatcher (FINAL)
@@ -1283,7 +1332,11 @@ if (!bootstrapped) {
                     snapshot={activeSnapshot}
                     canEdit={toolsEnabled}
                     onCommitTool={(payload) => commitToolPayload(payload)}
-                  />
+                    onApplyPaint={(preset) => {
+                      console.log("🎨 ACTIVE PAINT SET:", preset);
+                      setActivePaint(preset);
+                    }}
+                  />            
                 </PanelSuspense>
               </div>
 
@@ -1377,10 +1430,10 @@ if (!bootstrapped) {
                 disabled={!activeSnapshot?.id}
                 canEdit={toolsEnabled}
                 onCommitTool={(p) => commitToolPayload(p)}
-                commitToolPayload={(p) => commitToolPayload(p)}
                 onViewerApiReady={(api) => {
                   viewerApiRef.current = api;
                 }}
+                activePaint={activePaint}
               />
 
               {/* ✅ Tier 7.62 — Marquee Selection Overlay */}
@@ -1398,13 +1451,14 @@ if (!bootstrapped) {
                   lockState={lock?.state || "unknown"}
                   onCommitTool={(payload) => commitToolPayload(payload)}
                   constraints={constraintsForPanel}
+                  setActivePaint={setActivePaint}
                 />
               </PanelSuspense>
             </div>
           </div>        
 
         </div> {/* GRID CLOSED */}
-
+        
         <EditorLayoutHost
           editable={isEditMode}
           panelContext={{

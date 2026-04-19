@@ -23,26 +23,23 @@ def _ensure_decor(snapshot) -> Dict[str, Any]:
     if not isinstance(decor, dict):
         decor = {}
 
-    if "material_overrides" not in decor:
-        decor["material_overrides"] = {}
-
-    if "paint_swatches" not in decor:
-        decor["paint_swatches"] = []
+    decor.setdefault("material_overrides", {})
+    decor.setdefault("paint_swatches", [])
 
     body["decor_state"] = decor
     snapshot.body_state = body
-
     setattr(snapshot, "decor_state", decor)
 
     return decor
 
 
-# 🔥 FIXED — writes to body_state.scene.objects
-def _ensure_material_state(snapshot, target_id: str, paint: Dict[str, Any]):
-    """
-    Tier 6G — write paint into scene objects
-    """
+# 🔥 NEW — normalize mesh names (CRITICAL FIX)
+def _normalize_mesh_name(name: str) -> str:
+    return re.sub(r'[\s._-]*\d+$', '', str(name)).lower().strip()
 
+
+# 🔥 FINAL FIX — SAFE MERGE + NORMALIZED MATCHING
+def _ensure_material_state(snapshot, target_id: str, paint: Dict[str, Any]):
     body = getattr(snapshot, "body_state", None) or {}
     scene = body.get("scene") or {}
     objects = scene.get("objects")
@@ -50,23 +47,72 @@ def _ensure_material_state(snapshot, target_id: str, paint: Dict[str, Any]):
     if not isinstance(objects, list):
         return
 
+    try:
+        obj_part, raw_mesh = target_id.split("::")
+    except ValueError:
+        return
+
+    obj_id = obj_part.replace("mesh:", "")
+
+    def normalize(name):
+        return re.sub(r'[\s._-]*\d+$', '', str(name)).lower().strip()
+
+    target_norm = normalize(raw_mesh)
+
     for obj in objects:
-        if str(obj.get("id")) != str(target_id):
+        if str(obj.get("id")) != str(obj_id):
             continue
 
-        if "material_state" not in obj:
-            obj["material_state"] = {}
+        material_state = obj.get("material_state") or {}
+        meshes = dict(material_state.get("meshes") or {})
 
-        obj["material_state"]["paint"] = {
-            "color": paint.get("color"),
-            "roughness": float(paint.get("roughness", 0.5)),
-            "metalness": float(paint.get("metalness", 0.0)),
+        # =========================================
+        # 🔥 STEP 1 — ALWAYS STORE EXACT TARGET FIRST
+        # =========================================
+        meshes[target_id] = {
+            **meshes.get(target_id, {}),
+            "preset": "direct",
+            "params": {
+                "color": paint.get("color"),
+                "roughness": float(paint.get("roughness", 0.5)),
+                "metalness": float(paint.get("metalness", 0.0)),
+            },
         }
+
+        # =========================================
+        # 🔥 STEP 2 — EXPAND USING ROLE MAP (SAFE)
+        # =========================================
+        mesh_roles = obj.get("mesh_roles") or {}
+
+        for role_key in mesh_roles.keys():
+            if not role_key.startswith("mesh:"):
+                continue
+
+            mesh_name = role_key.replace("mesh:", "")
+
+            if normalize(mesh_name) == target_norm:
+                full_key = f"mesh:{obj_id}::{mesh_name}"
+
+                meshes[full_key] = {
+                    **meshes.get(full_key, {}),
+                    "preset": "direct",
+                    "params": {
+                        "color": paint.get("color"),
+                        "roughness": float(paint.get("roughness", 0.5)),
+                        "metalness": float(paint.get("metalness", 0.0)),
+                    },
+                }
+
+        # =========================================
+        # 🔥 FINAL WRITE
+        # =========================================
+        material_state["meshes"] = meshes
+        obj["material_state"] = material_state
 
     scene["objects"] = objects
     body["scene"] = scene
     snapshot.body_state = body
-
+    
 
 def _sorted_swatches(swatches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(swatches, key=lambda s: str(s.get("id")))
@@ -91,9 +137,9 @@ def validate_apply_library_preset(payload: Dict[str, Any]) -> Optional[str]:
         return "target_id required"
 
     preset = str(
-      payload.get("preset") or payload.get("preset_id") or ""
+        payload.get("preset") or payload.get("preset_id") or ""
     ).strip()
-    
+
     if not preset:
         return "preset required"
 
@@ -111,7 +157,9 @@ def apply_apply_library_preset(snapshot, payload: Dict[str, Any]) -> Dict[str, A
     preset_id = str(payload.get("preset") or payload.get("preset_id"))
     preset = get_paint_preset(preset_id)
 
+    # 🔥 SAFE MERGE
     overrides[tid] = {
+        **overrides.get(tid, {}),
         "preset": preset_id,
         "params": {
             "color": preset["color"],
@@ -125,6 +173,7 @@ def apply_apply_library_preset(snapshot, payload: Dict[str, Any]) -> Dict[str, A
     decor["material_overrides"] = overrides
     setattr(snapshot, "decor_state", decor)
 
+    # 🔥 APPLY TO SCENE (FIXED)
     _ensure_material_state(
         snapshot,
         tid,
@@ -186,7 +235,6 @@ def validate_delete_swatch(payload: Dict[str, Any]) -> Optional[str]:
     swatch_id = str(payload.get("swatch_id") or "").strip()
     if not swatch_id:
         return "swatch_id required"
-
     return None
 
 
@@ -255,6 +303,7 @@ def apply_apply_swatch(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     defaults = _finish_defaults(str(swatch.get("finish")))
 
     overrides[tid] = {
+        **overrides.get(tid, {}),
         "preset": f"swatch:{swatch_id}",
         "params": {
             "color": str(swatch.get("color")).upper(),
@@ -268,6 +317,7 @@ def apply_apply_swatch(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     decor["material_overrides"] = overrides
     setattr(snapshot, "decor_state", decor)
 
+    # 🔥 APPLY TO SCENE (FIXED)
     _ensure_material_state(
         snapshot,
         tid,

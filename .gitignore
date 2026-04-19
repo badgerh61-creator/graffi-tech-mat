@@ -29,3 +29,9 @@ backend/*.db-shm
 
 # GTK temporary save files
 .goutputstream-*
+
+# ----------------------------
+# Media / Decals (DO NOT COMMIT)
+# ----------------------------
+backend/media/
+backend/static/decals/

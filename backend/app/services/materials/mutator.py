@@ -27,6 +27,16 @@ def _slot_key(target_id: str, slot_name: str) -> str:
     return f"{tid}::slot:{slot}"
 
 
+def _is_valid_target(tid: str) -> bool:
+    if not tid:
+        return False
+    if tid == "vehicle-1":
+        return False
+    if not (tid.startswith("role:") or tid.startswith("mesh:")):
+        return False
+    return True
+
+
 # -------------------------------------------------------
 # Validators
 # -------------------------------------------------------
@@ -35,6 +45,9 @@ def validate_set(payload: Dict[str, Any]) -> Optional[str]:
     tid = str(payload.get("target_id") or "").strip()
     if not tid:
         return "target_id required"
+
+    if not _is_valid_target(tid):
+        return "invalid target_id (must be role: or mesh:)"
 
     preset = str(payload.get("preset") or "").strip()
     if not preset:
@@ -105,17 +118,28 @@ def apply_set(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     decor = _ensure_decor(snapshot)
     overrides: Dict[str, Any] = decor["material_overrides"]
 
-    tid = str(payload.get("target_id")).strip()
-    preset = str(payload.get("preset")).strip()
+    tid = str(payload.get("target_id") or "").strip()
+    preset = str(payload.get("preset") or "").strip()
+
+    # 🔥 HARD GUARD (prevents overwrite bug)
+    if not _is_valid_target(tid):
+        return {"ok": False, "error": f"invalid target_id: {tid}"}
+
+    # 🔍 DEBUG (remove later if needed)
+    print("🔥 APPLY_SET TARGET:", tid)
+    print("🔥 BEFORE OVERRIDES:", overrides)
 
     overrides[tid] = {
         "preset": preset,
         "params": {},
-        "version": 1,
+        "version": int(overrides.get(tid, {}).get("version", 0)) + 1,
     }
 
     decor["material_overrides"] = overrides
     setattr(snapshot, "decor_state", decor)
+
+    # 🔍 DEBUG
+    print("🔥 AFTER OVERRIDES:", overrides)
 
     return {"ok": True, "target_id": tid, "preset": preset}
 
@@ -184,7 +208,7 @@ def apply_set_slot(snapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
     overrides[key] = {
         "preset": preset,
         "params": {},
-        "version": 1,
+        "version": int(overrides.get(key, {}).get("version", 0)) + 1,
     }
 
     decor["material_overrides"] = overrides

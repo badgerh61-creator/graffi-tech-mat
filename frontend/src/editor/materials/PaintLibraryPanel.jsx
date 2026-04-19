@@ -4,41 +4,57 @@ import { fetchPaintLibrary } from "../../services/studio/paintLibraryApi";
 
 const FINISHES = ["all", "gloss", "matte", "satin", "metallic", "chrome_like"];
 
-export default function PaintLibraryPanel({
+function PaintLibraryPanel({
   snapshot,
   canEdit,
   onCommitTool,
+  onApplyPaint, // 🔥 FIX: receive from StudioEditor
 }) {
   const { selectedId } = useSelection();
+
   const [presets, setPresets] = useState([]);
   const [finish, setFinish] = useState("all");
   const [q, setQ] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("");
+  const [activePaint, setActivePaint] = useState(null);
   const [err, setErr] = useState(null);
 
+  // -----------------------------
+  // Load presets
+  // -----------------------------
   useEffect(() => {
     let alive = true;
+
     fetchPaintLibrary()
       .then((p) => {
         if (!alive) return;
         setPresets(p);
         setSelectedPreset(p?.[0]?.id || "");
       })
-      .catch((e) => alive && setErr(e?.message || String(e)));
+      .catch((e) => {
+        if (alive) setErr(e?.message || String(e));
+      });
+
     return () => {
       alive = false;
     };
   }, []);
 
+  // -----------------------------
+  // Filter presets
+  // -----------------------------
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
+    const search = q.trim().toLowerCase();
+
     return presets.filter((p) => {
       if (finish !== "all" && p.finish !== finish) return false;
-      if (!s) return true;
+
+      if (!search) return true;
+
       return (
-        String(p.id).toLowerCase().includes(s) ||
-        String(p.name || "").toLowerCase().includes(s) ||
-        String(p.finish || "").toLowerCase().includes(s)
+        String(p.id).toLowerCase().includes(search) ||
+        String(p.name || "").toLowerCase().includes(search) ||
+        String(p.finish || "").toLowerCase().includes(search)
       );
     });
   }, [presets, finish, q]);
@@ -49,18 +65,23 @@ export default function PaintLibraryPanel({
     }
   }, [filtered, selectedPreset]);
 
+  // -----------------------------
+  // Swatches
+  // -----------------------------
   const swatches = snapshot?.decor_state?.paint_swatches || [];
+
   const [swatchName, setSwatchName] = useState("New Swatch");
   const [swatchColor, setSwatchColor] = useState("#777777");
   const [swatchFinish, setSwatchFinish] = useState("gloss");
-  const [selectedSwatchId, setSelectedSwatchId] = useState(
-    swatches?.[0]?.id || ""
-  );
+  const [selectedSwatchId, setSelectedSwatchId] = useState("");
 
   useEffect(() => {
     setSelectedSwatchId(swatches?.[0]?.id || "");
   }, [swatches.length]);
 
+  // -----------------------------
+  // RENDER
+  // -----------------------------
   return (
     <div className="border rounded p-3 space-y-3">
       <div className="text-sm font-semibold">Paint Library</div>
@@ -69,20 +90,15 @@ export default function PaintLibraryPanel({
         Target: <span className="font-mono">{selectedId || "none"}</span>
       </div>
 
-      {!selectedId && (
-        <div className="text-xs text-red-500">
-          Select an object first
-        </div>
-      )}
+      {err && <div className="text-xs text-red-500">Error: {err}</div>}
 
-      {err ? <div className="text-xs">Error: {err}</div> : null}
-
+      {/* ================= PRESETS ================= */}
       <div className="border rounded p-2 space-y-2">
         <div className="text-xs font-semibold opacity-80">
           Library Presets
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <select
             className="border rounded px-2 py-1 text-sm"
             value={finish}
@@ -115,34 +131,40 @@ export default function PaintLibraryPanel({
           ))}
         </select>
 
+        {/* 🔥 FIXED PAINT TOOL BUTTON */}
         <button
-          className="border rounded px-3 py-2 text-sm"
-          disabled={!canEdit || !selectedId || !selectedPreset}
+          className={
+            "border rounded px-3 py-2 text-sm " +
+            (activePaint?.id === selectedPreset ? "bg-blue-100" : "")
+          }
+          disabled={!canEdit || !selectedPreset}
           onClick={() => {
-            if (!selectedId) {
-              console.warn("❌ No target selected");
-              return;
-            }
+            const preset = presets.find((p) => p.id === selectedPreset);
+            if (!preset) return;
 
-            console.log("🔥 APPLY PRESET", {
-              target_id: selectedId,
-              preset_id: selectedPreset,
-            });
+            const paintObj = {
+              id: preset.id,
+              color: preset.color,
+              metalness: preset.metalness,
+              roughness: preset.roughness,
+              finish: preset.finish,
+            };
 
-            onCommitTool?.({
-              tool: "PAINT_APPLY_LIBRARY_PRESET",
-              station: "materials",
-              payload: {
-                target_id: selectedId,
-                preset_id: selectedPreset,
-              },
-            });
+            setActivePaint(paintObj);
+
+            // ✅ FIX: send to StudioEditor → Viewer
+            onApplyPaint?.(paintObj);
+
+            console.log("🎯 ACTIVE PAINT SET:", paintObj);
           }}
         >
-          Apply Paint Preset
+          {activePaint?.id === selectedPreset
+            ? "Painting Active (Click Mesh)"
+            : "Select Paint Tool"}
         </button>
       </div>
 
+      {/* ================= SWATCHES ================= */}
       <div className="border rounded p-2 space-y-2">
         <div className="text-xs font-semibold opacity-80">
           Saved Swatches
@@ -153,30 +175,32 @@ export default function PaintLibraryPanel({
             className="border rounded px-2 py-1 text-sm"
             value={swatchName}
             onChange={(e) => setSwatchName(e.target.value)}
-            placeholder="Swatch name"
           />
+
           <input
             className="border rounded px-2 py-1 text-sm font-mono"
             value={swatchColor}
             onChange={(e) => setSwatchColor(e.target.value)}
-            placeholder="#RRGGBB"
           />
+
           <select
             className="border rounded px-2 py-1 text-sm"
             value={swatchFinish}
             onChange={(e) => setSwatchFinish(e.target.value)}
           >
-            {FINISHES.filter((f) => f !== "all").map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
+            {FINISHES
+              .filter((f) => f !== "all")
+              .map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
           </select>
         </div>
 
         <button
           className="border rounded px-3 py-2 text-sm"
-          disabled={!canEdit || !swatchName.trim() || !swatchColor}
+          disabled={!canEdit || !swatchName.trim()}
           onClick={() =>
             onCommitTool?.({
               tool: "PAINT_SAVE_SWATCH",
@@ -205,22 +229,18 @@ export default function PaintLibraryPanel({
           ))}
         </select>
 
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <button
             className="border rounded px-3 py-2 text-sm"
-            disabled={!canEdit || !selectedId || !selectedSwatchId}
-            onClick={() =>
-              onCommitTool?.({
-                tool: "PAINT_APPLY_SWATCH",
-                station: "decor",
-                payload: {
-                  target_id: selectedId,
-                  swatch_id: selectedSwatchId,
-                },
-              })
-            }
+            disabled={!canEdit || !selectedSwatchId}
+            onClick={() => {
+              onApplyPaint?.({
+                id: selectedSwatchId,
+                type: "swatch",
+              });
+            }}
           >
-            Apply Swatch
+            Select Swatch Tool
           </button>
 
           <button
@@ -242,8 +262,10 @@ export default function PaintLibraryPanel({
       </div>
 
       <div className="text-[11px] opacity-60">
-        Paint presets and swatches are slot-aware if your current selection is slot-level.
+        Click a paint, then click parts of the vehicle to apply.
       </div>
     </div>
   );
 }
+
+export default PaintLibraryPanel;

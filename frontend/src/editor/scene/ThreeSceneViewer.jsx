@@ -9,6 +9,11 @@ import { applyDecals } from "./applyDecals";
 // ✅ 6G.16 — mesh role mapping
 import { buildMeshRoleMap } from "./buildMeshRoleMap";
 
+import {
+  applySelectionOutline,
+  clearSelectionOutline
+} from "./applySelectionOutline";
+
 const EMPTY_ARRAY = Object.freeze([]);
 
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -69,6 +74,8 @@ import { useGizmoMode } from "../gizmo/gizmoModeStore";
 // ✅ Tier 7.49 — canonical snap store
 import { useSnap } from "../transform/snapStore";
 
+import { useViewMode } from "../view/viewModeStore";
+
 // ✅ Tier 7.38 — active decal + preview patch store
 import { useActiveDecal } from "../decals/activeDecalStore";
 import {
@@ -103,32 +110,42 @@ import {
 // ✅ Tier 7.61 — Pivot preview
 import { usePivotPreview } from "../transform/pivotPreviewStore";
 
-// ✅ Tier 7.69 — view modes
-import { useViewMode } from "../view/viewModeStore";
+import { useActivePaint } from "../materials/activePaintStore";
+import { resolvePreset } from "../materials/presetLibrary";
 
+// --------------------------------------------------
+// ✅ Renderer factory (WebGL safe)
+// --------------------------------------------------
 
 function makeRenderer(canvas) {
-  const gl2 = canvas.getContext("webgl2", { antialias: true });
-  const gl1 = gl2 ? null : canvas.getContext("webgl", { antialias: true });
-  const gl = gl2 || gl1;
-  if (!gl) return null;
+  try {
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      powerPreference: "high-performance",
+    });
 
-  const r = new THREE.WebGLRenderer({
-    canvas,
-    context: gl,
-    antialias: true,
-    alpha: true,
-    preserveDrawingBuffer: false,
-  });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(
+      canvas.clientWidth || 800,
+      canvas.clientHeight || 500,
+      false
+    );
 
-  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  r.outputColorSpace = THREE.SRGBColorSpace;
-  r.toneMapping = THREE.ACESFilmicToneMapping;
-  r.toneMappingExposure = 1.0;
-  r.useLegacyLights = false;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.physicallyCorrectLights = true;
+    renderer.shadowMap.enabled = true;
 
-  return r;
+    return renderer;
+  } catch (err) {
+    console.error("Renderer creation failed:", err);
+    return null;
+  }
 }
+
 
 function makeCamera(width, height) {
   const cam = new THREE.PerspectiveCamera(45, width / height, 0.1, 5000);
@@ -294,21 +311,22 @@ function boxToPivotPreset(box, preset) {
 }
 
 function addStudioLighting(scene) {
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
   hemi.name = "light:hemi";
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  const key = new THREE.DirectionalLight(0xffffff, 3.0);
   key.name = "light:key";
   key.position.set(6, 8, 5);
+  key.castShadow = true;
   scene.add(key);
 
-  const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+  const fill = new THREE.DirectionalLight(0xffffff, 1.2);
   fill.name = "light:fill";
   fill.position.set(-6, 5, -4);
   scene.add(fill);
 
-  const rim = new THREE.DirectionalLight(0xffffff, 0.25);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.8);
   rim.name = "light:rim";
   rim.position.set(0, 6, -8);
   scene.add(rim);
@@ -431,11 +449,34 @@ export default function ThreeSceneViewer({
   onCommitTool = null,
   materialOverrides = null,
   onViewerApiReady = null,
+  activePaint,
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
+  const sceneRef = useRef(null);
+  const rendererRef = useRef(null);
+  const pickablesRef = useRef([]);
+  const hasBuiltSceneRef = useRef(false);
 
   const { selectedId } = useSelectionStore();
+
+  useEffect(() => {
+    if (!sceneRef.current) return;
+
+    if (!selectedId) {
+      clearSelectionOutline();
+      return;
+    }
+
+    applySelectionOutline({
+      scene: sceneRef.current,
+      selectedId,
+    });
+
+    updateSelectionBox();
+    updateSelectionHighlight();
+
+  }, [selectedId]);
 
   const layers = useSceneLayers();
   const { preview } = useGizmoPreview();
@@ -461,14 +502,31 @@ export default function ThreeSceneViewer({
 
   const lastGoodObjectsRef = useRef([]);
   const loadedObjectsRef = useRef({});
+  const lastValidSceneRef = useRef(null);
+
+  console.log("🔥 RAW sceneIndex:", sceneIndex);
+
+  if (sceneIndex && sceneIndex.objects) {
+    lastValidSceneRef.current = sceneIndex;
+  }
+
+  const safeSceneIndex =
+    sceneIndex && sceneIndex.objects
+      ? sceneIndex
+      : lastValidSceneRef.current;
+
+  if (!safeSceneIndex) {
+    console.warn("🚫 No valid scene yet");
+  }
 
   const objects = useMemo(() => {
-    const a = sceneIndex?.objects;
-    const b = sceneIndex?.body_state?.scene?.objects;
-    const c = sceneIndex?.snapshot?.body_state?.scene?.objects;
+    const src = safeSceneIndex || sceneIndex;
+
+    const a = src?.objects;
+    const b = src?.body_state?.scene?.objects;
+    const c = src?.snapshot?.body_state?.scene?.objects;
     const d = activeSnapshot?.body_state?.scene?.objects;
 
-    // ✅ use FIRST NON-EMPTY array
     const list =
       (Array.isArray(a) && a.length ? a :
       Array.isArray(b) && b.length ? b :
@@ -476,7 +534,6 @@ export default function ThreeSceneViewer({
       Array.isArray(d) && d.length ? d :
       []);
 
-    // ✅ store last valid objects
     if (list.length) {
       lastGoodObjectsRef.current = list;
     }
@@ -487,19 +544,27 @@ export default function ThreeSceneViewer({
 
     return finalList;
   }, [sceneIndex, activeSnapshot]);
-    
-  const decals = useMemo(() => {
-    const d1 = sceneIndex?.decor_state?.decals;
-    const d2 = sceneIndex?.snapshot?.decor_state?.decals;
-    const d3 = activeSnapshot?.decor_state?.decals;
-    const list = d1 || d2 || d3 || [];
-    return Array.isArray(list) ? list.filter(Boolean) : [];
-  }, [sceneIndex, activeSnapshot]);
 
+  console.log("🔥 USING OBJECTS:", objects);
+  
   const selectedIdRef = useRef(selectedId);
   const previewRef = useRef(preview);
+  const appliedObjectsRef = useRef(new Set());
+  const appliedMeshesRef = useRef(new Set());
   const gizmoModeRef = useRef(gizmoMode);
   const viewModeRef = useRef(viewMode);
+  const meshIndexRef = useRef(new Map());
+  
+  // ✅ Tier 7.62 — marquee drag state
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef(null);
+
+  const activePaintRef = useRef(activePaint);
+
+  useEffect(() => {
+    activePaintRef.current = activePaint;
+    console.log("🎨 ACTIVE PAINT (PROP):", activePaint);
+  }, [activePaint]);
   
   // ✅ NEW — Tier 7.64
   const transformSpaceRef = useRef(transformSpace);
@@ -515,7 +580,7 @@ export default function ThreeSceneViewer({
   const pivotPreviewRef = useRef(pivotPreview);
 
   const canEditRef = useRef(!!canEdit);
-  const decalsRef = useRef(decals);
+  const decalsRef = useRef([]);
   const activeDecalIdRef = useRef(activeDecalId);
   const decalPreviewRef = useRef(decalPreview);
   const onCommitToolRef = useRef(onCommitTool);
@@ -551,8 +616,10 @@ export default function ThreeSceneViewer({
   }, [canEdit]);
 
   useEffect(() => {
-    decalsRef.current = decals;
-  }, [decals]);
+    decalsRef.current = objects.flatMap(
+      (obj) => obj.decal_state || []
+    );
+  }, [objects]);
 
   useEffect(() => {
     activeDecalIdRef.current = activeDecalId ? String(activeDecalId) : null;
@@ -582,6 +649,11 @@ export default function ThreeSceneViewer({
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+  
+  useEffect(() => {
+    appliedObjectsRef.current.clear();
+    appliedMeshesRef.current.clear();
+  }, [activeSnapshot?.id]);
 
   const viewerApiRef = useRef({
     syncSelection: null,
@@ -618,12 +690,18 @@ export default function ThreeSceneViewer({
 
     const scene = new THREE.Scene();
 
-    const renderer = makeRenderer(canvas);
+    let renderer = rendererRef.current;
+
+    if (!renderer) {
+      renderer = makeRenderer(canvas);
+      rendererRef.current = renderer;
+    }
+
     if (!renderer) {
       setErr("WebGL is not available (context creation failed).");
       return () => {};
     }
-
+    
     let contextLost = false;
 
     function onContextLost(e) {
@@ -779,9 +857,121 @@ function updatePivotPreview() {
 const objectGroups = new Map();
 const pivotGroups = new Map();
 const allMeshes = new Set();
+let selectedGroup = null;
 
 function updateSelectionBox() {
   clearSelectionBox();
+
+  const sid = selectedIdRef.current;
+  if (!sid) return;
+
+  // 🔥 mesh selection
+  // 🔥 mesh selection
+  if (sid.startsWith("mesh:")) {
+    console.log("🧪 selection id:", sid);
+    
+    const mesh =
+      meshIndexRef.current.get(sid) ||
+      meshIndexRef.current.get(sid.replace(/^mesh:/, ""));
+    
+    console.log("🧪 meshIndex result:", mesh);
+    
+    if (!mesh) return;
+    if (mesh.visible === false) return;
+
+    const box = new THREE.Box3().setFromObject(mesh);
+    console.log("🧪 mesh box:", box);
+    
+    if (box.isEmpty()) return;
+
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+
+    box.getSize(size);
+    box.getCenter(center);
+
+    const geom = new THREE.BoxGeometry(size.x, size.y, size.z);
+    const edges = new THREE.EdgesGeometry(geom);
+
+    selectionBoxHelper = new THREE.LineSegments(
+      edges,
+      new THREE.LineBasicMaterial({ color: 0x00ffff })
+    );
+
+    // 🔥 correct world-space placement
+    selectionBoxHelper.position.set(0, 0, 0);
+    selectionBoxHelper.geometry.translate(
+      center.x,
+      center.y,
+      center.z
+    );
+
+    scene.add(selectionBoxHelper);
+    return;
+  }
+  
+  // 🔥 object selection (fallback)
+  const { objectKey } = parseSelectedId(sid);
+  if (!objectKey) return;
+
+  const group = objectGroups.get(String(objectKey));
+  if (!group) return;
+  if (group.visible === false) return;
+
+  const box = new THREE.Box3();
+
+  group.traverse((node) => {
+    if (node.isMesh) {
+      box.expandByObject(node);
+    }
+  });
+
+  if (box.isEmpty()) return;
+
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+
+  box.getSize(size);
+  box.getCenter(center);
+
+  const geom = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const edges = new THREE.EdgesGeometry(geom);
+
+  selectionBoxHelper = new THREE.LineSegments(
+    edges,
+    new THREE.LineBasicMaterial({ color: 0x00ffff })
+  );
+
+  selectionBoxHelper.position.copy(center);
+  scene.add(selectionBoxHelper);
+}
+
+function updateSelectionHighlight() {
+
+  // clear previous highlight
+  if (selectedGroup) {
+    selectedGroup.traverse((node) => {
+      if (!node.isMesh) return;
+
+      const mat = node.material;
+      if (!mat) return;
+
+      if (Array.isArray(mat)) {
+        mat.forEach((m) => {
+          if (m.userData?.__origEmissive) {
+            m.emissive.copy(m.userData.__origEmissive);
+            delete m.userData.__origEmissive;
+          }
+        });
+      } else {
+        if (mat.userData?.__origEmissive) {
+          mat.emissive.copy(mat.userData.__origEmissive);
+          delete mat.userData.__origEmissive;
+        }
+      }
+    });
+    selectedGroup = null;
+  }
 
   const sid = selectedIdRef.current;
   if (!sid) return;
@@ -796,16 +986,41 @@ function updateSelectionBox() {
   let target = group;
 
   if (meshPath) {
-    const node = findNodeByMeshPath(group, meshPath);
+    const parts = String(meshPath).split("/");
+    const node = findNodeByMeshPath(group, parts);
     if (node) target = node;
   }
 
-  const box = new THREE.Box3().setFromObject(target);
-  if (box.isEmpty()) return;
+  target.traverse((node) => {
+    if (!node.isMesh) return;
 
-  selectionBoxHelper = new THREE.Box3Helper(box);
-  selectionBoxHelper.name = "selection-box-helper";
-  scene.add(selectionBoxHelper);
+    const mat = node.material;
+    if (!mat) return;
+
+    if (Array.isArray(mat)) {
+      mat.forEach((m) => {
+        if (!m.emissive) return;
+
+        if (!m.userData.__origEmissive) {
+          m.userData.__origEmissive = m.emissive.clone();
+        }
+
+        m.emissive.set(0x00ffff);
+        m.emissiveIntensity = 0.35;
+      });
+    } else {
+      if (!mat.emissive) return;
+
+      if (!mat.userData.__origEmissive) {
+        mat.userData.__origEmissive = mat.emissive.clone();
+      }
+
+      mat.emissive.set(0x00ffff);
+      mat.emissiveIntensity = 0.35;
+    }
+  });
+
+  selectedGroup = target;
 }
 
 let decalPlanes = [];
@@ -818,11 +1033,6 @@ const decalBaseById = new Map();
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-let pickables = [];
-
-// ✅ Tier 7.62 — marquee drag state
-const isDraggingRef = { current: false };
-const dragStartRef = { current: null };
 
 const meshToObjectKey = new Map();
 const meshToObjectId = new Map();
@@ -1079,74 +1289,26 @@ function pickIdNodeForMeshPath(hitMesh) {
           const override = overrides[objectId];
           if (!override) return;
 
-          applyMaterialState(group, override);
+          applyMaterialState(group, override, selectedIdRef.current);
         });
       } catch (e) {
         console.warn("[ThreeSceneViewer] material override apply failed:", String(e?.message || e));
       }
     }
     
-    // --------------------------------------------------
-    // ✅ Tier 7.69 — View Modes
-    // --------------------------------------------------
+// --------------------------------------------------
+// ✅ Tier 7.69 — View Modes (paint-safe)
+// --------------------------------------------------
 
-    let wireframeCache = new Map();
-    let clayMaterial = new THREE.MeshStandardMaterial({
-      color: 0xaaaaaa,
-      roughness: 1,
-      metalness: 0,
-    });
+function applyViewMode() {
+  const vm = viewModeRef.current?.mode || "studio";
 
-    function applyViewMode() {
-      const vm = viewModeRef.current?.mode || "studio";
-
-      allMeshes.forEach((mesh) => {
-        if (!mesh || !mesh.material) return;
-
-        if (wireframeCache.has(mesh)) {
-          mesh.material = wireframeCache.get(mesh);
-        }
-
-        if (vm === "studio") return;
-
-        if (vm === "solid") {
-          if (!wireframeCache.has(mesh)) {
-            wireframeCache.set(mesh, mesh.material);
-          }
-
-          const mat = Array.isArray(mesh.material)
-            ? mesh.material.map((m) => {
-                const clone = m.clone();
-                clone.map = null;
-                clone.color.set(0xcccccc);
-                return clone;
-              })
-            : (() => {
-                const clone = mesh.material.clone();
-                clone.map = null;
-                clone.color.set(0xcccccc);
-                return clone;
-              })();
-
-          mesh.material = mat;
-        }
-
-        if (vm === "clay") {
-          mesh.material = clayMaterial;
-        }
-
-        if (vm === "wireframe") {
-          if (!wireframeCache.has(mesh)) {
-            wireframeCache.set(mesh, mesh.material);
-          }
-
-          mesh.material = new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            wireframe: true,
-          });
-        }
-      });
-    }
+  // View modes must NEVER override materials.
+  // Materials are controlled by:
+  // - applyMaterialState()
+  // - applyMaterialOverridesNow()
+  // This keeps multi-part paint working.
+}
 
     
     async function syncDecals() {
@@ -1203,7 +1365,7 @@ function pickIdNodeForMeshPath(hitMesh) {
         proxy.add(plane);
         group.add(proxy);
 
-        pickables.push(plane);
+        pickablesRef.current.push(plane);
 
         decalPlanes.push({ proxy, mesh: plane, geometry: geom, material: mat });
 
@@ -1248,11 +1410,31 @@ function pickIdNodeForMeshPath(hitMesh) {
         return;
       }
 
-      const objectKey = String(sid).split("::")[0];
-      const group = objectGroups.get(objectKey);
-      const pivotGroup = pivotGroups.get(objectKey);
+      const { objectKey, meshPath } = parseSelectedId(sid);
 
-      if (!group || !pivotGroup || group.visible === false) {
+      const group = objectGroups.get(String(objectKey));
+      const pivotGroup = pivotGroups.get(String(objectKey));
+
+      if (!group || group.visible === false) {
+        transformControls.detach();
+        transformControls.visible = false;
+        return;
+      }
+
+      // ✅ mesh-level attach (correct pivot-safe)
+      if (meshPath) {
+        const parts = String(meshPath).split("/");
+        const node = findNodeByMeshPath(group, parts);
+        if (node) {
+          const target = node;
+          transformControls.attach(target);
+          transformControls.visible = true;
+          return;
+        }
+      }
+            
+      // fallback to object pivot
+      if (!pivotGroup) {
         transformControls.detach();
         transformControls.visible = false;
         return;
@@ -1261,7 +1443,7 @@ function pickIdNodeForMeshPath(hitMesh) {
       transformControls.attach(pivotGroup);
       transformControls.visible = true;
     }
-    
+            
     function onGizmoDraggingChanged(e) {
       const dragging = !!e?.value;
       gizmoDragging = dragging;
@@ -1440,27 +1622,43 @@ function pickIdNodeForMeshPath(hitMesh) {
         else if (axis === "y") ghost.scale.y *= factor;
         else ghost.scale.z *= factor;
       }
-      
-      }
-
+    }
 
     async function loadAll() {
       if (disposed) return;
+      
+      // ✅ USE RESOLVED OBJECTS FROM useMemo
+      const objectsLocal = objects;
 
+      // 🔥 FIRST — do NOT touch anything if no objects
+      if (!objectsLocal.length) {
+        console.log("⏸ waiting for objects...");
+        return;
+      }
+
+      // 🔥 ONLY AFTER objects are valid — safe to reset
       setErr(null);
-      pickables = [];
-      meshToObjectId.clear();
-      meshToObjectKey.clear();
-      objectGroups.clear();
-      allMeshes.clear();
-      pivotGroups.clear();
+
+      if (!hasBuiltSceneRef.current) {
+        if (!pickablesRef.current) {
+          pickablesRef.current = [];
+        }
+        meshToObjectId.clear();
+        meshToObjectKey.clear();
+        objectGroups.clear();
+        allMeshes.clear();
+        pivotGroups.clear();
+      }
 
       clearMaterialSlots();
+      
+      const sortedObjects = sortObjectsStable(objectsLocal);
 
       setLoadingCount(0);
 
       clearGhost();
       clearSelectionBox();
+      clearSelectionOutline(selectedGroup);
       clearDecals();
       clearPivotHelper();
 
@@ -1470,14 +1668,9 @@ function pickIdNodeForMeshPath(hitMesh) {
       while (root.children.length) root.remove(root.children[0]);
       root.add(decalsRoot);
 
-      if (!objects.length) {
-        console.log("⏸ waiting for objects...");
-        return;
-      }
-
       const loader = new GLTFLoader();
-      const sortedObjects = sortObjectsStable(objects);
       
+      // 🚀 USE sortedObjects BELOW — DO NOT redeclare
       // --------------------------------------------------
       // PASS 1 — create all object groups deterministically
       // --------------------------------------------------
@@ -1628,7 +1821,7 @@ function pickIdNodeForMeshPath(hitMesh) {
           allMeshes.add(placeholder);
 
           if (cfg.pickable) {
-            pickables.push(placeholder);
+            pickablesRef.current.push(placeholder);
             meshToObjectId.set(placeholder, objId);
             meshToObjectKey.set(placeholder, objectKey);
           }
@@ -1650,25 +1843,31 @@ function pickIdNodeForMeshPath(hitMesh) {
           }
 
           // 🔥 prevent reloading same object
-          if (loadedObjectsRef.current[objId]) {
-            console.log("⏭️ already loaded:", objId);
+        if (loadedObjectsRef.current[objId]) {
+          console.log("⏭️ already loaded:", objId);
 
-            const modelGroup = loadedObjectsRef.current[objId];
+          const modelGroup = loadedObjectsRef.current[objId];
 
-            // 🔥 ALWAYS reattach (viewer rebuild safe)
-            pivotGroup.add(modelGroup);
+          // 🔥 ALWAYS reattach (viewer rebuild safe)
+          pivotGroup.add(modelGroup);
 
-            // 🔥 ensure visible
-            modelGroup.visible = true;
+          // 🔥 ensure visible
+          modelGroup.visible = true;
 
-            // 🔥 reapply material
-            if (obj?.material_state) {
-              applyMaterialState(modelGroup, obj.material_state);
-            }
+          if (obj?.material_state) {
 
-            continue;
+            applyMaterialState(
+              modelGroup,
+              obj.material_state
+            );
+
+            console.log("🎨 APPLY OBJECT (ALWAYS):", objId);
+
           }
-
+          
+          continue;
+        }
+          
           finalUrl = await resolveAssetRef(assetRef);
                               
           console.log("🧩 AFTER resolveAssetRef:", finalUrl);
@@ -1688,6 +1887,16 @@ function pickIdNodeForMeshPath(hitMesh) {
           });
 
           const gltf = await loader.loadAsync(finalUrl);
+
+          // 🔎 DEBUG — list meshes + ENABLE SHADOWS
+          gltf.scene.traverse((n) => {
+            if (n.isMesh) {
+              console.log("MESH:", n.name);
+              
+              n.castShadow = true;
+              n.receiveShadow = true;
+            }
+          });
 
           console.log("✅ GLB LOADED SUCCESSFULLY:", {
             objId,
@@ -1719,19 +1928,18 @@ function pickIdNodeForMeshPath(hitMesh) {
 
           modelGroup.userData.roleMap = roleMap;
 
+          // ✅ CRITICAL — store body mesh fallback
+          modelGroup.userData.bodyMesh =
+            roleMap.body ||
+            modelGroup;
+
           console.log("ROLE MAP:", roleMap);
           
           // 🔥 6G.18 — transform
           applyTransform(modelGroup, obj?.transform);          
 
-          // 🔥 APPLY MATERIAL IMMEDIATELY AFTER LOAD
-          if (obj?.material_state) {
-            console.log("🎨 APPLYING MATERIAL STATE:", obj.material_state);
-            applyMaterialState(modelGroup, obj.material_state);
-          }
-
           // 🔥 6G.15 — decals (object-level)
-          await applyDecals(modelGroup, obj?.decal_state);                         
+          await applyDecals(modelGroup, obj?.decal_state);   
 
           const meshPaths = [];
 
@@ -1741,57 +1949,172 @@ function pickIdNodeForMeshPath(hitMesh) {
             console.log("TRAVERSE NODE:", node);
 
             node.userData.objectId = objectKey;
-            
-            const mp = buildMeshPath(node);
-            node.userData.pickId = `mesh:${objectKey}::${mp}`;
-            node.userData.meshPath = mp;
 
-            applyOpacityToMaterial(node.material, cfg.opacity);
+            const meshName =
+              node.name && node.name.trim()
+                ? node.name
+                : `mesh_${meshIndexRef.current.size}`;
+
+            const meshId = `mesh:${objectKey}::${meshName}`;
+
+            node.userData.pickId = meshId;
+            node.userData.meshPath = meshName;
+
+            // 🔥 register mesh index (ONLY ONCE)
+            meshIndexRef.current.set(meshId, node);
+            
+            console.log("🔥 OBJECT MATERIAL STATE:", obj?.material_state);
+            
+            // --------------------------------------------------
+            // 🔥 ROLE-BASED MATERIAL APPLY (NEW — MUST BE FIRST)
+            // --------------------------------------------------
+
+            const roleState = obj?.material_state?.roles || {};
+            const roleMap = modelGroup.userData.roleMap;
+
+            if (roleMap && Object.keys(roleState).length) {
+
+              for (const [role, nodes] of Object.entries(roleMap)) {
+
+                if (!nodes.includes(node)) continue;
+
+                const state = roleState[role];
+                if (!state) continue;
+
+                console.log("🎯 ROLE APPLY:", role, "→", node.name);
+
+                const resolved = resolvePreset(state.preset);
+
+                if (!resolved) {
+                  console.warn("❌ UNKNOWN ROLE PRESET:", state.preset);
+                  continue;
+                }
+
+                applyMaterialState(node, {
+                  paint: {
+                    ...resolved,
+                    ...state.params
+                  }
+                });
+
+                if (node.material) {
+                  const mats = Array.isArray(node.material)
+                    ? node.material
+                    : [node.material];
+
+                  mats.forEach((m) => {
+                    if (m) m.needsUpdate = true;
+                  });
+                }
+
+                console.log("🎨 ROLE MATERIAL APPLIED:", role);
+
+                return; // 🔥 IMPORTANT: STOP — role overrides mesh
+              }
+
+            }            
+            
+            if (obj?.material_state?.meshes) {
+
+              const meshes = obj.material_state.meshes;
+
+              const expected = `mesh:${objectKey}::${meshName}`;
+
+              console.log("CHECKING:", expected);
+              console.log("AVAILABLE:", meshes);
+
+              const exactKey = `mesh:${objectKey}::${meshName}`;
+
+              const normalize = (s) =>
+                String(s || "").toLowerCase().trim();
+
+              const state =
+                meshes[exactKey] ||                         // exact match
+                Object.entries(meshes).find(([k]) => {      // strict normalized match
+                  const keyMeshName =
+                    normalize(k).split("::")[1] || "";
+
+                  const nodeName = normalize(meshName);
+
+                  return keyMeshName === nodeName;
+                })?.[1];
+              
+              if (state) {
+              
+                console.log("🎯 APPLYING TO NODE:", node.name);
+
+                console.log("🎯 APPLYING (ALWAYS):", exactKey, state);
+
+                const resolved = resolvePreset(state.preset);
+
+                if (!resolved) {
+                  console.warn("❌ UNKNOWN PRESET:", state.preset);
+                  return;
+                }
+
+                applyMaterialState(node, {
+                  paint: {
+                    ...resolved,
+                    ...state.params
+                  }
+                });
+
+                if (node.material) {
+                  const mats = Array.isArray(node.material)
+                    ? node.material
+                    : [node.material];
+
+                  mats.forEach((m) => {
+                    if (m) m.needsUpdate = true;
+                  });
+                }
+
+                console.log("🎨 MATERIAL APPLIED:", exactKey);
+              }
+
+            } // ✅ CLOSE material_state.meshes BLOCK
+
+            // 🔥 APPLY OPACITY SAFELY
+            if (node.material) {
+              applyOpacityToMaterial(node.material, cfg.opacity);
+            }
 
             // ✅ register mesh
             allMeshes.add(node);
 
-            console.log("✅ MESH FOUND:", node);
-
-            // 🔥 FORCE pickable (debug mode)
-            pickables.push(node);
+            // 🔥 ADD PICKABLE (MUST BE INSIDE)
+            if (!pickablesRef.current.includes(node)) {
+              pickablesRef.current.push(node);
+            }
             meshToObjectKey.set(node, objectKey);
             meshToObjectId.set(node, objId);
 
             console.log("✅ ADDING PICKABLE:", node);
 
+            // 🔥 BUILD MESH PATHS (INSIDE)
             try {
-              const mp = buildMeshPath(node);
-              if (mp) {
-                meshPaths.push(mp);
+              const mp = node.name;
 
-                node.userData.pickId = `mesh:${objectKey}::${mp}`;
-                node.userData.meshPath = mp;
+              meshPaths.push(mp);
 
-                publishMaterialSlotsForMesh(objectKey, mp, node.material);
-              }
+              publishMaterialSlotsForMesh(
+                objectKey,
+                mp,
+                node.material
+              );
             } catch (err) {
               console.warn("mesh path build failed:", err);
             }
+
+            console.log("✅ MESH FOUND:", node);
+
           });
 
-          // ✅ register all mesh paths (OUTSIDE traverse)
+          // ✅ publish mesh paths AFTER traverse
           if (meshPaths.length) {
             setMeshPathsForObject(objectKey, meshPaths);
           }
 
-          // 🔥 Tier 7.42 — APPLY RUNTIME MATERIAL OVERRIDES
-          applyMaterialOverridesNow();
-
-          // 🔥 REAPPLY SNAPSHOT MATERIAL (FINAL AUTHORITY)
-          if (obj?.material_state) {
-            applyMaterialState(modelGroup, obj.material_state);
-          }
-
-        } catch (err) {
-          console.error("❌ Asset resolution failed:", assetRef, err);
-                              
-          // 🔥 fallback placeholder ONLY inside catch
           const placeholder = makePlaceholderMesh(`${objectKey} (failed)`);
           placeholder.userData.objectId = objectKey;
           pivotGroup.add(placeholder);
@@ -1816,13 +2139,13 @@ function pickIdNodeForMeshPath(hitMesh) {
           allMeshes.add(placeholder);
 
           if (cfg.pickable) {
-            pickables.push(placeholder);
+            pickablesRef.current.push(placeholder);
             meshToObjectId.set(placeholder, objId);
             meshToObjectKey.set(placeholder, objectKey);
           }
 
           setErr((prev) => prev || String(err?.message || err));
-
+          
         } finally {
           if (!disposed) {
             setLoadingCount((c) => Math.max(0, c - 1));
@@ -1832,13 +2155,18 @@ function pickIdNodeForMeshPath(hitMesh) {
       applyMaterialOverridesNow();
       applyViewMode();
       applyPreviewGhost();
-      updateSelectionBox();
-      frameScene(); 
+      frameScene();
 
       await syncDecals();
 
       syncTransformControlsToTarget();
       applySnapToTransformControls();
+
+      requestAnimationFrame(() => {
+        viewerApiRef.current?.syncSelection?.();
+      });
+      
+      console.log("📦 FINAL PICKABLES:", pickablesRef.current.length);
     }
 
     if (objects.length) {
@@ -1907,6 +2235,7 @@ function computeMarqueeSelection(start, end) {
             const legacySelectedId = buildPickedTargetId({
               objectId: ok,
               mesh: idNode,
+              includeMesh: true,
             });
             if (legacySelectedId && String(legacySelectedId).includes("::")) {
               ids.push(`mesh:${String(legacySelectedId)}`);
@@ -1945,6 +2274,7 @@ function computeMarqueeSelection(start, end) {
 // --------------------------------------------------
 
 function handleMouseDown(e) {
+  console.log("🧪 MOUSEDOWN FIRED");
   if (contextLost) return;
   if (e.button !== 0) return;
 
@@ -1985,7 +2315,10 @@ function handleMouseUp(e) {
   // ignore tiny drags (treat as click)
   const dx = Math.abs(end.x - start.x);
   const dy = Math.abs(end.y - start.y);
-  if (dx < 4 && dy < 4) return;
+  if (dx < 4 && dy < 4) {
+    onClick(e); // 🔥 MANUAL CLICK
+    return;
+  }
 
   const selected = computeMarqueeSelection(start, end);
 
@@ -2003,7 +2336,8 @@ function handleMouseUp(e) {
 
 function onClick(e) {
   console.log("🔥 CLICK EVENT FIRED", e.clientX, e.clientY);
-  
+  console.log("🧪 SELECTED ID STATE:", selectedIdRef.current);
+
   if (contextLost) return;
 
   const rect = canvas.getBoundingClientRect();
@@ -2012,11 +2346,24 @@ function onClick(e) {
   mouse.set(x, y);
 
   raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(pickables, true);
 
+  console.log("🧪 PICKABLES COUNT:", pickablesRef.current.length);
+
+  const intersects = raycaster.intersectObjects(pickablesRef.current, true);
+
+  console.log("🧪 INTERSECTS COUNT:", intersects.length);
+  console.log("🧪 INTERSECTS:", intersects);
+  
   if (!intersects.length) {
     clearAllSelectionState?.();
     clearActiveDecalId?.();
+
+    requestAnimationFrame(() => {
+      updateSelectionBox();
+      updateSelectionHighlight?.();
+      syncTransformControlsToTarget();
+    });
+
     return;
   }
 
@@ -2026,12 +2373,26 @@ function onClick(e) {
   if (!chosen) {
     clearAllSelectionState?.();
     clearActiveDecalId?.();
+
+    requestAnimationFrame(() => {
+      updateSelectionBox();
+      updateSelectionHighlight?.();
+      syncTransformControlsToTarget();
+    });
+
     return;
   }
 
   if (chosen.kind === "decal") {
     setActiveDecalId?.(chosen.key);
     clearAllSelectionState?.();
+
+    requestAnimationFrame(() => {
+      updateSelectionBox();
+      updateSelectionHighlight?.();
+      syncTransformControlsToTarget();
+    });
+
     return;
   }
 
@@ -2040,38 +2401,151 @@ function onClick(e) {
   const additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
 
   if (chosen.kind === "mesh") {
-    const objectId = String(chosen.key || "").split("::")[0];
 
-    if (additive) {
-      toggleObjectSelection(objectId);
+    // ✅ ALWAYS USE FIRST HIT (REAL CLICK TARGET)
+    const hit = intersects[0];
+    const mesh = hit?.object;
+
+    if (!mesh) return;
+
+    const meshId = mesh.userData?.pickId;
+
+    // 🔥 FIX — derive objectKey from mesh FIRST
+    const objectKey = resolveObjectKeyFromHitMesh(mesh);
+
+    if (!objectKey) {
+      console.warn("❌ Failed to resolve objectKey from mesh");
+      return;
+    }
+    
+    const group = objectGroups.get(objectKey);
+    const roleMap = group?.userData?.roleMap;
+
+    // 🔥 find role
+    let matchedRole = null;
+
+    if (roleMap) {
+      for (const [role, meshes] of Object.entries(roleMap)) {
+        if (meshes.includes(mesh)) {
+          matchedRole = role;
+          break;
+        }
+      }
+    }
+
+    console.log("🎯 ROLE DETECTED:", matchedRole);
+
+    console.log("🧪 ACTIVE PAINT:", activePaintRef.current);
+    console.log("🧪 CLICKED MESH:", meshId);
+
+    if (!meshId) return;
+
+    setSelectedId(meshId);
+    selectedIdRef.current = meshId;
+
+    // 🔥 APPLY PAINT ON CLICK
+    const paint = activePaintRef.current;
+
+    console.log("🧪 CLICK PAINT REF:", paint);
+
+    if (!paint) {
+      console.warn("⚠️ NO ACTIVE PAINT — skipping paint");
     } else {
-      setPrimaryObjectSelection(objectId);
+      const presetId =
+        paint.id ||
+        paint.preset_id ||
+        paint?.presetId ||
+        paint?.key ||
+        paint?.name;
+
+      if (!presetId) {
+        console.warn("❌ INVALID PAINT OBJECT:", paint);
+      } else if (!meshId || !meshId.startsWith("mesh:")) {
+        console.warn("❌ INVALID MESH ID:", meshId);
+      } else {
+        console.log("🔥 APPLYING PAINT:", presetId, "→", meshId);
+
+        onCommitToolRef.current?.({
+          tool: "PAINT_APPLY_LIBRARY_PRESET",
+          station: "materials",
+          payload: {
+            target_id: matchedRole
+              ? `role:${objectKey}::${matchedRole}`
+              : meshId,
+            preset_id: presetId,
+          },
+        });
+
+        // 🔥 FORCE MATERIAL REFRESH
+        appliedMeshesRef.current.clear();
+        appliedObjectsRef.current.clear();
+
+        viewerApiRef.current?.syncMaterials?.();
+
+        // 🔥 REBUILD PICKABLES AFTER MATERIAL UPDATE
+        requestAnimationFrame(() => {
+          pickablesRef.current = [];
+
+          objectGroups.forEach((group) => {
+            group.traverse((node) => {
+              if (node.isMesh) {
+                pickablesRef.current.push(node);
+              }
+            });
+          });
+
+          console.log("📦 REBUILT PICKABLES:", pickablesRef.current.length);
+       });
+      }
+    }
+    
+    if (additive) {
+      toggleMultiSelection(meshId, true);
+    } else {
+      setPrimarySelection(meshId);
     }
 
     requestAnimationFrame(() => {
-      viewerApiRef.current?.syncSelection?.();
+      requestAnimationFrame(() => {
+        updateSelectionBox();
+        updateSelectionHighlight?.();
+        syncTransformControlsToTarget();
+      });
     });
 
-    console.log("✅ SELECTED (mesh):", objectId);
+    console.log("✅ SELECTED (mesh):", meshId);
     return;
   }
   
-  setPrimarySelection(chosen.key ?? chosen);
-  syncPrimaryToSingleSelection(chosen.key ?? chosen);
+  // fallback (object id directly)
+  const id = chosen.key ?? chosen;
+
+  // 🔥 THIS LINE WAS MISSING
+  setSelectedId(id);
+  selectedIdRef.current = id;
+
+  setPrimarySelection(id);
+  syncPrimaryToSingleSelection(id);
+
+  requestAnimationFrame(() => {
+    updateSelectionBox();
+    updateSelectionHighlight?.();
+    syncTransformControlsToTarget();
+  });
 
   console.log("✅ SELECTED:", chosen);
 }
     
     function onDoubleClick(e) {
       if (contextLost) return;
-
+      
       const r = canvas.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * 2 - 1;
       const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
       mouse.set(x, y);
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(pickables, true);
+      const intersects = raycaster.intersectObjects(pickablesRef.current, true);
       if (!intersects.length) return;
 
       const hitIds = buildPickIdListFromIntersects(intersects);
@@ -2094,12 +2568,21 @@ function onClick(e) {
       clearActiveDecalId?.();
 
       if (chosen.kind === "mesh") {
-        const objectId = String(chosen.key || "").split("::")[0];
-        setPrimaryObjectSelection(objectId);
+        const mesh = intersects[0]?.object;
+        if (!mesh) return;
+
+        const objectKey = resolveObjectKeyFromHitMesh(mesh);
+        if (!objectKey) return;
+
+        const meshId = `mesh:${objectKey}::${mesh.name}`;
+
+        setSelectedId(meshId);
+        selectedIdRef.current = meshId;
+
         frameSelected();
         return;
       }
-
+            
       if (chosen.kind === "obj") {
         const objectId = String(chosen.key || "").split("::")[0];
         setPrimaryObjectSelection(objectId);
@@ -2206,8 +2689,9 @@ function onClick(e) {
     // Viewer API wiring
     // --------------------------------------------------
 
-    viewerApiRef.current.syncSelection = () => {
+    viewerApiRef.current.syncSelection = () => {   
       updateSelectionBox();
+      updateSelectionHighlight();
       syncTransformControlsToTarget();
     };
 
@@ -2244,9 +2728,14 @@ function onClick(e) {
     viewerApiRef.current.syncPickFilter = () => {};
 
     viewerApiRef.current.syncMaterials = () => {
+
+      // 🔥 ALWAYS RESET (no caching)
+      appliedMeshesRef.current.clear();
+      appliedObjectsRef.current.clear();
+
       applyMaterialOverridesNow();
 
-      // 🔥 REAPPLY SNAPSHOT MATERIAL
+      // 🔥 REAPPLY SNAPSHOT MATERIAL (FORCE EVERY TIME)
       objectGroups.forEach((group, objectId) => {
         const obj = objects.find(
           (o) => String(o.id) === String(objectId)
@@ -2255,11 +2744,23 @@ function onClick(e) {
         if (!obj) return;
 
         if (obj.material_state) {
-          applyMaterialState(group, obj.material_state);
-        }
-      });
-    };
 
+          applyMaterialState(
+            group,
+            obj.material_state,
+            selectedIdRef.current
+          );
+
+          console.log("🎨 APPLY OBJECT (FORCED):", objectId);
+        }
+
+      });
+
+      updateSelectionHighlight();
+      updateSelectionBox();
+      syncTransformControlsToTarget();
+    };
+        
     viewerApiRef.current.syncSnap = () => {
       applySnapToTransformControls();
     };
@@ -2359,12 +2860,12 @@ function onClick(e) {
 
       controls.dispose();
 
-      container.removeEventListener("mousedown", handleMouseDown);
-      container.removeEventListener("mousemove", handleMouseMove);
-      container.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("mouseup", handleMouseUp);
 
-      container.removeEventListener("click", onClick);
-      container.removeEventListener("dblclick", onDoubleClick);
+      canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("dblclick", onDoubleClick);
       
       window.removeEventListener("keydown", onKeyDown);
 
@@ -2382,7 +2883,10 @@ function onClick(e) {
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
 
-      renderer.dispose();
+      if (rendererRef.current) {
+        rendererRef.current.dispose();
+        rendererRef.current = null;
+      }
     };
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2413,7 +2917,7 @@ function onClick(e) {
 
   useEffect(() => {
     viewerApiRef.current?.syncDecals?.();
-  }, [decals]);
+  }, [objects]);
 
   useEffect(() => {
     viewerApiRef.current?.syncDecalTarget?.();

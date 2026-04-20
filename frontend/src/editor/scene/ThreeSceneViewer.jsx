@@ -1933,10 +1933,7 @@ function applyViewMode() {
             roleMap.body ||
             modelGroup;
 
-          console.log("ROLE MAP:", roleMap);
-          
-          // 🔥 6G.18 — transform
-          applyTransform(modelGroup, obj?.transform);          
+          console.log("ROLE MAP:", roleMap);         
 
           // 🔥 6G.15 — decals (object-level)
           await applyDecals(modelGroup, obj?.decal_state);   

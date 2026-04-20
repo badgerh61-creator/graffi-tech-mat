@@ -2,12 +2,14 @@ import * as THREE from "three";
 import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 
 /**
- * Tier 6G.15 — Apply decals onto mesh
+ * Tier 6G.15 — Apply decals onto mesh (UPGRADED SAFE)
  */
 export async function applyDecals(group, decalState = []) {
   if (!group || !decalState || !decalState.length) return;
 
-  // 🔥 Properly remove old decals (SAFE)
+  // -----------------------------
+  // 🔥 SAFE DECAL REMOVAL (UPGRADED)
+  // -----------------------------
   const toRemove = [];
 
   group.children.forEach((child) => {
@@ -19,15 +21,35 @@ export async function applyDecals(group, decalState = []) {
   toRemove.forEach((child) => {
     group.remove(child);
 
-    if (child.geometry) child.geometry.dispose();
+    // geometry
+    if (child.geometry) {
+      child.geometry.dispose();
+    }
 
+    // material + ALL textures (UPGRADE)
     if (child.material) {
-      if (child.material.map) child.material.map.dispose();
-      child.material.dispose();
+      const materials = Array.isArray(child.material)
+        ? child.material
+        : [child.material];
+
+      materials.forEach((mat) => {
+        if (!mat) return;
+
+        for (const key in mat) {
+          const value = mat[key];
+          if (value && value.isTexture) {
+            value.dispose?.();
+          }
+        }
+
+        mat.dispose?.();
+      });
     }
   });
 
-  // collect meshes
+  // -----------------------------
+  // COLLECT TARGET MESHES (UNCHANGED)
+  // -----------------------------
   const meshes = [];
   group.traverse((node) => {
     if (node.isMesh) meshes.push(node);
@@ -35,8 +57,11 @@ export async function applyDecals(group, decalState = []) {
 
   if (!meshes.length) return;
 
-  const targetMesh = meshes[0]; // simple version
+  const targetMesh = meshes[0]; // keep your logic
 
+  // -----------------------------
+  // APPLY DECALS (UNCHANGED CORE)
+  // -----------------------------
   for (const decal of decalState) {
     try {
       const texture = await new THREE.TextureLoader().loadAsync(

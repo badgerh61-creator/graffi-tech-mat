@@ -1,32 +1,52 @@
 import * as THREE from "three";
 
 /**
- * Tier 6G.20 — full scene reset
+ * Tier 6G.22 — FULL GPU cleanup (safe + complete)
  */
 export function cleanupScene(root) {
   if (!root) return;
 
   root.traverse((node) => {
-    // geometry
+    // -------------------
+    // Geometry
+    // -------------------
     if (node.geometry) {
       node.geometry.dispose();
     }
 
-    // materials
+    // -------------------
+    // Materials + ALL textures
+    // -------------------
     if (node.material) {
-      const mats = Array.isArray(node.material)
+      const materials = Array.isArray(node.material)
         ? node.material
         : [node.material];
 
-      mats.forEach((m) => {
-        if (m.map) m.map.dispose();
-        m.dispose();
+      materials.forEach((mat) => {
+        if (!mat) return;
+
+        // 🔥 Dispose ALL texture slots (not just .map)
+        Object.keys(mat).forEach((key) => {
+          const value = mat[key];
+
+          if (value && value.isTexture) {
+            value.dispose();
+          }
+        });
+
+        // Dispose material itself
+        mat.dispose();
       });
     }
   });
 
-  // remove children
+  // -------------------
+  // Remove all children safely
+  // -------------------
   while (root.children.length > 0) {
-    root.remove(root.children[0]);
+    const child = root.children[0];
+
+    // optional extra safety: clear references
+    root.remove(child);
   }
 }

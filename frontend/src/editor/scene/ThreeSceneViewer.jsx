@@ -147,6 +147,7 @@ function makeRenderer(canvas) {
     renderer.toneMappingExposure = 1.0;
     renderer.physicallyCorrectLights = true;
     renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     return renderer;
   } catch (err) {
@@ -1847,7 +1848,19 @@ function applyViewMode() {
           if (prev && prev.userData.assetRef !== assetRef) {          
             // 🔥 clear lifecycle tracking
             clearLoad(objectKey);
-            pivotGroup.remove(prev);
+            if (prev) {
+              pivotGroup.remove(prev);
+
+              prev.traverse((n) => {
+                if (n.isMesh) {
+                  n.geometry?.dispose?.();
+
+                  const mat = n.material;
+                  if (Array.isArray(mat)) mat.forEach((m) => m?.dispose?.());
+                  else mat?.dispose?.();
+                }
+              });
+            }
             delete loadedObjectsRef.current[objId];
           }
 
@@ -1902,7 +1915,7 @@ function applyViewMode() {
           // 🚨 CRITICAL GUARD
           if (!isLoadValid(objectKey, requestId)) {
             console.warn("🧹 Discarding stale load:", objectKey);
-            return;
+            continue;
           }
 
           // 🔎 DEBUG — list meshes + ENABLE SHADOWS
@@ -1910,7 +1923,9 @@ function applyViewMode() {
             if (n.isMesh) {
               console.log("MESH:", n.name);
               
-              n.castShadow = true;
+              // ✅ PERFORMANCE FIXES
+              n.frustumCulled = true;
+              n.castShadow = false; 
               n.receiveShadow = true;
             }
           });
@@ -2017,16 +2032,23 @@ function applyViewMode() {
                     : [node.material];
 
                   mats.forEach((m) => {
-                    if (m) m.needsUpdate = true;
+                    if (!m) return;
+
+                    m.userData = m.userData || {};
+
+                    if (!m.userData.__compiled) {
+                      m.needsUpdate = true;
+                      m.userData.__compiled = true;
+                    }
                   });
                 }
 
                 console.log("🎨 ROLE MATERIAL APPLIED:", role);
 
-                return; // 🔥 IMPORTANT: STOP — role overrides mesh
+                break; // ✅ exit role loop only
               }
 
-            }            
+            }         
             
             if (obj?.material_state?.meshes) {
 
@@ -2079,11 +2101,19 @@ function applyViewMode() {
                     : [node.material];
 
                   mats.forEach((m) => {
-                    if (m) m.needsUpdate = true;
+                    if (!m) return;
+
+                    m.userData = m.userData || {};
+
+                    if (!m.userData.__compiled) {
+                      m.needsUpdate = true;
+                      m.userData.__compiled = true;
+                    }
                   });
                 }
 
                 console.log("🎨 MATERIAL APPLIED:", exactKey);
+
               }
 
             } // ✅ CLOSE material_state.meshes BLOCK
@@ -2830,7 +2860,10 @@ function onClick(e) {
 
     return () => {
       disposed = true;
-      activeLoads.clear?.(); // ✅ GLOBAL LOAD CLEANUP
+      Object.keys(loadedObjectsRef.current).forEach((objectId) => {
+        clearLoad(objectId);    
+      });
+      
       cancelAnimationFrame(raf);
 
       viewerApiRef.current.syncSelection = null;

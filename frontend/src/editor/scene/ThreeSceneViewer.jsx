@@ -112,7 +112,15 @@ import { usePivotPreview } from "../transform/pivotPreviewStore";
 
 import { useActivePaint } from "../materials/activePaintStore";
 import { resolvePreset } from "../materials/presetLibrary";
+
 import { cleanupScene } from "./cleanupScene";
+
+// ✅ 6G.21 — asset load race protection
+import {
+  beginLoad,
+  isLoadValid,
+  clearLoad
+} from "./assetManager";
 
 // --------------------------------------------------
 // ✅ Renderer factory (WebGL safe)
@@ -1836,7 +1844,9 @@ function applyViewMode() {
           // 🔥 detect asset change and clear old model
           const prev = loadedObjectsRef.current[objId];
 
-          if (prev && prev.userData.assetRef !== assetRef) {
+          if (prev && prev.userData.assetRef !== assetRef) {          
+            // 🔥 clear lifecycle tracking
+            clearLoad(objectKey);
             pivotGroup.remove(prev);
             delete loadedObjectsRef.current[objId];
           }
@@ -1885,7 +1895,15 @@ function applyViewMode() {
             finalUrl,
           });
 
+          const requestId = beginLoad(objectKey);
+
           const gltf = await loader.loadAsync(finalUrl);
+
+          // 🚨 CRITICAL GUARD
+          if (!isLoadValid(objectKey, requestId)) {
+            console.warn("🧹 Discarding stale load:", objectKey);
+            return;
+          }
 
           // 🔎 DEBUG — list meshes + ENABLE SHADOWS
           gltf.scene.traverse((n) => {
@@ -2812,6 +2830,7 @@ function onClick(e) {
 
     return () => {
       disposed = true;
+      activeLoads.clear?.(); // ✅ GLOBAL LOAD CLEANUP
       cancelAnimationFrame(raf);
 
       viewerApiRef.current.syncSelection = null;

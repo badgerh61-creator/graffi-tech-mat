@@ -112,6 +112,7 @@ import { usePivotPreview } from "../transform/pivotPreviewStore";
 
 import { useActivePaint } from "../materials/activePaintStore";
 import { resolvePreset } from "../materials/presetLibrary";
+import { cleanupScene } from "./cleanupScene";
 
 // --------------------------------------------------
 // ✅ Renderer factory (WebGL safe)
@@ -1655,17 +1656,15 @@ function applyViewMode() {
       const sortedObjects = sortObjectsStable(objectsLocal);
 
       setLoadingCount(0);
-
-      clearGhost();
-      clearSelectionBox();
-      clearSelectionOutline(selectedGroup);
-      clearDecals();
-      clearPivotHelper();
-
+      
+      // 🔧 detach gizmo BEFORE cleanup
       transformControls.detach();
       transformControls.visible = false;
 
-      while (root.children.length) root.remove(root.children[0]);
+      // 🔥 HARD RESET — Tier 6G.20
+      cleanupScene(root);
+
+      // reattach persistent roots
       root.add(decalsRoot);
 
       const loader = new GLTFLoader();

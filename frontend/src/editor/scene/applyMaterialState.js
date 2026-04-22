@@ -1,13 +1,11 @@
 import * as THREE from "three";
 
 /**
- * Tier 6G.14 — Material Authority Layer (UPGRADED SAFE)
+ * Tier 6G.14 — Material Authority Layer (HDR SAFE)
  * ✔ Preserves multi-part painting
  * ✔ Preserves strict mesh targeting
- * ✔ No behavior changes
- * 🔥 Adds full GPU-safe cleanup
- * 🔥 Handles ALL texture types (not just map)
- * 🔥 Prevents silent material leaks
+ * ✔ Keeps PBR + HDR compatibility
+ * ✔ Safe GPU cleanup (non-destructive)
  */
 
 export function applyMaterialState(root, materialState) {
@@ -58,25 +56,22 @@ export function applyMaterialState(root, materialState) {
       : [node.material];
 
     // -----------------------------
-    // 🔥 CREATE NEW MATERIALS (UNCHANGED LOGIC)
+    // 🔥 CREATE NEW MATERIALS (HDR SAFE)
     // -----------------------------
     const newMaterials = oldMaterials.map((mat) => {
       const m = mat.clone();
 
       // -----------------------------
-      // 🔥 REMOVE ALL TEXTURE INFLUENCE (UPGRADED)
+      // 🔥 REMOVE ONLY BASE COLOR MAP
+      // (DO NOT destroy PBR maps)
       // -----------------------------
-      for (const key in m) {
-        const value = m[key];
-
-        if (value && value.isTexture) {
-          value.dispose?.();
-          m[key] = null;
-        }
+      if (m.map) {
+        m.map.dispose?.();
+        m.map = null;
       }
 
       // -----------------------------
-      // 🔥 FIX COLOR SPACE (UNCHANGED)
+      // 🔥 FIX COLOR SPACE
       // -----------------------------
       if (paint.color) {
         const c = new THREE.Color(paint.color);
@@ -85,7 +80,7 @@ export function applyMaterialState(root, materialState) {
       }
 
       // -----------------------------
-      // APPLY MATERIAL PROPERTIES (UNCHANGED)
+      // APPLY MATERIAL PROPERTIES
       // -----------------------------
       if (paint.metalness !== undefined) {
         m.metalness = paint.metalness;
@@ -93,6 +88,13 @@ export function applyMaterialState(root, materialState) {
 
       if (paint.roughness !== undefined) {
         m.roughness = paint.roughness;
+      }
+
+      // -----------------------------
+      // 🔥 ENSURE HDR REFLECTION STRENGTH
+      // -----------------------------
+      if (m.envMapIntensity !== undefined) {
+        m.envMapIntensity = 1.0;
       }
 
       m.needsUpdate = true;
@@ -110,19 +112,15 @@ export function applyMaterialState(root, materialState) {
       : newMaterials[0];
 
     // -----------------------------
-    // 🔥 CLEANUP OLD MATERIALS (UPGRADED)
+    // 🔥 CLEANUP OLD MATERIALS (SAFE)
     // -----------------------------
     oldMaterials.forEach((m) => {
       try {
         if (!m) return;
 
-        // dispose ALL textures (not just map)
-        for (const key in m) {
-          const value = m[key];
-
-          if (value && value.isTexture) {
-            value.dispose?.();
-          }
+        // ONLY dispose textures we are responsible for replacing
+        if (m.map) {
+          m.map.dispose?.();
         }
 
         m.dispose?.();

@@ -1,3 +1,4 @@
+// frontend/src/editor/selection/multiSelectionStore.js
 import { useSyncExternalStore } from "react";
 
 const state = {
@@ -7,7 +8,11 @@ const state = {
 
 const listeners = new Set();
 
+// ✅ stable snapshot
+let cachedSnapshot = { ...state };
+
 function emit() {
+  cachedSnapshot = { ...state };
   listeners.forEach((l) => l());
 }
 
@@ -31,6 +36,9 @@ function uniqueOrdered(ids) {
   return out;
 }
 
+// --------------------
+// API
+// --------------------
 export function setMultiSelection(ids, primaryId = null) {
   const selectedIds = uniqueOrdered(ids);
   const normPrimary = normalizeObjectId(primaryId);
@@ -39,7 +47,7 @@ export function setMultiSelection(ids, primaryId = null) {
   state.primaryId =
     normPrimary && selectedIds.includes(normPrimary)
       ? normPrimary
-      : (selectedIds[0] || null);
+      : selectedIds[0] || null;
 
   emit();
 }
@@ -55,10 +63,13 @@ export function addToMultiSelection(id, makePrimary = false) {
   if (!norm) return;
 
   const next = uniqueOrdered([...state.selectedIds, norm]);
+
   state.selectedIds = next;
   state.primaryId = makePrimary
     ? norm
-    : (state.primaryId && next.includes(state.primaryId) ? state.primaryId : norm);
+    : state.primaryId && next.includes(state.primaryId)
+    ? state.primaryId
+    : norm;
 
   emit();
 }
@@ -68,10 +79,11 @@ export function removeFromMultiSelection(id) {
   if (!norm) return;
 
   const next = state.selectedIds.filter((x) => x !== norm);
+
   state.selectedIds = next;
   state.primaryId = next.includes(state.primaryId)
     ? state.primaryId
-    : (next[0] || null);
+    : next[0] || null;
 
   emit();
 }
@@ -82,10 +94,9 @@ export function toggleMultiSelection(id, makePrimaryOnAdd = true) {
 
   if (state.selectedIds.includes(norm)) {
     removeFromMultiSelection(norm);
-    return;
+  } else {
+    addToMultiSelection(norm, makePrimaryOnAdd);
   }
-
-  addToMultiSelection(norm, makePrimaryOnAdd);
 }
 
 export function setPrimarySelection(id) {
@@ -100,8 +111,11 @@ export function setPrimarySelection(id) {
   emit();
 }
 
+// --------------------
+// SNAPSHOT
+// --------------------
 export function multiSelectionGetSnapshot() {
-  return state;
+  return cachedSnapshot;
 }
 
 export function multiSelectionSubscribe(listener) {

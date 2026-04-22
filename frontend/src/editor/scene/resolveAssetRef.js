@@ -1,5 +1,5 @@
-// frontend/src/editor/scene/resolveAssetRef.js
 import { API_BASE } from "../../config/apiBase";
+import { getAccessToken } from "../../utils/auth"; // 🔥 FIX
 
 const cache = new Map();
 
@@ -20,12 +20,14 @@ export async function resolveAssetRef(assetRef) {
     const assetId = Number(ref.replace("asset:", "").trim());
 
     const base = API_BASE;
-    const token = localStorage.getItem("graffi.access_token");
+    const token = getAccessToken(); // ✅ FIXED
 
     console.log("🚀 FETCHING ASSET URL:", assetId);
 
     const res = await fetch(`${base}/assets/${assetId}/url`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: token
+        ? { Authorization: `Bearer ${token}` }
+        : {},
     });
 
     console.log("📡 RESPONSE STATUS:", res.status);

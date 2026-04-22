@@ -745,10 +745,23 @@ export default function ThreeSceneViewer({
     const camera = makeCamera(rect.width || 800, rect.height || 500);
 
     const controls = new OrbitControls(camera, renderer.domElement);
+
+    // smooth motion
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+
     controls.screenSpacePanning = true;
-    controls.target.set(0, 0.8, 0);
+
+    // limits (prevent bad camera behavior)
+    controls.minDistance = 1.5;
+    controls.maxDistance = 100;
+    controls.maxPolarAngle = Math.PI / 2;
+
+    // feel tuning
+    controls.rotateSpeed = 0.8;
+    controls.zoomSpeed = 1.2;
+    controls.panSpeed = 0.8;
+
     controls.update();
 
     const transformControls = new TransformControls(camera, renderer.domElement);
@@ -1572,6 +1585,7 @@ function applyViewMode() {
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      controls.update();
     }
     resize();
     const ro = new ResizeObserver(() => resize());
@@ -2603,7 +2617,7 @@ function onClick(e) {
         const base = decalBaseById.get(String(chosen.key));
         const ownerKey = base?.targetId ? String(base.targetId).split("::")[0] : null;
         const group = ownerKey ? objectGroups.get(ownerKey) : null;
-        if (group) fitCameraToObject(camera, group, controls);
+        if (group) frameSelected();
         else frameScene();
 
         return;
@@ -2631,7 +2645,7 @@ function onClick(e) {
         const objectId = String(chosen.key || "").split("::")[0];
         setPrimaryObjectSelection(objectId);
         const group = objectGroups.get(objectId);
-        if (group) fitCameraToObject(camera, group, controls);
+        if (group) frameSelected();
         else frameScene();
         return;
       }

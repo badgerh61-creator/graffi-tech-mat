@@ -86,7 +86,6 @@ import {
 
 // ✅ Tier 7.41 — selection filters + deterministic pick resolution
 import { useSelectionFilter } from "../selection/selectionFilterStore";
-import { resolvePick } from "../selection/resolvePick";
 
 // ✅ Tier 7.41 — set/clear active decal (optional, safe)
 import { setActiveDecalId, clearActiveDecalId } from "../decals/activeDecalStore";
@@ -121,6 +120,8 @@ import {
   isLoadValid,
   clearLoad
 } from "./assetManager";
+
+import { pickObject } from "../interaction/picking";
 
 // --------------------------------------------------
 // ✅ Renderer factory (WebGL safe)
@@ -2407,12 +2408,9 @@ function onClick(e) {
 
   console.log("🧪 PICKABLES COUNT:", pickablesRef.current.length);
 
-  const intersects = raycaster.intersectObjects(pickablesRef.current, true);
-
-  console.log("🧪 INTERSECTS COUNT:", intersects.length);
-  console.log("🧪 INTERSECTS:", intersects);
+  const mesh = pickObject(raycaster, pickablesRef.current);
   
-  if (!intersects.length) {
+  if (!mesh) {
     clearAllSelectionState?.();
     clearActiveDecalId?.();
 
@@ -2424,46 +2422,12 @@ function onClick(e) {
 
     return;
   }
-
-  const hitIds = buildPickIdListFromIntersects(intersects);
-  const chosen = resolvePick(hitIds, selectionFilterRef.current || "all");
-
-  if (!chosen) {
-    clearAllSelectionState?.();
-    clearActiveDecalId?.();
-
-    requestAnimationFrame(() => {
-      updateSelectionBox();
-      updateSelectionHighlight?.();
-      syncTransformControlsToTarget();
-    });
-
-    return;
-  }
-
-  if (chosen.kind === "decal") {
-    setActiveDecalId?.(chosen.key);
-    clearAllSelectionState?.();
-
-    requestAnimationFrame(() => {
-      updateSelectionBox();
-      updateSelectionHighlight?.();
-      syncTransformControlsToTarget();
-    });
-
-    return;
-  }
-
-  clearActiveDecalId?.();
 
   const additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
 
-  if (chosen.kind === "mesh") {
+  if (mesh?.userData?.pickId?.startsWith("mesh:")) {
 
     // ✅ ALWAYS USE FIRST HIT (REAL CLICK TARGET)
-    const hit = intersects[0];
-    const mesh = hit?.object;
-
     if (!mesh) return;
 
     const meshId = mesh.userData?.pickId;
@@ -2575,15 +2539,15 @@ function onClick(e) {
     return;
   }
   
-  // fallback (object id directly)
-  const id = chosen.key ?? chosen;
+  const objectKey = resolveObjectKeyFromHitMesh(mesh);
+  if (!objectKey) return;
+  
+  // fallback (object selection)
+  setSelectedId(objectKey);
+  selectedIdRef.current = objectKey;
 
-  // 🔥 THIS LINE WAS MISSING
-  setSelectedId(id);
-  selectedIdRef.current = id;
-
-  setPrimarySelection(id);
-  syncPrimaryToSingleSelection(id);
+  setPrimarySelection(objectKey);
+  syncPrimaryToSingleSelection(objectKey);
 
   requestAnimationFrame(() => {
     updateSelectionBox();
@@ -2591,7 +2555,7 @@ function onClick(e) {
     syncTransformControlsToTarget();
   });
 
-  console.log("✅ SELECTED:", chosen);
+  console.log("✅ SELECTED (object):", objectKey);
 }
     
     function onDoubleClick(e) {
@@ -2603,20 +2567,26 @@ function onClick(e) {
       mouse.set(x, y);
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(pickablesRef.current, true);
-      if (!intersects.length) return;
 
-      const hitIds = buildPickIdListFromIntersects(intersects);
-      const chosen = resolvePick(hitIds, selectionFilterRef.current || "all");
-      if (!chosen) return;
+      const mesh = pickObject(raycaster, pickablesRef.current);
 
-      if (chosen.kind === "decal") {
-        setActiveDecalId?.(chosen.key);
+      if (!mesh) {
+        frameScene();
+        return;
+      }
+
+      const pickId = mesh.userData?.pickId;
+
+      if (pickId?.startsWith("decal:")) {
+        const decalId = pickId.replace("decal:", "");
+
+        setActiveDecalId?.(decalId);
         clearAllSelectionState?.();
 
-        const base = decalBaseById.get(String(chosen.key));
+        const base = decalBaseById.get(decalId);
         const ownerKey = base?.targetId ? String(base.targetId).split("::")[0] : null;
         const group = ownerKey ? objectGroups.get(ownerKey) : null;
+
         if (group) frameSelected();
         else frameScene();
 
@@ -2625,15 +2595,15 @@ function onClick(e) {
 
       clearActiveDecalId?.();
 
-      if (chosen.kind === "mesh") {
-        const mesh = intersects[0]?.object;
-        if (!mesh) return;
+      const objectKey = resolveObjectKeyFromHitMesh(mesh);
+      if (!objectKey) {
+        frameScene();
+        return;
+      }
 
-        const objectKey = resolveObjectKeyFromHitMesh(mesh);
-        if (!objectKey) return;
+      const meshId = mesh.userData?.pickId;
 
-        const meshId = `mesh:${objectKey}::${mesh.name}`;
-
+      if (meshId && meshId.startsWith("mesh:")) {
         setSelectedId(meshId);
         selectedIdRef.current = meshId;
 
@@ -2641,14 +2611,11 @@ function onClick(e) {
         return;
       }
             
-      if (chosen.kind === "obj") {
-        const objectId = String(chosen.key || "").split("::")[0];
-        setPrimaryObjectSelection(objectId);
-        const group = objectGroups.get(objectId);
-        if (group) frameSelected();
-        else frameScene();
-        return;
-      }
+      setPrimaryObjectSelection(objectKey);
+
+      const group = objectGroups.get(objectKey);
+      if (group) frameSelected();
+      else frameScene();
     }
 
     function onKeyDown(e) {

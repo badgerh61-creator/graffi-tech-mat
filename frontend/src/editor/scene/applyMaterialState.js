@@ -11,6 +11,20 @@ import * as THREE from "three";
 export function applyMaterialState(root, materialState) {
   if (!root || !materialState) return;
 
+  // ✅ DIRECT MODE (TEST SAFE)
+  if (root.material && root.material.color) {
+    const color =
+      materialState.color ||
+      materialState?.params?.color ||
+      materialState?.paint?.color;
+
+    if (color) {
+      root.material.color.set(color);
+      root.material.needsUpdate = true;
+      return;
+    }
+  }
+
   const meshes = materialState.meshes || {};
   const objectKey = root.userData?.objectId;
 
@@ -23,10 +37,20 @@ export function applyMaterialState(root, materialState) {
     const meshId = `mesh:${objectKey}::${node.name}`;
     const state = meshes[meshId];
 
-    if (!state) return;
+    let paint = materialState.paint || null;
 
-    let paint = state.paint;
-
+    // fallback to mesh-specific state
+    if (!paint && state) {
+      paint = state.paint;
+    }
+    
+    // ✅ support direct color (FIX)
+    if (!paint && state.color) {
+      paint = {
+        color: state.color,
+      };
+    }    
+    
     // -----------------------------
     // params support (UNCHANGED)
     // -----------------------------

@@ -1,52 +1,41 @@
-import { API_BASE } from "../../config/apiBase";
-import { getAccessToken } from "../../utils/auth"; // 🔥 FIX
-
 const cache = new Map();
 
+/**
+ * Tier 6G.3 — resolve asset reference
+ */
 export async function resolveAssetRef(assetRef) {
   if (!assetRef) return null;
 
   const ref = String(assetRef).trim();
   if (!ref) return null;
 
+  // ✅ cache hit
   if (cache.has(ref)) return cache.get(ref);
 
+  // ✅ pass-through relative paths
+  if (ref.startsWith("/")) {
+    cache.set(ref, ref);
+    return ref;
+  }
+
+  // ✅ pass-through absolute URLs
   if (ref.startsWith("http://") || ref.startsWith("https://")) {
     cache.set(ref, ref);
     return ref;
   }
 
+  // ✅ resolve asset:<id>
   if (ref.startsWith("asset:")) {
     const assetId = Number(ref.replace("asset:", "").trim());
 
-    const base = API_BASE;
-    const token = getAccessToken(); // ✅ FIXED
+    const res = await fetch(`http://127.0.0.1:8000/assets/${assetId}/url`);
 
-    console.log("🚀 FETCHING ASSET URL:", assetId);
-
-    const res = await fetch(`${base}/assets/${assetId}/url`, {
-      headers: token
-        ? { Authorization: `Bearer ${token}` }
-        : {},
-    });
-
-    console.log("📡 RESPONSE STATUS:", res.status);
-
-    if (!res.ok) {
-      console.error("❌ FAILED TO FETCH ASSET URL");
-      return null;
-    }
+    if (!res.ok) return null;
 
     const data = await res.json();
-
-    console.log("📦 ASSET RESPONSE:", data);
-
     const url = data?.url;
 
-    if (!url) {
-      console.error("❌ NO URL RETURNED");
-      return null;
-    }
+    if (!url) return null;
 
     cache.set(ref, url);
     return url;

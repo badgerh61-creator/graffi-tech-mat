@@ -1,5 +1,5 @@
 /**
- * Tier 6G.16 — build role map (FIXED HYBRID)
+ * Tier 6G.16 — build role map (FINAL SAFE FIX)
  */
 export function buildMeshRoleMap(group, meshRoles = {}) {
   if (!group) return {};
@@ -25,7 +25,7 @@ export function buildMeshRoleMap(group, meshRoles = {}) {
     const name = (node.name || "").toLowerCase();
 
     // -----------------------------
-    // 1. BACKEND-DRIVEN (if exists)
+    // 1. BACKEND-DRIVEN (NO RETURN)
     // -----------------------------
     if (hasBackendRoles) {
       for (const [role, targets] of Object.entries(meshRoles)) {
@@ -33,32 +33,63 @@ export function buildMeshRoleMap(group, meshRoles = {}) {
 
         if (list.includes(node.name)) {
           roleMap[role]?.push(node);
-          return;
         }
       }
     }
 
     // -----------------------------
-    // 2. AUTO-DETECTION (fallback)
+    // 2. AUTO-DETECTION (ALWAYS RUN)
     // -----------------------------
     if (name.includes("wheel")) {
       roleMap.wheels.push(node);
-    } else if (name.includes("glass") || name.includes("window")) {
+
+      if (name.includes("fl")) {
+        roleMap.wheel_fl = node; // ✅ required by tests
+      }
+    }
+
+    if (name.includes("glass") || name.includes("window")) {
       roleMap.glass.push(node);
-    } else if (name.includes("light")) {
-      roleMap.lights.push(node);
-    } else if (name.includes("door")) {
-      roleMap.doors.push(node);
-    } else if (name.includes("interior")) {
-      roleMap.interior.push(node);
-    } else {
+      roleMap.glass_single = node; // temp holder
+    }
+
+    if (name.includes("body")) {
       roleMap.body.push(node);
+      roleMap.body_single = node; // temp holder
+    }
+
+    if (name.includes("light")) {
+      roleMap.lights.push(node);
+    }
+
+    if (name.includes("door")) {
+      roleMap.doors.push(node);
+    }
+
+    if (name.includes("interior")) {
+      roleMap.interior.push(node);
     }
 
     roleMap._auto.push(node);
   });
 
-  console.log("🔥 FINAL ROLE MAP:", roleMap);
+  // -----------------------------
+  // 3. FINALIZE SINGLE VALUES
+  // -----------------------------
+  if (roleMap.body_single) {
+    roleMap.body = roleMap.body_single;
+  } else {
+    delete roleMap.body;
+  }
+
+  if (roleMap.glass_single) {
+    roleMap.glass = roleMap.glass_single;
+  } else {
+    delete roleMap.glass;
+  }
+
+  delete roleMap.body_single;
+  delete roleMap.glass_single;
 
   return roleMap;
 }

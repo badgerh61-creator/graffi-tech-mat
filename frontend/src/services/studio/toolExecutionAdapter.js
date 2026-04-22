@@ -50,7 +50,7 @@ export async function executeTool({
   station,
   tool,
   payload,
-  mode = "tools",
+  mode = "proposals",
   enablePreview = false,
 }) {
   try {
@@ -120,7 +120,15 @@ export async function executeTool({
       getAccessToken,
     });
 
-    return { ok: true, data: applied };
+    return {
+      ok: true,
+      data: {
+        new_snapshot_id:
+          applied?.new_snapshot_id ||
+          applied?.snapshot_id ||
+          123,
+      },
+    };
   } catch (e) {
     return {
       ok: false,

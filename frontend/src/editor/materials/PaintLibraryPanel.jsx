@@ -160,7 +160,7 @@ function PaintLibraryPanel({
         >
           {activePaint?.id === selectedPreset
             ? "Painting Active (Click Mesh)"
-            : "Select Paint Tool"}
+            : "Apply Paint Preset"}
         </button>
       </div>
 

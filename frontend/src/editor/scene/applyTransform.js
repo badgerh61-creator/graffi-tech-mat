@@ -13,11 +13,15 @@ function n(v, fallback) {
 export function applyTransformToObject3D(obj3d, transform) {
   if (!obj3d) return;
 
-  const t = transform || {};
+  // 🔥 STRICT GUARD (6G.27 compliance)
+  if (!transform) {
+    console.warn("Missing transform — skipping object");
+    return;
+  }
 
-  const p = t.position || {};
-  const r = t.rotation || {};
-  const s = t.scale || {};
+  const p = transform.position || {};
+  const r = transform.rotation || {};
+  const s = transform.scale || {};
 
   obj3d.position.set(
     n(p.x, 0),
@@ -37,7 +41,6 @@ export function applyTransformToObject3D(obj3d, transform) {
     n(s.z, 1)
   );
 
-  // 🔥 REQUIRED for consistency
   obj3d.updateMatrixWorld(true);
 }
 

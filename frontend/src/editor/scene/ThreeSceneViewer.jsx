@@ -122,6 +122,7 @@ import {
 } from "./assetManager";
 
 import { pickObject } from "../interaction/picking";
+import { normalizeSceneObjects } from "./sceneSerializer";
 
 // --------------------------------------------------
 // ✅ Renderer factory (WebGL safe)
@@ -553,7 +554,7 @@ export default function ThreeSceneViewer({
 
     console.log("🔥 RESOLVED OBJECT SOURCE:", finalList);
 
-    return finalList;
+    return normalizeSceneObjects(finalList);
   }, [sceneIndex, activeSnapshot]);
 
   console.log("🔥 USING OBJECTS:", objects);
@@ -1725,7 +1726,7 @@ function applyViewMode() {
       meshToObjectKey.set(outer, objectKey);
       meshToObjectId.set(outer, objId);
 
-      applyTransformToObject3D(outer, obj?.transform);
+      applyTransformToObject3D(outer, obj.transform);
 
      // ---------------------------------------
      // PIVOT GROUP (local offset)

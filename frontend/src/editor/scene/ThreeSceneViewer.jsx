@@ -123,6 +123,7 @@ import {
 
 import { pickObject } from "../interaction/picking";
 import { normalizeSceneObjects } from "./sceneSerializer";
+import { useScene } from "../scene/sceneStore";
 
 // --------------------------------------------------
 // ✅ Renderer factory (WebGL safe)
@@ -512,27 +513,19 @@ export default function ThreeSceneViewer({
   const [err, setErr] = useState(null);
   const [loadingCount, setLoadingCount] = useState(0);
 
-  const lastGoodObjectsRef = useRef([]);
-  const loadedObjectsRef = useRef({});
-  const lastValidSceneRef = useRef(null);
-
-  console.log("🔥 RAW sceneIndex:", sceneIndex);
-
-  if (sceneIndex && sceneIndex.objects) {
-    lastValidSceneRef.current = sceneIndex;
-  }
+  const { sceneIndex: storeSceneIndex } = useScene();
 
   const safeSceneIndex =
-    sceneIndex && sceneIndex.objects
-      ? sceneIndex
-      : lastValidSceneRef.current;
+    storeSceneIndex && storeSceneIndex.objects
+      ? storeSceneIndex
+      : null;
 
   if (!safeSceneIndex) {
     console.warn("🚫 No valid scene yet");
   }
 
   const objects = useMemo(() => {
-    const src = safeSceneIndex || sceneIndex;
+    const src = safeSceneIndex;
 
     const a = src?.objects;
     const b = src?.body_state?.scene?.objects;
@@ -546,16 +539,12 @@ export default function ThreeSceneViewer({
       Array.isArray(d) && d.length ? d :
       []);
 
-    if (list.length) {
-      lastGoodObjectsRef.current = list;
-    }
-
-    const finalList = list.length ? list : lastGoodObjectsRef.current;
-
+    const finalList = list.length ? list : [];
+    
     console.log("🔥 RESOLVED OBJECT SOURCE:", finalList);
 
     return normalizeSceneObjects(finalList);
-  }, [sceneIndex, activeSnapshot]);
+  }, [safeSceneIndex, activeSnapshot]);
 
   console.log("🔥 USING OBJECTS:", objects);
   

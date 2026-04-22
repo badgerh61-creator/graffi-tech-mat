@@ -1,6 +1,6 @@
 import { getAccessToken } from "../../utils/auth";
 
-const API = "http://127.0.0.1:8000";
+const API = "/api";
 
 export async function fetchScene(snapshotId) {
   const token = getAccessToken?.();
@@ -12,7 +12,8 @@ export async function fetchScene(snapshotId) {
   });
 
   if (!res.ok) {
-    throw new Error("Failed to fetch scene");
+    const text = await res.text();
+    throw new Error(`Failed to fetch scene: ${res.status} ${text}`);
   }
 
   return res.json();

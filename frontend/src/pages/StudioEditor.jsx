@@ -72,6 +72,7 @@ import SelectionHud from "../editor/selection/SelectionHud";
 
 // ✅ Tier 6G.1 ADD (scene index fetch + debug panel)
 import { fetchScene } from "../services/studio/sceneApi";
+import { setSceneIndex } from "../editor/scene/sceneStore";
 import SceneIndexPanel from "../editor/scene/SceneIndexPanel";
 
 // ✅ Tier 6G.2 ADD (attach asset panel)
@@ -956,6 +957,18 @@ const commitToolPayload = useCallback(
       // -----------------------------
 
       return applyRes;
+
+
+// -----------------------------
+// 🔥 6G.28 — FORCE SYNC (THE REAL FIX)
+// -----------------------------
+try {
+  const scene = await fetchScene(projectId, activeSnapshot?.id);
+
+  setSceneIndex(scene, activeSnapshot?.id);
+} catch (e) {
+  console.error("❌ Scene refresh failed:", e);
+}
 
     } catch (e) {
       return {
